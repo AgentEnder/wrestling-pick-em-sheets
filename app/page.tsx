@@ -1,13 +1,15 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EventSettings } from "@/components/event-settings"
 import { MatchEditor } from "@/components/match-editor"
 import { PrintSheet } from "@/components/print-sheet"
-import { Printer, Swords, Crown, RotateCcw } from "lucide-react"
+import { Printer, Swords, Crown, RotateCcw, Download, Upload } from "lucide-react"
 import type { PickEmSheet, Match, StandardMatch, BattleRoyalMatch, BonusQuestion } from "@/lib/types"
+
+const LOCAL_STORAGE_KEY = "pick-em-sheet"
 
 function createStandardMatch(): StandardMatch {
   return {
@@ -47,6 +49,24 @@ export default function PickEmPage() {
   const [sheet, setSheet] = useState<PickEmSheet>(INITIAL_SHEET)
   const [activeTab, setActiveTab] = useState("editor")
   const printRef = useRef<HTMLDivElement>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+
+  // Hydrate from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY)
+      if (saved) {
+        setSheet(JSON.parse(saved))
+      }
+    } catch (err) {
+      console.warn("Failed to restore saved sheet from localStorage:", err)
+    }
+  }, [])
+
+  // Persist to localStorage on every change
+  useEffect(() => {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sheet))
+  }, [sheet])
 
   function addMatch(type: "standard" | "battleRoyal") {
     const newMatch: Match =
@@ -108,14 +128,60 @@ export default function PickEmPage() {
 
   function handleReset() {
     setSheet(INITIAL_SHEET)
+    localStorage.removeItem(LOCAL_STORAGE_KEY)
     setActiveTab("editor")
+  }
+
+  function handleExport() {
+    const json = JSON.stringify(sheet, null, 2)
+    const bytes = new TextEncoder().encode(json)
+    // Build binary string without spread to avoid stack overflow on large payloads
+    let binary = ""
+    bytes.forEach((b) => { binary += String.fromCharCode(b) })
+    const encoded = btoa(binary)
+    const blob = new Blob([encoded], { type: "application/octet-stream" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    const safeName = (sheet.eventName.trim() || "pick-em-sheet")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+    a.download = `${safeName}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleImportClick() {
+    importInputRef.current?.click()
+  }
+
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const raw = ev.target?.result as string
+        const decoded = atob(raw.trim())
+        const bytes = Uint8Array.from(decoded, (c) => c.charCodeAt(0))
+        const json = new TextDecoder().decode(bytes)
+        const parsed = JSON.parse(json) as PickEmSheet
+        setSheet(parsed)
+        setActiveTab("editor")
+      } catch {
+        alert("Failed to import: the file appears to be invalid.")
+      }
+    }
+    reader.readAsText(file)
+    // Reset input so the same file can be re-imported
+    e.target.value = ""
   }
 
   const hasMatches = sheet.matches.length > 0
   const hasEventName = sheet.eventName.trim().length > 0
 
   return (
-    <div className="bg-background min-h-screen">
+    <div className="bg-background min-h-screen print:bg-white">
       {/* Top bar */}
       <header className="no-print sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
@@ -133,6 +199,24 @@ export default function PickEmPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleImportClick}
+              className="text-muted-foreground"
+            >
+              <Upload className="h-4 w-4 mr-1" />
+              Import
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleExport}
+              className="text-muted-foreground"
+            >
+              <Download className="h-4 w-4 mr-1" />
+              Export
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -154,6 +238,14 @@ export default function PickEmPage() {
           </div>
         </div>
       </header>
+      {/* Hidden file input for import */}
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".json"
+        className="hidden"
+        onChange={handleImportFile}
+      />
 
       {/* Main content */}
       <main className="no-print mx-auto max-w-5xl px-4 py-6">
