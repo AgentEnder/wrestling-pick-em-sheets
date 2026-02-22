@@ -3,13 +3,27 @@
 import { useState, useRef, useEffect } from "react"
 import { createRoot } from "react-dom/client"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EventSettings } from "@/components/event-settings"
 import { MatchEditor } from "@/components/match-editor"
 import { PrintSheet } from "@/components/print-sheet"
-import { Printer, Swords, Crown, RotateCcw, Download, Upload } from "lucide-react"
+import {
+  EllipsisVertical,
+  Printer,
+  Swords,
+  Crown,
+  RotateCcw,
+  Download,
+  Upload,
+} from "lucide-react"
 import { toast } from "sonner"
-import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
+import { SignInButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 import type { PickEmSheet, Match, StandardMatch, BattleRoyalMatch, BonusQuestion } from "@/lib/types"
 
 const LOCAL_STORAGE_KEY = "pick-em-sheet"
@@ -264,7 +278,7 @@ export default function PickEmPage() {
     <div className="bg-background min-h-screen print:bg-white">
       {/* Top bar */}
       <header className="no-print sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
               <Swords className="h-4 w-4 text-primary-foreground" />
@@ -278,34 +292,29 @@ export default function PickEmPage() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleImportClick}
-              className="text-muted-foreground"
-            >
-              <Upload className="h-4 w-4 mr-1" />
-              Import
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleExport}
-              className="text-muted-foreground"
-            >
-              <Download className="h-4 w-4 mr-1" />
-              Export
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleReset}
-              className="text-muted-foreground"
-            >
-              <RotateCcw className="h-4 w-4 mr-1" />
-              Reset
-            </Button>
+          <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  <EllipsisVertical className="h-4 w-4" />
+                  <span className="sr-only">Open actions</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleImportClick}>
+                  <Upload className="h-4 w-4" />
+                  Import
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExport}>
+                  <Download className="h-4 w-4" />
+                  Export
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleReset}>
+                  <RotateCcw className="h-4 w-4" />
+                  Reset
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               size="sm"
               onClick={handlePrint}
@@ -320,15 +329,12 @@ export default function PickEmPage() {
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <Printer className="h-4 w-4 mr-1" />
-              Print Sheet
+              <span className="hidden sm:inline">Print Sheet</span>
             </Button>
             <SignedOut>
               <SignInButton mode="modal">
                 <Button variant="outline" size="sm">Sign in</Button>
               </SignInButton>
-              <SignUpButton mode="modal">
-                <Button variant="ghost" size="sm">Sign up</Button>
-              </SignUpButton>
             </SignedOut>
             <SignedIn>
               <UserButton />
