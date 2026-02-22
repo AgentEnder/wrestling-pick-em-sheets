@@ -413,7 +413,16 @@
   width: 60px;
 }
 
+/* Print-only wrapper: hidden on screen, visible only when printing */
+.print-only-wrapper {
+  display: none;
+}
+
 @media print {
+  .print-only-wrapper {
+    display: block;
+  }
+
   @page {
     size: letter;
     margin: 0.3in;
