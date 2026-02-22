@@ -144,17 +144,55 @@ export default function PickEmPage() {
     })
   }
 
-  function handlePrint() {
-    // window.print() must be the first call to preserve the browser's
-    // user-gesture trust chain. Any React state update (including toast())
-    // before this call can consume the gesture token and cause the browser
-    // to silently block the print dialog.
-    try {
-      window.print()
-    } catch (err) {
-      toast.error("Failed to open print dialog")
-      console.error(err)
+  function openPopupPrint() {
+    const printableMarkup =
+      printRef.current?.innerHTML ??
+      document.querySelector(".print-only-wrapper")?.innerHTML
+
+    if (!printableMarkup) {
+      toast.error("Nothing to print yet")
+      return
     }
+
+    const popup = window.open("", "_blank", "noopener,noreferrer,width=1000,height=900")
+    if (!popup) {
+      toast.error("Pop-up blocked. Please allow pop-ups and try again.")
+      return
+    }
+
+    const styleTags = Array.from(document.querySelectorAll("style, link[rel='stylesheet']"))
+      .map((node) => node.outerHTML)
+      .join("\n")
+
+    popup.document.write(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${sheet.eventName || "Pick Em Sheet"}</title>
+    ${styleTags}
+  </head>
+  <body>
+    ${printableMarkup}
+  </body>
+</html>`)
+    popup.document.close()
+
+    const triggerPrint = () => {
+      popup.focus()
+      popup.print()
+    }
+
+    if (popup.document.readyState === "complete") {
+      triggerPrint()
+      return
+    }
+
+    popup.addEventListener("load", triggerPrint, { once: true })
+  }
+
+  function handlePrint() {
+    openPopupPrint()
   }
 
   function handleReset() {
