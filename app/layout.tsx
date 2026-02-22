@@ -1,13 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, Oswald } from 'next/font/google'
-import {
-  ClerkProvider,
-  SignInButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-} from '@clerk/nextjs'
+import { ClerkProvider } from '@clerk/nextjs'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from 'sonner'
 import './globals.css'
@@ -57,15 +50,6 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en">
         <body className={`${_inter.variable} ${_oswald.variable} font-sans antialiased`}>
-          <header className="mx-auto flex w-full max-w-6xl items-center justify-end gap-2 px-6 py-4">
-            <SignedOut>
-              <SignInButton mode="modal" />
-              <SignUpButton mode="modal" />
-            </SignedOut>
-            <SignedIn>
-              <UserButton />
-            </SignedIn>
-          </header>
           {children}
           <Toaster theme="dark" richColors />
           <Analytics />

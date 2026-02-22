@@ -9,6 +9,7 @@ import { MatchEditor } from "@/components/match-editor"
 import { PrintSheet } from "@/components/print-sheet"
 import { Printer, Swords, Crown, RotateCcw, Download, Upload } from "lucide-react"
 import { toast } from "sonner"
+import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 import type { PickEmSheet, Match, StandardMatch, BattleRoyalMatch, BonusQuestion } from "@/lib/types"
 
 const LOCAL_STORAGE_KEY = "pick-em-sheet"
@@ -321,6 +322,17 @@ export default function PickEmPage() {
               <Printer className="h-4 w-4 mr-1" />
               Print Sheet
             </Button>
+            <SignedOut>
+              <SignInButton mode="modal">
+                <Button variant="outline" size="sm">Sign in</Button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <Button variant="ghost" size="sm">Sign up</Button>
+              </SignUpButton>
+            </SignedOut>
+            <SignedIn>
+              <UserButton />
+            </SignedIn>
           </div>
         </div>
       </header>
