@@ -173,6 +173,19 @@ export default function PickEmPage() {
       }, 500)
     }
 
+    const printDocument = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${sheet.eventName || "Pick Em Sheet"}</title>
+    ${styleTags}
+  </head>
+  <body>
+    ${printableMarkup}
+  </body>
+</html>`
+
     iframe.onload = () => {
       const frameWindow = iframe.contentWindow
       if (!frameWindow) {
@@ -186,29 +199,8 @@ export default function PickEmPage() {
       cleanup()
     }
 
+    iframe.srcdoc = printDocument
     document.body.appendChild(iframe)
-
-    const doc = iframe.contentDocument
-    if (!doc) {
-      toast.error("Failed to open print dialog")
-      cleanup()
-      return
-    }
-
-    doc.open()
-    doc.write(`<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${sheet.eventName || "Pick Em Sheet"}</title>
-    ${styleTags}
-  </head>
-  <body>
-    ${printableMarkup}
-  </body>
-</html>`)
-    doc.close()
   }
 
   function handlePrint() {
