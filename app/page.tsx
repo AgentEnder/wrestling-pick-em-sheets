@@ -145,7 +145,7 @@ export default function PickEmPage() {
   }
 
   function handlePrint() {
-    setActiveTab("preview")
+    toast.info("Opening print dialog...")
     try {
       window.print()
     } catch (err) {
@@ -258,6 +258,13 @@ export default function PickEmPage() {
               size="sm"
               onClick={handlePrint}
               disabled={!hasMatches || !hasEventName}
+              title={
+                !hasEventName
+                  ? "Enter an event name to enable printing"
+                  : !hasMatches
+                  ? "Add at least one match to enable printing"
+                  : undefined
+              }
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <Printer className="h-4 w-4 mr-1" />
@@ -390,8 +397,8 @@ export default function PickEmPage() {
         </Tabs>
       </main>
 
-      {/* Print-only version: rendered off-screen but visible to print */}
-      <div className="hidden print:block" style={{ position: "absolute", top: 0, left: 0, width: "100%" }}>
+      {/* Print-only version: hidden on screen, visible when printing */}
+      <div className="print-only-wrapper">
         <PrintSheet sheet={sheet} />
       </div>
     </div>
