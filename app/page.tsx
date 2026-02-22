@@ -7,13 +7,14 @@ import { EventSettings } from "@/components/event-settings"
 import { MatchEditor } from "@/components/match-editor"
 import { PrintSheet } from "@/components/print-sheet"
 import { Printer, Swords, Crown, RotateCcw } from "lucide-react"
-import type { PickEmSheet, Match, StandardMatch, BattleRoyalMatch } from "@/lib/types"
+import type { PickEmSheet, Match, StandardMatch, BattleRoyalMatch, BonusQuestion } from "@/lib/types"
 
 function createStandardMatch(): StandardMatch {
   return {
     id: crypto.randomUUID(),
     type: "standard",
     title: "",
+    description: "",
     participants: [],
     bonusQuestions: [],
     points: null,
@@ -25,6 +26,7 @@ function createBattleRoyal(): BattleRoyalMatch {
     id: crypto.randomUUID(),
     type: "battleRoyal",
     title: "",
+    description: "",
     announcedParticipants: [],
     surpriseSlots: 5,
     bonusQuestions: [],
@@ -86,7 +88,7 @@ export default function PickEmPage() {
         id: crypto.randomUUID(),
       }
       // Give bonus questions new IDs too
-      clone.bonusQuestions = clone.bonusQuestions.map((q: { id: string }) => ({
+      clone.bonusQuestions = clone.bonusQuestions.map((q: BonusQuestion) => ({
         ...q,
         id: crypto.randomUUID(),
       }))
@@ -112,7 +114,7 @@ export default function PickEmPage() {
   const hasEventName = sheet.eventName.trim().length > 0
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="bg-background min-h-screen">
       {/* Top bar */}
       <header className="no-print sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
