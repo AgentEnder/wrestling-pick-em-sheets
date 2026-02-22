@@ -144,7 +144,7 @@ export default function PickEmPage() {
     })
   }
 
-  function openPopupPrint() {
+  function printViaIframe() {
     const printableMarkup =
       printRef.current?.innerHTML ??
       document.querySelector(".print-only-wrapper")?.innerHTML
@@ -154,17 +154,49 @@ export default function PickEmPage() {
       return
     }
 
-    const popup = window.open("", "_blank", "noopener,noreferrer,width=1000,height=900")
-    if (!popup) {
-      toast.error("Pop-up blocked. Please allow pop-ups and try again.")
-      return
-    }
-
     const styleTags = Array.from(document.querySelectorAll("style, link[rel='stylesheet']"))
       .map((node) => node.outerHTML)
       .join("\n")
 
-    popup.document.write(`<!doctype html>
+    const iframe = document.createElement("iframe")
+    iframe.style.position = "fixed"
+    iframe.style.width = "0"
+    iframe.style.height = "0"
+    iframe.style.border = "0"
+    iframe.style.opacity = "0"
+    iframe.style.pointerEvents = "none"
+    iframe.setAttribute("aria-hidden", "true")
+
+    const cleanup = () => {
+      window.setTimeout(() => {
+        iframe.remove()
+      }, 500)
+    }
+
+    iframe.onload = () => {
+      const frameWindow = iframe.contentWindow
+      if (!frameWindow) {
+        toast.error("Failed to open print dialog")
+        cleanup()
+        return
+      }
+
+      frameWindow.focus()
+      frameWindow.print()
+      cleanup()
+    }
+
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentDocument
+    if (!doc) {
+      toast.error("Failed to open print dialog")
+      cleanup()
+      return
+    }
+
+    doc.open()
+    doc.write(`<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -176,23 +208,11 @@ export default function PickEmPage() {
     ${printableMarkup}
   </body>
 </html>`)
-    popup.document.close()
-
-    const triggerPrint = () => {
-      popup.focus()
-      popup.print()
-    }
-
-    if (popup.document.readyState === "complete") {
-      triggerPrint()
-      return
-    }
-
-    popup.addEventListener("load", triggerPrint, { once: true })
+    doc.close()
   }
 
   function handlePrint() {
-    openPopupPrint()
+    printViaIframe()
   }
 
   function handleReset() {
