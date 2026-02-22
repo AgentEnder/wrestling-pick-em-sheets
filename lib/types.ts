@@ -34,5 +34,6 @@ export interface PickEmSheet {
   eventDate: string
   eventTagline: string
   defaultPoints: number
+  tiebreakerLabel: string
   matches: Match[]
 }

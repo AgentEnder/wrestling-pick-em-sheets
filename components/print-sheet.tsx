@@ -61,9 +61,9 @@ function StandardMatchBlock({
   return (
     <div className="print-match-block">
       <div className="print-match-header-row">
+        <span className="print-pts-badge">{pts}pt{pts !== 1 ? "s" : ""}</span>
         <span className="print-match-number">{matchNumber}.</span>
         <h3 className="print-match-title">{match.title || "Match"}</h3>
-        <span className="print-pts">{pts}pt{pts !== 1 ? "s" : ""}</span>
       </div>
       {match.description && <p className="print-description">{match.description}</p>}
       <div className="print-participants-grid">
@@ -92,9 +92,9 @@ function BattleRoyalBlock({
   return (
     <div className="print-match-block print-battle-royal">
       <div className="print-match-header-row">
+        <span className="print-pts-badge">{pts}pt{pts !== 1 ? "s" : ""}</span>
         <span className="print-match-number">{matchNumber}.</span>
         <h3 className="print-match-title">{match.title || "Battle Royal"}</h3>
-        <span className="print-pts">{pts}pt{pts !== 1 ? "s" : ""}</span>
       </div>
       {match.description && <p className="print-description">{match.description}</p>}
       <div className="print-br-layout">
@@ -175,12 +175,14 @@ export function PrintSheet({ sheet }: PrintSheetProps) {
       </div>
 
       {/* Footer */}
-      <footer className="print-footer">
-        <div className="print-tiebreaker">
-          <span className="print-label-inline">Tiebreaker &mdash; Main event total match time (mins):</span>
-          <span className="print-write-line-inline print-tiebreaker-line" />
-        </div>
-      </footer>
+      {sheet.tiebreakerLabel && sheet.tiebreakerLabel.trim() !== "" && (
+        <footer className="print-footer">
+          <div className="print-tiebreaker">
+            <span className="print-label-inline">Tiebreaker &mdash; {sheet.tiebreakerLabel}:</span>
+            <span className="print-write-line-inline print-tiebreaker-line" />
+          </div>
+        </footer>
+      )}
     </div>
   )
 }

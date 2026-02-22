@@ -39,6 +39,7 @@ const INITIAL_SHEET: PickEmSheet = {
   eventDate: "",
   eventTagline: "",
   defaultPoints: 1,
+  tiebreakerLabel: "Main event total match time (mins)",
   matches: [],
 }
 
@@ -270,7 +271,7 @@ export default function PickEmPage() {
       </main>
 
       {/* Print-only version: rendered off-screen but visible to print */}
-      <div className="hidden print:block">
+      <div className="hidden print:block" style={{ position: "absolute", top: 0, left: 0, width: "100%" }}>
         <PrintSheet sheet={sheet} />
       </div>
     </div>

@@ -58,6 +58,18 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
           />
         </div>
       </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="tiebreaker-label">Tiebreaker Question</Label>
+        <Input
+          id="tiebreaker-label"
+          placeholder="e.g. Main event total match time (mins)"
+          value={sheet.tiebreakerLabel}
+          onChange={(e) => onChange({ ...sheet, tiebreakerLabel: e.target.value })}
+        />
+        <p className="text-xs text-muted-foreground">
+          Leave blank to hide the tiebreaker from the printed sheet.
+        </p>
+      </div>
     </div>
   )
 }

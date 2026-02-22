@@ -85,6 +85,9 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    @apply bg-background;
+  }
   body {
     @apply bg-background text-foreground;
   }
@@ -239,6 +242,21 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   white-space: nowrap;
+}
+
+.print-pts-badge {
+  font-size: 6.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  color: #555;
+  background: #f0f0f0;
+  border: 1px solid #d0d0d0;
+  border-radius: 2px;
+  padding: 0 3px;
+  line-height: 1.4;
+  flex-shrink: 0;
 }
 
 .print-pts-inline {
