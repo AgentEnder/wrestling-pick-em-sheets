@@ -10,9 +10,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronUp,
-  GripVertical,
+  Copy,
   Plus,
   Trash2,
   X,
@@ -25,12 +27,15 @@ import type { Match, BonusQuestion, StandardMatch, BattleRoyalMatch } from "@/li
 interface MatchEditorProps {
   match: Match
   index: number
+  totalMatches: number
   defaultPoints: number
   onChange: (match: Match) => void
   onRemove: () => void
+  onDuplicate: () => void
+  onMove: (direction: "up" | "down") => void
 }
 
-export function MatchEditor({ match, index, defaultPoints, onChange, onRemove }: MatchEditorProps) {
+export function MatchEditor({ match, index, totalMatches, defaultPoints, onChange, onRemove, onDuplicate, onMove }: MatchEditorProps) {
   const [isOpen, setIsOpen] = useState(true)
   const [newParticipant, setNewParticipant] = useState("")
 
@@ -101,12 +106,32 @@ export function MatchEditor({ match, index, defaultPoints, onChange, onRemove }:
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <div className="rounded-lg border border-border bg-card">
+        <div className="flex items-center">
+          <div className="flex flex-col border-r border-border">
+            <button
+              type="button"
+              disabled={index === 0}
+              onClick={() => onMove("up")}
+              className="px-1.5 py-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25 transition-colors"
+              aria-label="Move match up"
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              disabled={index === totalMatches - 1}
+              onClick={() => onMove("down")}
+              className="px-1.5 py-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25 transition-colors"
+              aria-label="Move match down"
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+          </div>
         <CollapsibleTrigger asChild>
           <button
             type="button"
-            className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-secondary/50 transition-colors rounded-t-lg"
+            className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-secondary/50 transition-colors rounded-tr-lg"
           >
-            <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
             <div className="flex items-center gap-2 shrink-0">
               {match.type === "battleRoyal" ? (
                 <Crown className="h-4 w-4 text-primary" />
@@ -130,6 +155,7 @@ export function MatchEditor({ match, index, defaultPoints, onChange, onRemove }:
             )}
           </button>
         </CollapsibleTrigger>
+        </div>
 
         <CollapsibleContent>
           <div className="flex flex-col gap-4 border-t border-border px-4 py-4">
@@ -291,8 +317,18 @@ export function MatchEditor({ match, index, defaultPoints, onChange, onRemove }:
               </Button>
             </div>
 
-            {/* Remove match */}
-            <div className="flex justify-end border-t border-border pt-3">
+            {/* Actions */}
+            <div className="flex justify-between border-t border-border pt-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onDuplicate}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Copy className="h-4 w-4 mr-1" />
+                Duplicate
+              </Button>
               <Button
                 type="button"
                 variant="ghost"

@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EventSettings } from "@/components/event-settings"
 import { MatchEditor } from "@/components/match-editor"
 import { PrintSheet } from "@/components/print-sheet"
-import { Plus, Printer, Swords, Crown, RotateCcw } from "lucide-react"
+import { Printer, Swords, Crown, RotateCcw } from "lucide-react"
 import type { PickEmSheet, Match, StandardMatch, BattleRoyalMatch } from "@/lib/types"
 
 function createStandardMatch(): StandardMatch {
@@ -66,6 +66,34 @@ export default function PickEmPage() {
       ...prev,
       matches: prev.matches.filter((_, i) => i !== index),
     }))
+  }
+
+  function moveMatch(index: number, direction: "up" | "down") {
+    setSheet((prev) => {
+      const newMatches = [...prev.matches]
+      const swapIndex = direction === "up" ? index - 1 : index + 1
+      if (swapIndex < 0 || swapIndex >= newMatches.length) return prev
+      ;[newMatches[index], newMatches[swapIndex]] = [newMatches[swapIndex], newMatches[index]]
+      return { ...prev, matches: newMatches }
+    })
+  }
+
+  function duplicateMatch(index: number) {
+    setSheet((prev) => {
+      const source = prev.matches[index]
+      const clone = {
+        ...JSON.parse(JSON.stringify(source)),
+        id: crypto.randomUUID(),
+      }
+      // Give bonus questions new IDs too
+      clone.bonusQuestions = clone.bonusQuestions.map((q: { id: string }) => ({
+        ...q,
+        id: crypto.randomUUID(),
+      }))
+      const newMatches = [...prev.matches]
+      newMatches.splice(index + 1, 0, clone)
+      return { ...prev, matches: newMatches }
+    })
   }
 
   function handlePrint() {
@@ -162,9 +190,12 @@ export default function PickEmPage() {
                   key={match.id}
                   match={match}
                   index={i}
+                  totalMatches={sheet.matches.length}
                   defaultPoints={sheet.defaultPoints}
                   onChange={(updated) => updateMatch(i, updated)}
                   onRemove={() => removeMatch(i)}
+                  onDuplicate={() => duplicateMatch(i)}
+                  onMove={(direction) => moveMatch(i, direction)}
                 />
               ))}
 
