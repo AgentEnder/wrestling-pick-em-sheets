@@ -145,7 +145,10 @@ export default function PickEmPage() {
   }
 
   function handlePrint() {
-    toast.info("Opening print dialog...")
+    // window.print() must be the first call to preserve the browser's
+    // user-gesture trust chain. Any React state update (including toast())
+    // before this call can consume the gesture token and cause the browser
+    // to silently block the print dialog.
     try {
       window.print()
     } catch (err) {
