@@ -1,0 +1,63 @@
+"use client"
+
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import type { PickEmSheet } from "@/lib/types"
+
+interface EventSettingsProps {
+  sheet: PickEmSheet
+  onChange: (sheet: PickEmSheet) => void
+}
+
+export function EventSettings({ sheet, onChange }: EventSettingsProps) {
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold uppercase tracking-wide text-primary">
+        Event Details
+      </h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="event-name">Event Name</Label>
+          <Input
+            id="event-name"
+            placeholder="e.g. WrestleMania 42"
+            value={sheet.eventName}
+            onChange={(e) => onChange({ ...sheet, eventName: e.target.value })}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="event-date">Event Date</Label>
+          <Input
+            id="event-date"
+            type="date"
+            value={sheet.eventDate}
+            onChange={(e) => onChange({ ...sheet, eventDate: e.target.value })}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="event-tagline">Tagline / Subtitle</Label>
+          <Input
+            id="event-tagline"
+            placeholder="e.g. The Showcase of the Immortals"
+            value={sheet.eventTagline}
+            onChange={(e) => onChange({ ...sheet, eventTagline: e.target.value })}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="default-points">Default Points Per Correct Pick</Label>
+          <Input
+            id="default-points"
+            type="number"
+            min={1}
+            value={sheet.defaultPoints}
+            onChange={(e) =>
+              onChange({ ...sheet, defaultPoints: Math.max(1, parseInt(e.target.value) || 1) })
+            }
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
