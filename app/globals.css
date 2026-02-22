@@ -268,6 +268,16 @@
   flex-shrink: 0;
 }
 
+.print-score-field {
+  font-size: 8pt;
+  font-weight: 700;
+  color: #333;
+  white-space: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
 /* --- Participants grid --- */
 .print-participants-grid {
   display: flex;
@@ -407,6 +417,10 @@
   @page {
     size: letter;
     margin: 0.3in;
+  }
+
+  html {
+    background: white !important;
   }
 
   body {

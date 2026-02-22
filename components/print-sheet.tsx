@@ -26,7 +26,6 @@ function BonusQuestionsBlock({ questions, defaultPoints }: { questions: BonusQue
         return (
           <div key={q.id} className="print-bonus-q">
             <div className="flex items-baseline gap-1 flex-wrap">
-              <span className="print-pts-inline">({qPts}pt{qPts !== 1 ? "s" : ""})</span>
               <span className="print-q-text">{q.question || "Bonus question"}</span>
               {q.answerType === "multiple-choice" && q.options.length > 0 ? (
                 <span className="print-mc-options">
@@ -40,6 +39,7 @@ function BonusQuestionsBlock({ questions, defaultPoints }: { questions: BonusQue
               ) : (
                 <span className="print-write-line-inline" />
               )}
+              <span className="print-score-field">__/{qPts}</span>
             </div>
           </div>
         )
@@ -61,9 +61,9 @@ function StandardMatchBlock({
   return (
     <div className="print-match-block">
       <div className="print-match-header-row">
-        <span className="print-pts-badge">{pts}pt{pts !== 1 ? "s" : ""}</span>
         <span className="print-match-number">{matchNumber}.</span>
         <h3 className="print-match-title">{match.title || "Match"}</h3>
+        <span className="print-score-field">__/{pts}</span>
       </div>
       {match.description && <p className="print-description">{match.description}</p>}
       <div className="print-participants-grid">
@@ -92,9 +92,9 @@ function BattleRoyalBlock({
   return (
     <div className="print-match-block print-battle-royal">
       <div className="print-match-header-row">
-        <span className="print-pts-badge">{pts}pt{pts !== 1 ? "s" : ""}</span>
         <span className="print-match-number">{matchNumber}.</span>
         <h3 className="print-match-title">{match.title || "Battle Royal"}</h3>
+        <span className="print-score-field">__/{pts}</span>
       </div>
       {match.description && <p className="print-description">{match.description}</p>}
       <div className="print-br-layout">
