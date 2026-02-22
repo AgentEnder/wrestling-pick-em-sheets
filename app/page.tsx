@@ -7,6 +7,7 @@ import { EventSettings } from "@/components/event-settings"
 import { MatchEditor } from "@/components/match-editor"
 import { PrintSheet } from "@/components/print-sheet"
 import { Printer, Swords, Crown, RotateCcw, Download, Upload } from "lucide-react"
+import { toast } from "sonner"
 import type { PickEmSheet, Match, StandardMatch, BattleRoyalMatch, BonusQuestion } from "@/lib/types"
 
 const LOCAL_STORAGE_KEY = "pick-em-sheet"
@@ -47,6 +48,7 @@ const INITIAL_SHEET: PickEmSheet = {
 
 export default function PickEmPage() {
   const [sheet, setSheet] = useState<PickEmSheet>(INITIAL_SHEET)
+  const [hasHydrated, setHasHydrated] = useState(false)
   const [activeTab, setActiveTab] = useState("editor")
   const printRef = useRef<HTMLDivElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
@@ -60,13 +62,36 @@ export default function PickEmPage() {
       }
     } catch (err) {
       console.warn("Failed to restore saved sheet from localStorage:", err)
+    } finally {
+      setHasHydrated(true)
     }
   }, [])
 
-  // Persist to localStorage on every change
+  // Persist to localStorage only after hydration to avoid overwriting saved data
   useEffect(() => {
+    if (!hasHydrated) return
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sheet))
-  }, [sheet])
+  }, [sheet, hasHydrated])
+
+  // Global unhandled error / promise-rejection toasts
+  useEffect(() => {
+    function onError(event: ErrorEvent) {
+      toast.error(event.message || "An unexpected error occurred")
+    }
+    function onUnhandledRejection(event: PromiseRejectionEvent) {
+      const msg =
+        event.reason instanceof Error
+          ? event.reason.message
+          : String(event.reason)
+      toast.error(msg || "An unexpected error occurred")
+    }
+    window.addEventListener("error", onError)
+    window.addEventListener("unhandledrejection", onUnhandledRejection)
+    return () => {
+      window.removeEventListener("error", onError)
+      window.removeEventListener("unhandledrejection", onUnhandledRejection)
+    }
+  }, [])
 
   function addMatch(type: "standard" | "battleRoyal") {
     const newMatch: Match =
@@ -121,9 +146,12 @@ export default function PickEmPage() {
 
   function handlePrint() {
     setActiveTab("preview")
-    setTimeout(() => {
+    try {
       window.print()
-    }, 300)
+    } catch (err) {
+      toast.error("Failed to open print dialog")
+      console.error(err)
+    }
   }
 
   function handleReset() {
@@ -169,7 +197,7 @@ export default function PickEmPage() {
         setSheet(parsed)
         setActiveTab("editor")
       } catch {
-        alert("Failed to import: the file appears to be invalid.")
+        toast.error("Failed to import: the file appears to be invalid.")
       }
     }
     reader.readAsText(file)
