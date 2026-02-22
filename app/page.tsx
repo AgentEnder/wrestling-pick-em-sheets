@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { createRoot } from "react-dom/client"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EventSettings } from "@/components/event-settings"
@@ -145,19 +146,6 @@ export default function PickEmPage() {
   }
 
   function printViaIframe() {
-    const printableMarkup =
-      printRef.current?.innerHTML ??
-      document.querySelector(".print-only-wrapper")?.innerHTML
-
-    if (!printableMarkup) {
-      toast.error("Nothing to print yet")
-      return
-    }
-
-    const styleTags = Array.from(document.querySelectorAll("style, link[rel='stylesheet']"))
-      .map((node) => node.outerHTML)
-      .join("\n")
-
     const iframe = document.createElement("iframe")
     iframe.style.position = "fixed"
     iframe.style.width = "0"
@@ -167,39 +155,49 @@ export default function PickEmPage() {
     iframe.style.pointerEvents = "none"
     iframe.setAttribute("aria-hidden", "true")
 
+    let hasPrinted = false
+
     const cleanup = () => {
       window.setTimeout(() => {
         iframe.remove()
       }, 500)
     }
 
-    const printDocument = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${sheet.eventName || "Pick Em Sheet"}</title>
-    ${styleTags}
-  </head>
-  <body>
-    ${printableMarkup}
-  </body>
-</html>`
-
     iframe.onload = () => {
+      if (hasPrinted) return
+      hasPrinted = true
+
       const frameWindow = iframe.contentWindow
-      if (!frameWindow) {
+      const frameDocument = iframe.contentDocument
+
+      if (!frameWindow || !frameDocument) {
         toast.error("Failed to open print dialog")
         cleanup()
         return
       }
 
-      frameWindow.focus()
-      frameWindow.print()
-      cleanup()
+      frameDocument.title = sheet.eventName || "Pick Em Sheet"
+
+      Array.from(document.querySelectorAll("style, link[rel='stylesheet']")).forEach((node) => {
+        frameDocument.head.appendChild(node.cloneNode(true))
+      })
+
+      const printRoot = frameDocument.createElement("div")
+      frameDocument.body.appendChild(printRoot)
+
+      const root = createRoot(printRoot)
+      root.render(<PrintSheet sheet={sheet} />)
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          frameWindow.focus()
+          frameWindow.print()
+          root.unmount()
+          cleanup()
+        })
+      })
     }
 
-    iframe.srcdoc = printDocument
     document.body.appendChild(iframe)
   }
 
