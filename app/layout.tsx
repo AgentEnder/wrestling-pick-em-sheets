@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, Oswald } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { Toaster } from 'sonner'
 import './globals.css'
 
 const _inter = Inter({
@@ -48,6 +49,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${_inter.variable} ${_oswald.variable} font-sans antialiased`}>
         {children}
+        <Toaster theme="dark" richColors />
         <Analytics />
       </body>
     </html>
