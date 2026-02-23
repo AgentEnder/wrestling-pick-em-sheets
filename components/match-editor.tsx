@@ -259,24 +259,46 @@ export function MatchEditor({
 
             {/* Battle Royal surprise slots */}
             {match.type === "battleRoyal" && (
-              <div className="flex flex-col gap-1.5">
-                <Label>Surprise Entrant Slots</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={30}
-                  className="w-24"
-                  value={(match as BattleRoyalMatch).surpriseSlots}
-                  onChange={(e) =>
-                    onChange({
-                      ...match,
-                      surpriseSlots: Math.max(0, parseInt(e.target.value) || 0),
-                    } as BattleRoyalMatch)
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Write-in lines on the sheet for guessing surprise entrants
-                </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[auto_auto] sm:items-end sm:justify-start">
+                <div className="flex flex-col gap-1.5">
+                  <Label>Surprise Entrant Slots</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={30}
+                    className="w-24"
+                    value={(match as BattleRoyalMatch).surpriseSlots}
+                    onChange={(e) =>
+                      onChange({
+                        ...match,
+                        surpriseSlots: Math.max(0, parseInt(e.target.value) || 0),
+                      } as BattleRoyalMatch)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Write-in lines on the sheet for guessing guest entrants
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Guest Spot Pts</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    className="w-24"
+                    placeholder={String(defaultPoints)}
+                    value={(match as BattleRoyalMatch).surprisePoints ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      onChange({
+                        ...match,
+                        surprisePoints: val === "" ? null : Math.max(1, parseInt(val) || 1),
+                      } as BattleRoyalMatch)
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Points per correct guest spot guess (blank = {defaultPoints})
+                  </p>
+                </div>
               </div>
             )}
 

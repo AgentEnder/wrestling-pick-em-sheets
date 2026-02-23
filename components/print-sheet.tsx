@@ -89,6 +89,7 @@ function BattleRoyalBlock({
   defaultPoints: number
 }) {
   const pts = match.points ?? defaultPoints
+  const surprisePts = match.surprisePoints ?? defaultPoints
   return (
     <div className="print-match-block print-battle-royal">
       <div className="print-match-header-row">
@@ -113,12 +114,13 @@ function BattleRoyalBlock({
         {/* Surprise guess lines */}
         {match.surpriseSlots > 0 && (
           <div className="print-br-surprises">
-            <span className="print-label-inline">Surprise guesses:</span>
+            <span className="print-label-inline">Guest spot guesses:</span>
             <div className="print-surprise-grid">
               {Array.from({ length: match.surpriseSlots }).map((_, i) => (
                 <div key={i} className="print-surprise-line">
                   <span className="print-surprise-num">{i + 1}.</span>
                   <span className="print-write-line-inline" />
+                  <span className="print-score-field">__/{surprisePts}</span>
                 </div>
               ))}
             </div>
@@ -141,7 +143,11 @@ export function PrintSheet({ sheet }: PrintSheetProps) {
   const totalPoints = sheet.matches.reduce((sum, m) => {
     const matchPts = m.points ?? sheet.defaultPoints
     const bonusPts = m.bonusQuestions.reduce((s, q) => s + (q.points ?? sheet.defaultPoints), 0)
-    return sum + matchPts + bonusPts
+    const surprisePts =
+      m.type === "battleRoyal"
+        ? m.surpriseSlots * (m.surprisePoints ?? sheet.defaultPoints)
+        : 0
+    return sum + matchPts + bonusPts + surprisePts
   }, 0)
 
   return (
