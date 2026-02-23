@@ -90,6 +90,7 @@ function BattleRoyalBlock({
 }) {
   const pts = match.points ?? defaultPoints
   const surprisePts = match.surprisePoints ?? defaultPoints
+  const surpriseTotalPts = match.surpriseSlots * surprisePts
   return (
     <div className="print-match-block print-battle-royal">
       <div className="print-match-header-row">
@@ -114,13 +115,15 @@ function BattleRoyalBlock({
         {/* Surprise guess lines */}
         {match.surpriseSlots > 0 && (
           <div className="print-br-surprises">
-            <span className="print-label-inline">Guest spot guesses:</span>
+            <div className="print-match-header-row">
+              <span className="print-label-inline">Guest spot guesses:</span>
+              <span className="print-score-field">__/{surpriseTotalPts}</span>
+            </div>
             <div className="print-surprise-grid">
               {Array.from({ length: match.surpriseSlots }).map((_, i) => (
                 <div key={i} className="print-surprise-line">
                   <span className="print-surprise-num">{i + 1}.</span>
                   <span className="print-write-line-inline" />
-                  <span className="print-score-field">__/{surprisePts}</span>
                 </div>
               ))}
             </div>
