@@ -33,8 +33,27 @@ function createBattleRoyal(): BattleRoyalMatch {
     description: "",
     announcedParticipants: [],
     surpriseSlots: 5,
+    surprisePoints: null,
     bonusQuestions: [],
     points: null,
+  }
+}
+
+
+function normalizeMatch(match: Match): Match {
+  if (match.type === "battleRoyal") {
+    return {
+      ...match,
+      surprisePoints: match.surprisePoints ?? null,
+    }
+  }
+  return match
+}
+
+function normalizeSheet(sheet: PickEmSheet): PickEmSheet {
+  return {
+    ...sheet,
+    matches: sheet.matches.map((match) => normalizeMatch(match)),
   }
 }
 
@@ -59,7 +78,7 @@ export default function PickEmPage() {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY)
       if (saved) {
-        setSheet(JSON.parse(saved))
+        setSheet(normalizeSheet(JSON.parse(saved) as PickEmSheet))
       }
     } catch (err) {
       console.warn("Failed to restore saved sheet from localStorage:", err)
@@ -245,7 +264,7 @@ export default function PickEmPage() {
         const bytes = Uint8Array.from(decoded, (c) => c.charCodeAt(0))
         const json = new TextDecoder().decode(bytes)
         const parsed = JSON.parse(json) as PickEmSheet
-        setSheet(parsed)
+        setSheet(normalizeSheet(parsed))
         setActiveTab("editor")
       } catch {
         toast.error("Failed to import: the file appears to be invalid.")

@@ -23,6 +23,7 @@ export interface BattleRoyalMatch {
   description: string
   announcedParticipants: string[]
   surpriseSlots: number
+  surprisePoints: number | null // null means use sheet default
   bonusQuestions: BonusQuestion[]
   points: number | null // null means use sheet default
 }
