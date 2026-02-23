@@ -418,6 +418,13 @@
   display: none;
 }
 
+.preview-paper .print-sheet {
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  margin: 0 auto;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.15);
+}
+
 @media print {
   .print-only-wrapper {
     display: block;
