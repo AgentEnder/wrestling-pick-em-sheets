@@ -117,6 +117,7 @@ function BattleRoyalBlock({
           <div className="print-br-surprises">
             <div className="print-match-header-row">
               <span className="print-label-inline">Guest spot guesses:</span>
+              <span className="text-xs text-muted-foreground">({surprisePts} pts ea.)</span>
               <span className="print-score-field">__/{surpriseTotalPts}</span>
             </div>
             <div className="print-surprise-grid">
