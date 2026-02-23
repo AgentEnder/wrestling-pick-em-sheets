@@ -1,0 +1,137 @@
+import { Kysely, sql } from 'kysely'
+
+export async function up(db: Kysely<unknown>): Promise<void> {
+  await db.schema
+    .createTable('sheets')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('owner_id', 'text', (col) => col.notNull())
+    .addColumn('title', 'text', (col) => col.notNull())
+    .addColumn('payload_json', 'text', (col) => col.notNull())
+    .addColumn('public', 'integer', (col) => col.notNull().defaultTo(0))
+    .addColumn('created_at', 'text', (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .addColumn('updated_at', 'text', (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .execute()
+
+  await db.schema.createIndex('idx_sheets_owner_id').ifNotExists().on('sheets').column('owner_id').execute()
+  await db.schema.createIndex('idx_sheets_public').ifNotExists().on('sheets').column('public').execute()
+
+  await db.schema
+    .createTable('cards')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('owner_id', 'text')
+    .addColumn('template_card_id', 'text', (col) => col.references('cards.id').onDelete('set null'))
+    .addColumn('name', 'text')
+    .addColumn('event_name', 'text')
+    .addColumn('event_date', 'text')
+    .addColumn('event_tagline', 'text')
+    .addColumn('default_points', 'integer')
+    .addColumn('tiebreaker_label', 'text')
+    .addColumn('public', 'integer', (col) => col.notNull().defaultTo(0))
+    .addColumn('is_template', 'integer', (col) => col.notNull().defaultTo(0))
+    .addColumn('created_at', 'text', (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .addColumn('updated_at', 'text', (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .execute()
+
+  await db.schema.createIndex('idx_cards_owner_id').ifNotExists().on('cards').column('owner_id').execute()
+  await db.schema.createIndex('idx_cards_public').ifNotExists().on('cards').column('public').execute()
+  await db.schema
+    .createIndex('idx_cards_template_card_id')
+    .ifNotExists()
+    .on('cards')
+    .column('template_card_id')
+    .execute()
+
+  await db.schema
+    .createTable('card_overrides')
+    .ifNotExists()
+    .addColumn('card_id', 'text', (col) => col.primaryKey().references('cards.id').onDelete('cascade'))
+    .addColumn('name', 'text')
+    .addColumn('event_name', 'text')
+    .addColumn('event_date', 'text')
+    .addColumn('event_tagline', 'text')
+    .addColumn('default_points', 'integer')
+    .addColumn('tiebreaker_label', 'text')
+    .addColumn('updated_at', 'text', (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .execute()
+
+  await db.schema
+    .createTable('card_matches')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('card_id', 'text', (col) => col.notNull().references('cards.id').onDelete('cascade'))
+    .addColumn('sort_order', 'integer', (col) => col.notNull())
+    .addColumn('match_type', 'text', (col) => col.notNull())
+    .addColumn('title', 'text', (col) => col.notNull())
+    .addColumn('description', 'text', (col) => col.notNull().defaultTo(''))
+    .addColumn('participants_json', 'text', (col) => col.notNull().defaultTo('[]'))
+    .addColumn('announced_participants_json', 'text', (col) => col.notNull().defaultTo('[]'))
+    .addColumn('surprise_slots', 'integer')
+    .addColumn('bonus_questions_json', 'text', (col) => col.notNull().defaultTo('[]'))
+    .addColumn('points', 'integer')
+    .addColumn('is_custom', 'integer', (col) => col.notNull().defaultTo(0))
+    .addColumn('created_at', 'text', (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .addColumn('updated_at', 'text', (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .addCheckConstraint('chk_card_matches_match_type', sql`match_type IN ('standard', 'battleRoyal')`)
+    .execute()
+
+  await db.schema
+    .createIndex('idx_card_matches_card_id')
+    .ifNotExists()
+    .on('card_matches')
+    .column('card_id')
+    .execute()
+  await db.schema
+    .createIndex('idx_card_matches_sort_order')
+    .ifNotExists()
+    .on('card_matches')
+    .columns(['card_id', 'sort_order'])
+    .execute()
+  await db.schema
+    .createIndex('idx_card_matches_is_custom')
+    .ifNotExists()
+    .on('card_matches')
+    .columns(['card_id', 'is_custom'])
+    .execute()
+
+  await db.schema
+    .createTable('card_match_overrides')
+    .ifNotExists()
+    .addColumn('id', 'text', (col) => col.primaryKey())
+    .addColumn('card_id', 'text', (col) => col.notNull().references('cards.id').onDelete('cascade'))
+    .addColumn('template_match_id', 'text', (col) => col.notNull().references('card_matches.id').onDelete('cascade'))
+    .addColumn('hidden', 'integer', (col) => col.notNull().defaultTo(0))
+    .addColumn('sort_order', 'integer')
+    .addColumn('title', 'text')
+    .addColumn('description', 'text')
+    .addColumn('participants_json', 'text')
+    .addColumn('announced_participants_json', 'text')
+    .addColumn('surprise_slots', 'integer')
+    .addColumn('bonus_questions_json', 'text')
+    .addColumn('points', 'integer')
+    .addColumn('updated_at', 'text', (col) => col.notNull().defaultTo(sql`CURRENT_TIMESTAMP`))
+    .addUniqueConstraint('uq_card_match_overrides_card_id_template_match_id', ['card_id', 'template_match_id'])
+    .execute()
+
+  await db.schema
+    .createIndex('idx_card_match_overrides_card_id')
+    .ifNotExists()
+    .on('card_match_overrides')
+    .column('card_id')
+    .execute()
+  await db.schema
+    .createIndex('idx_card_match_overrides_template_match_id')
+    .ifNotExists()
+    .on('card_match_overrides')
+    .column('template_match_id')
+    .execute()
+}
+
+export async function down(db: Kysely<unknown>): Promise<void> {
+  await db.schema.dropTable('card_match_overrides').ifExists().execute()
+  await db.schema.dropTable('card_matches').ifExists().execute()
+  await db.schema.dropTable('card_overrides').ifExists().execute()
+  await db.schema.dropTable('cards').ifExists().execute()
+  await db.schema.dropTable('sheets').ifExists().execute()
+}
