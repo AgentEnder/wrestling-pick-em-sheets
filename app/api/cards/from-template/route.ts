@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { enforceSameOrigin } from '@/lib/server/csrf'
 import { getRequestUserId } from '@/lib/server/auth'
 import { createCardFromTemplate } from '@/lib/server/repositories/cards'
 
@@ -9,6 +10,11 @@ const createFromTemplateSchema = z.object({
 })
 
 export async function POST(request: Request) {
+  const csrfError = enforceSameOrigin(request)
+  if (csrfError) {
+    return csrfError
+  }
+
   const userId = await getRequestUserId()
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { enforceSameOrigin } from '@/lib/server/csrf'
 import { getRequestUserId } from '@/lib/server/auth'
 import { createOwnedCard, listReadableCards } from '@/lib/server/repositories/cards'
 
@@ -17,12 +18,17 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const csrfError = enforceSameOrigin(request)
+  if (csrfError) {
+    return csrfError
+  }
+
   const userId = await getRequestUserId()
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body = await request.json().catch(() => ({}))
+  const body = await request.json().catch(() => null)
   const parsed = createCardSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json(
