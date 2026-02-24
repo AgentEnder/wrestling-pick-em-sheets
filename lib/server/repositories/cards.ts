@@ -1,11 +1,12 @@
 import { randomUUID } from 'crypto'
 
+import { DEFAULT_BATTLE_ROYAL_MATCH_TYPE_ID, DEFAULT_MATCH_TYPE_ID, normalizeMatchTypeId } from '@/lib/match-types'
 import { db } from '@/lib/server/db/client'
 import type { CardMatchOverrides, CardMatches, Cards } from '@/lib/server/db/generated'
 import { canReadCard, isCardOwner } from '@/lib/server/db/permissions'
 import { isBattleRoyalMatchType, requireDbId, toDbMatchType, type DbMatchType } from '@/lib/server/db/types'
-import type { BonusQuestion, Match } from '@/lib/types'
-import type { Insertable, Selectable } from 'kysely'
+import type { BonusGradingRule, BonusQuestion, BonusQuestionValueType, Match } from '@/lib/types'
+import type { Insertable, Selectable, Updateable } from 'kysely'
 
 type CardSelectable = Selectable<Cards>
 type CardMatchSelectable = Selectable<CardMatches>
@@ -17,10 +18,13 @@ interface CardRow {
   template_card_id: string | null
   name: string | null
   event_name: string | null
+  promotion_name: string | null
   event_date: string | null
   event_tagline: string | null
   default_points: number | null
   tiebreaker_label: string | null
+  tiebreaker_is_time_based: number
+  event_bonus_questions_json: string
   public: number
   is_template: number
   created_at: string
@@ -32,11 +36,15 @@ interface CardMatchRow {
   card_id: string
   sort_order: number
   match_type: DbMatchType
+  match_type_id: string
+  match_type_name_override: string | null
+  is_elimination_style: number
   title: string
   description: string
   participants_json: string
   announced_participants_json: string
   surprise_slots: number | null
+  surprise_points: number | null
   bonus_questions_json: string
   points: number | null
   is_custom: number
@@ -52,9 +60,11 @@ interface CardMatchOverrideRow {
   sort_order: number | null
   title: string | null
   description: string | null
+  is_elimination_style: number | null
   participants_json: string | null
   announced_participants_json: string | null
   surprise_slots: number | null
+  surprise_points: number | null
   bonus_questions_json: string | null
   points: number | null
   updated_at: string
@@ -64,10 +74,13 @@ interface CardOverrideRow {
   card_id: string
   name: string | null
   event_name: string | null
+  promotion_name: string | null
   event_date: string | null
   event_tagline: string | null
   default_points: number | null
   tiebreaker_label: string | null
+  tiebreaker_is_time_based: number | null
+  event_bonus_questions_json: string | null
   updated_at: string
 }
 
@@ -90,11 +103,14 @@ export interface ResolvedCard {
   isTemplate: boolean
   name: string
   eventName: string
+  promotionName: string
   eventDate: string
   eventTagline: string
   defaultPoints: number
   tiebreakerLabel: string
+  tiebreakerIsTimeBased: boolean
   matches: Match[]
+  eventBonusQuestions: BonusQuestion[]
   createdAt: string
   updatedAt: string
 }
@@ -106,10 +122,13 @@ function asCardRow(row: CardSelectable): CardRow {
     template_card_id: row.template_card_id,
     name: row.name,
     event_name: row.event_name,
+    promotion_name: row.promotion_name,
     event_date: row.event_date,
     event_tagline: row.event_tagline,
     default_points: row.default_points,
     tiebreaker_label: row.tiebreaker_label,
+    tiebreaker_is_time_based: Number(row.tiebreaker_is_time_based),
+    event_bonus_questions_json: row.event_bonus_questions_json,
     public: Number(row.public),
     is_template: Number(row.is_template),
     created_at: row.created_at,
@@ -125,11 +144,20 @@ function asCardMatchRow(
     card_id: row.card_id,
     sort_order: row.sort_order,
     match_type: toDbMatchType(row.match_type),
+    match_type_id:
+      typeof row.match_type_id === 'string' && row.match_type_id.trim().length > 0
+        ? row.match_type_id
+        : toDbMatchType(row.match_type) === 'battleRoyal'
+          ? DEFAULT_BATTLE_ROYAL_MATCH_TYPE_ID
+          : DEFAULT_MATCH_TYPE_ID,
+    match_type_name_override: row.match_type_name_override,
+    is_elimination_style: Number(row.is_elimination_style),
     title: row.title,
     description: row.description,
     participants_json: row.participants_json,
     announced_participants_json: row.announced_participants_json,
     surprise_slots: row.surprise_slots,
+    surprise_points: row.surprise_points,
     bonus_questions_json: row.bonus_questions_json,
     points: row.points,
     is_custom: Number(row.is_custom),
@@ -149,9 +177,14 @@ function asCardMatchOverrideRow(
     sort_order: row.sort_order,
     title: row.title,
     description: row.description,
+    is_elimination_style:
+      row.is_elimination_style === null || row.is_elimination_style === undefined
+        ? null
+        : Number(row.is_elimination_style),
     participants_json: row.participants_json,
     announced_participants_json: row.announced_participants_json,
     surprise_slots: row.surprise_slots,
+    surprise_points: row.surprise_points,
     bonus_questions_json: row.bonus_questions_json,
     points: row.points,
     updated_at: row.updated_at,
@@ -169,28 +202,78 @@ function parseJsonArray<T>(json: string | null | undefined): T[] {
   }
 }
 
-function mapMatch(match: CardMatchRow): Match {
-  const bonusQuestions = parseJsonArray<BonusQuestion>(match.bonus_questions_json)
+function normalizeBonusQuestion(value: unknown): BonusQuestion | null {
+  if (!value || typeof value !== 'object') return null
 
-  if (isBattleRoyalMatchType(match.match_type)) {
-    return {
-      id: match.id,
-      type: 'battleRoyal',
-      title: match.title,
-      description: match.description,
-      announcedParticipants: parseJsonArray<string>(match.announced_participants_json),
-      surpriseSlots: match.surprise_slots ?? 0,
-      bonusQuestions,
-      points: match.points,
-    }
+  const raw = value as Partial<BonusQuestion> & {
+    isTimeBased?: boolean
+    isCountBased?: boolean
+    gradingMode?: BonusGradingRule
   }
+  const answerType = raw.answerType === 'multiple-choice' ? 'multiple-choice' : 'write-in'
+  const valueType: BonusQuestionValueType =
+    raw.valueType === 'numerical' || raw.valueType === 'time' || raw.valueType === 'rosterMember'
+      ? raw.valueType
+      : raw.isTimeBased === true
+        ? 'time'
+        : raw.isCountBased === true
+          ? 'numerical'
+          : 'string'
+  const options = Array.isArray(raw.options)
+    ? raw.options
+      .filter((option): option is string => typeof option === 'string')
+      .map((option) => option.trim())
+      .filter((option) => option.length > 0)
+    : []
+  const normalizedOptions = answerType === 'multiple-choice' ? options : []
+  const gradingRule: BonusGradingRule =
+    raw.gradingRule === 'closest' ||
+      raw.gradingRule === 'atOrAbove' ||
+      raw.gradingRule === 'atOrBelow'
+      ? raw.gradingRule
+      : raw.gradingMode === 'closest' ||
+          raw.gradingMode === 'atOrAbove' ||
+          raw.gradingMode === 'atOrBelow'
+        ? raw.gradingMode
+        : 'exact'
+
+  return {
+    id: typeof raw.id === 'string' ? raw.id : randomUUID(),
+    question: typeof raw.question === 'string' ? raw.question : '',
+    points: typeof raw.points === 'number' ? raw.points : null,
+    answerType,
+    options: normalizedOptions,
+    valueType,
+    gradingRule,
+  }
+}
+
+function parseBonusQuestions(json: string | null | undefined): BonusQuestion[] {
+  return parseJsonArray<unknown>(json)
+    .map((value) => normalizeBonusQuestion(value))
+    .filter((value): value is BonusQuestion => value !== null)
+}
+
+function mapMatch(match: CardMatchRow): Match {
+  const bonusQuestions = parseBonusQuestions(match.bonus_questions_json)
+  const isBattleRoyal = isBattleRoyalMatchType(match.match_type)
+  const participants = parseJsonArray<string>(match.participants_json)
+  const announcedParticipants = parseJsonArray<string>(match.announced_participants_json)
+  const resolvedParticipants = isBattleRoyal
+    ? announcedParticipants.length > 0 ? announcedParticipants : participants
+    : participants.length > 0 ? participants : announcedParticipants
 
   return {
     id: match.id,
-    type: 'standard',
+    type: normalizeMatchTypeId(match.match_type_id, isBattleRoyal),
+    typeLabelOverride: match.match_type_name_override ?? '',
+    isBattleRoyal,
+    isEliminationStyle: match.is_elimination_style === 1,
     title: match.title,
     description: match.description,
-    participants: parseJsonArray<string>(match.participants_json),
+    participants: resolvedParticipants,
+    surpriseSlots: isBattleRoyal ? match.surprise_slots ?? 0 : 0,
+    surpriseEntrantPoints: isBattleRoyal ? match.surprise_points : null,
     bonusQuestions,
     points: match.points,
   }
@@ -199,7 +282,7 @@ function mapMatch(match: CardMatchRow): Match {
 function mapSummary(card: CardRow): CardSummary {
   return {
     id: card.id,
-    ownerId: card.owner_id,
+    ownerId: null,
     templateCardId: card.template_card_id,
     name: card.name ?? 'Untitled card',
     isPublic: card.public === 1,
@@ -223,7 +306,13 @@ export async function listReadableCards(userId: string | null): Promise<CardSumm
     .orderBy('updated_at', 'desc')
     .execute()
 
-  return rows.map((row) => mapSummary(asCardRow(row)))
+  return rows.map((row) => {
+    const card = asCardRow(row)
+    return {
+      ...mapSummary(card),
+      ownerId: card.owner_id === userId ? card.owner_id : null,
+    }
+  })
 }
 
 export async function createCardFromTemplate(
@@ -251,10 +340,13 @@ export async function createCardFromTemplate(
       template_card_id: templateCardId,
       name: null,
       event_name: null,
+      promotion_name: null,
       event_date: null,
       event_tagline: null,
       default_points: null,
       tiebreaker_label: null,
+      tiebreaker_is_time_based: 0,
+      event_bonus_questions_json: '[]',
       public: 0,
       is_template: 0,
       created_at: now,
@@ -269,7 +361,10 @@ export async function createCardFromTemplate(
     .where((eb) => isCardOwner(eb, ownerId))
     .executeTakeFirstOrThrow()
 
-  return mapSummary(asCardRow(created))
+  return {
+    ...mapSummary(asCardRow(created)),
+    ownerId,
+  }
 }
 
 export async function createOwnedCard(
@@ -290,10 +385,13 @@ export async function createOwnedCard(
       template_card_id: null,
       name: input?.name?.trim() || null,
       event_name: '',
+      promotion_name: '',
       event_date: '',
       event_tagline: '',
       default_points: 1,
       tiebreaker_label: 'Main event total match time (mins)',
+      tiebreaker_is_time_based: 1,
+      event_bonus_questions_json: '[]',
       public: input?.isPublic ? 1 : 0,
       is_template: 0,
       created_at: now,
@@ -308,7 +406,10 @@ export async function createOwnedCard(
     .where((eb) => isCardOwner(eb, ownerId))
     .executeTakeFirstOrThrow()
 
-  return mapSummary(asCardRow(created))
+  return {
+    ...mapSummary(asCardRow(created)),
+    ownerId,
+  }
 }
 
 export async function updateCardOverrides(
@@ -317,10 +418,12 @@ export async function updateCardOverrides(
   input: {
     name?: string | null
     eventName?: string | null
+    promotionName?: string | null
     eventDate?: string | null
     eventTagline?: string | null
     defaultPoints?: number | null
     tiebreakerLabel?: string | null
+    tiebreakerIsTimeBased?: boolean | null
   },
 ): Promise<boolean> {
   const card = await db
@@ -340,20 +443,26 @@ export async function updateCardOverrides(
       card_id: cardId,
       name: input.name ?? null,
       event_name: input.eventName ?? null,
+      promotion_name: input.promotionName ?? null,
       event_date: input.eventDate ?? null,
       event_tagline: input.eventTagline ?? null,
       default_points: input.defaultPoints ?? null,
       tiebreaker_label: input.tiebreakerLabel ?? null,
+      tiebreaker_is_time_based:
+        input.tiebreakerIsTimeBased === undefined ? null : input.tiebreakerIsTimeBased ? 1 : 0,
       updated_at: now,
     })
     .onConflict((oc) =>
       oc.column('card_id').doUpdateSet({
         name: input.name ?? null,
         event_name: input.eventName ?? null,
+        promotion_name: input.promotionName ?? null,
         event_date: input.eventDate ?? null,
         event_tagline: input.eventTagline ?? null,
         default_points: input.defaultPoints ?? null,
         tiebreaker_label: input.tiebreakerLabel ?? null,
+        tiebreaker_is_time_based:
+          input.tiebreakerIsTimeBased === undefined ? null : input.tiebreakerIsTimeBased ? 1 : 0,
         updated_at: now,
       }),
     )
@@ -395,17 +504,20 @@ export async function findResolvedReadableCardById(
 
     return {
       id: card.id,
-      ownerId: card.owner_id,
+      ownerId: card.owner_id === userId ? card.owner_id : null,
       templateCardId: null,
       isPublic: card.public === 1,
       isTemplate: card.is_template === 1,
       name: card.name ?? 'Untitled card',
       eventName: card.event_name ?? '',
+      promotionName: card.promotion_name ?? '',
       eventDate: card.event_date ?? '',
       eventTagline: card.event_tagline ?? '',
       defaultPoints: card.default_points ?? 1,
       tiebreakerLabel: card.tiebreaker_label ?? 'Main event total match time (mins)',
+      tiebreakerIsTimeBased: card.tiebreaker_is_time_based === 1,
       matches: ownMatches,
+      eventBonusQuestions: parseBonusQuestions(card.event_bonus_questions_json),
       createdAt: card.created_at,
       updatedAt: card.updated_at,
     }
@@ -427,17 +539,20 @@ export async function findResolvedReadableCardById(
   if (!templateRaw) {
     return {
       id: card.id,
-      ownerId: card.owner_id,
+      ownerId: card.owner_id === userId ? card.owner_id : null,
       templateCardId: card.template_card_id,
       isPublic: card.public === 1,
       isTemplate: card.is_template === 1,
       name: 'Template unavailable',
       eventName: '',
+      promotionName: '',
       eventDate: '',
       eventTagline: '',
       defaultPoints: 1,
       tiebreakerLabel: 'Main event total match time (mins)',
+      tiebreakerIsTimeBased: false,
       matches: [],
+      eventBonusQuestions: [],
       createdAt: card.created_at,
       updatedAt: card.updated_at,
     }
@@ -489,10 +604,12 @@ export async function findResolvedReadableCardById(
       sort_order: matchOverride?.sort_order ?? templateMatch.sort_order,
       title: matchOverride?.title ?? templateMatch.title,
       description: matchOverride?.description ?? templateMatch.description,
+      is_elimination_style: matchOverride?.is_elimination_style ?? templateMatch.is_elimination_style,
       participants_json: matchOverride?.participants_json ?? templateMatch.participants_json,
       announced_participants_json:
         matchOverride?.announced_participants_json ?? templateMatch.announced_participants_json,
       surprise_slots: matchOverride?.surprise_slots ?? templateMatch.surprise_slots,
+      surprise_points: matchOverride?.surprise_points ?? templateMatch.surprise_points,
       bonus_questions_json: matchOverride?.bonus_questions_json ?? templateMatch.bonus_questions_json,
       points: matchOverride?.points ?? templateMatch.points,
     }
@@ -506,12 +623,13 @@ export async function findResolvedReadableCardById(
 
   return {
     id: card.id,
-    ownerId: card.owner_id,
+    ownerId: card.owner_id === userId ? card.owner_id : null,
     templateCardId: card.template_card_id,
     isPublic: card.public === 1,
     isTemplate: card.is_template === 1,
     name: resolveCardValue(override?.name, template.name, 'Untitled card'),
     eventName: resolveCardValue(override?.event_name, template.event_name, ''),
+    promotionName: resolveCardValue(override?.promotion_name, template.promotion_name, ''),
     eventDate: resolveCardValue(override?.event_date, template.event_date, ''),
     eventTagline: resolveCardValue(override?.event_tagline, template.event_tagline, ''),
     defaultPoints: resolveCardValue(override?.default_points, template.default_points, 1),
@@ -520,7 +638,12 @@ export async function findResolvedReadableCardById(
       template.tiebreaker_label,
       'Main event total match time (mins)',
     ),
+    tiebreakerIsTimeBased:
+      resolveCardValue(override?.tiebreaker_is_time_based, template.tiebreaker_is_time_based, 0) === 1,
     matches: mergedRows.map((row) => mapMatch(row)),
+    eventBonusQuestions: parseBonusQuestions(
+      resolveCardValue(override?.event_bonus_questions_json, template.event_bonus_questions_json, '[]'),
+    ),
     createdAt: card.created_at,
     updatedAt: card.updated_at,
   }
@@ -533,17 +656,23 @@ function toCardMatchInsert(
   isCustom: 0 | 1,
   now: string,
 ): Insertable<CardMatches> {
-  if (match.type === 'battleRoyal') {
+  const matchTypeId = normalizeMatchTypeId(match.type, match.isBattleRoyal)
+
+  if (match.isBattleRoyal) {
     return {
       id: randomUUID(),
       card_id: cardId,
       sort_order: sortOrder,
       match_type: 'battleRoyal',
+      match_type_id: matchTypeId,
+      match_type_name_override: match.typeLabelOverride.trim() ? match.typeLabelOverride.trim() : null,
+      is_elimination_style: match.isEliminationStyle ? 1 : 0,
       title: match.title,
       description: match.description,
-      participants_json: '[]',
-      announced_participants_json: JSON.stringify(match.announcedParticipants),
+      participants_json: JSON.stringify(match.participants),
+      announced_participants_json: JSON.stringify(match.participants),
       surprise_slots: match.surpriseSlots,
+      surprise_points: match.surpriseEntrantPoints,
       bonus_questions_json: JSON.stringify(match.bonusQuestions),
       points: match.points,
       is_custom: isCustom,
@@ -557,11 +686,15 @@ function toCardMatchInsert(
     card_id: cardId,
     sort_order: sortOrder,
     match_type: 'standard',
+    match_type_id: matchTypeId,
+    match_type_name_override: match.typeLabelOverride.trim() ? match.typeLabelOverride.trim() : null,
+    is_elimination_style: match.isEliminationStyle ? 1 : 0,
     title: match.title,
     description: match.description,
     participants_json: JSON.stringify(match.participants),
     announced_participants_json: '[]',
     surprise_slots: null,
+    surprise_points: null,
     bonus_questions_json: JSON.stringify(match.bonusQuestions),
     points: match.points,
     is_custom: isCustom,
@@ -575,11 +708,14 @@ export async function persistOwnedCardSheet(
   ownerId: string,
   input: {
     eventName: string
+    promotionName: string
     eventDate: string
     eventTagline: string
     defaultPoints: number
     tiebreakerLabel: string
+    tiebreakerIsTimeBased: boolean
     matches: Match[]
+    eventBonusQuestions: BonusQuestion[]
   },
 ): Promise<ResolvedCard | null> {
   const card = await db
@@ -600,10 +736,13 @@ export async function persistOwnedCardSheet(
       .set({
         name,
         event_name: card.template_card_id ? null : input.eventName,
+        promotion_name: card.template_card_id ? null : input.promotionName,
         event_date: card.template_card_id ? null : input.eventDate,
         event_tagline: card.template_card_id ? null : input.eventTagline,
         default_points: card.template_card_id ? null : input.defaultPoints,
         tiebreaker_label: card.template_card_id ? null : input.tiebreakerLabel,
+        tiebreaker_is_time_based: card.template_card_id ? 0 : input.tiebreakerIsTimeBased ? 1 : 0,
+        event_bonus_questions_json: card.template_card_id ? '[]' : JSON.stringify(input.eventBonusQuestions),
         updated_at: now,
       })
       .where('id', '=', cardId)
@@ -616,20 +755,26 @@ export async function persistOwnedCardSheet(
           card_id: cardId,
           name,
           event_name: input.eventName,
+          promotion_name: input.promotionName,
           event_date: input.eventDate,
           event_tagline: input.eventTagline,
           default_points: input.defaultPoints,
           tiebreaker_label: input.tiebreakerLabel,
+          tiebreaker_is_time_based: input.tiebreakerIsTimeBased ? 1 : 0,
+          event_bonus_questions_json: JSON.stringify(input.eventBonusQuestions),
           updated_at: now,
         })
         .onConflict((oc) =>
           oc.column('card_id').doUpdateSet({
             name,
             event_name: input.eventName,
+            promotion_name: input.promotionName,
             event_date: input.eventDate,
             event_tagline: input.eventTagline,
             default_points: input.defaultPoints,
             tiebreaker_label: input.tiebreakerLabel,
+            tiebreaker_is_time_based: input.tiebreakerIsTimeBased ? 1 : 0,
+            event_bonus_questions_json: JSON.stringify(input.eventBonusQuestions),
             updated_at: now,
           }),
         )
@@ -659,9 +804,11 @@ export async function persistOwnedCardSheet(
               sort_order: null,
               title: null,
               description: null,
+              is_elimination_style: null,
               participants_json: null,
               announced_participants_json: null,
               surprise_slots: null,
+              surprise_points: null,
               bonus_questions_json: null,
               points: null,
               updated_at: now,
@@ -718,4 +865,106 @@ export async function persistOwnedCardSheet(
   })
 
   return findResolvedReadableCardById(cardId, ownerId)
+}
+
+export async function listTemplateCardsForAdmin(): Promise<CardSummary[]> {
+  const rows = await db
+    .selectFrom('cards')
+    .selectAll()
+    .where('is_template', '=', 1)
+    .orderBy('updated_at', 'desc')
+    .execute()
+
+  return rows.map((row) => {
+    const card = asCardRow(row)
+    return {
+      ...mapSummary(card),
+      ownerId: card.owner_id,
+    }
+  })
+}
+
+export async function createTemplateCardForAdmin(
+  ownerId: string,
+  input?: {
+    name?: string
+    isPublic?: boolean
+  },
+): Promise<CardSummary> {
+  const now = new Date().toISOString()
+  const id = randomUUID()
+
+  await db
+    .insertInto('cards')
+    .values({
+      id,
+      owner_id: ownerId,
+      template_card_id: null,
+      name: input?.name?.trim() || null,
+      event_name: '',
+      promotion_name: '',
+      event_date: '',
+      event_tagline: '',
+      default_points: 1,
+      tiebreaker_label: 'Main event total match time (mins)',
+      tiebreaker_is_time_based: 1,
+      event_bonus_questions_json: '[]',
+      public: input?.isPublic === false ? 0 : 1,
+      is_template: 1,
+      created_at: now,
+      updated_at: now,
+    })
+    .execute()
+
+  const created = await db
+    .selectFrom('cards')
+    .selectAll()
+    .where('id', '=', id)
+    .executeTakeFirstOrThrow()
+
+  const card = asCardRow(created)
+  return {
+    ...mapSummary(card),
+    ownerId: card.owner_id,
+  }
+}
+
+export async function updateTemplateCardForAdmin(
+  cardId: string,
+  input: {
+    name?: string
+    isPublic?: boolean
+  },
+): Promise<boolean> {
+  const update: Updateable<Cards> = {
+    updated_at: new Date().toISOString(),
+  }
+
+  if (input.name !== undefined) {
+    const trimmed = input.name.trim()
+    update.name = trimmed ? trimmed : null
+  }
+
+  if (input.isPublic !== undefined) {
+    update.public = input.isPublic ? 1 : 0
+  }
+
+  const result = await db
+    .updateTable('cards')
+    .set(update)
+    .where('id', '=', cardId)
+    .where('is_template', '=', 1)
+    .executeTakeFirst()
+
+  return Number(result.numUpdatedRows ?? 0) > 0
+}
+
+export async function deleteTemplateCardForAdmin(cardId: string): Promise<boolean> {
+  const result = await db
+    .deleteFrom('cards')
+    .where('id', '=', cardId)
+    .where('is_template', '=', 1)
+    .executeTakeFirst()
+
+  return Number(result.numDeletedRows ?? 0) > 0
 }

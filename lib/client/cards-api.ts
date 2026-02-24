@@ -1,4 +1,4 @@
-import type { Match } from "@/lib/types"
+import type { BonusQuestion, Match } from "@/lib/types"
 
 interface ApiErrorBody {
   error?: string
@@ -27,22 +27,28 @@ export interface ResolvedCard {
   isTemplate: boolean
   name: string
   eventName: string
+  promotionName: string
   eventDate: string
   eventTagline: string
   defaultPoints: number
   tiebreakerLabel: string
+  tiebreakerIsTimeBased: boolean
   matches: Match[]
+  eventBonusQuestions: BonusQuestion[]
   createdAt: string
   updatedAt: string
 }
 
 export interface SaveCardInput {
   eventName: string
+  promotionName: string
   eventDate: string
   eventTagline: string
   defaultPoints: number
   tiebreakerLabel: string
+  tiebreakerIsTimeBased: boolean
   matches: Match[]
+  eventBonusQuestions: BonusQuestion[]
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
@@ -108,10 +114,12 @@ export async function updateCardOverrides(
   cardId: string,
   input: {
     eventName?: string | null
+    promotionName?: string | null
     eventDate?: string | null
     eventTagline?: string | null
     defaultPoints?: number | null
     tiebreakerLabel?: string | null
+    tiebreakerIsTimeBased?: boolean | null
   },
 ): Promise<void> {
   const response = await fetch(`/api/cards/${cardId}/overrides`, {
