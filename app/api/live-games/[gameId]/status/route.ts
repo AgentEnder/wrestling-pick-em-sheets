@@ -1,0 +1,41 @@
+import { NextResponse } from 'next/server'
+import { z } from 'zod'
+
+import { getRequestUserId } from '@/lib/server/auth'
+import { enforceSameOrigin } from '@/lib/server/csrf'
+import { updateLiveGameStatus } from '@/lib/server/repositories/live-games'
+
+const updateStatusSchema = z.object({
+  status: z.enum(['lobby', 'live', 'ended']),
+})
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ gameId: string }> },
+) {
+  const csrfError = enforceSameOrigin(request)
+  if (csrfError) {
+    return csrfError
+  }
+
+  const userId = await getRequestUserId()
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const body = await request.json().catch(() => null)
+  const parsed = updateStatusSchema.safeParse(body)
+
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid request body', issues: parsed.error.issues }, { status: 400 })
+  }
+
+  const { gameId } = await context.params
+  const updated = await updateLiveGameStatus(gameId, userId, parsed.data.status)
+
+  if (!updated) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  return NextResponse.json({ data: updated })
+}
