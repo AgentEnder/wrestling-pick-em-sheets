@@ -8,10 +8,63 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { AppNavbar } from "@/components/pick-em/app-navbar"
 import { createCard, createCardFromTemplate, listCards, type CardSummary } from "@/lib/client/cards-api"
+import type { PickEmSheet } from "@/lib/types"
 import { ArrowRight, CalendarDays, FolderOpen, Plus, RefreshCcw, Sparkles, Swords, Users } from "lucide-react"
 import { toast } from "sonner"
 
 const ADMIN_EMAIL = "craigorycoppola@gmail.com"
+const LOCAL_DRAFT_STORAGE_KEY = "pick-em-editor-draft-v2"
+
+const INITIAL_LOCAL_SHEET: PickEmSheet = {
+  eventName: "",
+  promotionName: "",
+  eventDate: "",
+  eventTagline: "",
+  defaultPoints: 1,
+  tiebreakerLabel: "Main event total match time (mins)",
+  tiebreakerIsTimeBased: true,
+  matches: [],
+  eventBonusQuestions: [],
+}
+
+interface LocalDraftState {
+  draftsByCardId: Record<string, PickEmSheet>
+  dirtyByCardId: Record<string, boolean>
+}
+
+function addLocalDraftCard(cardId: string, sheet: PickEmSheet) {
+  try {
+    const raw = localStorage.getItem(LOCAL_DRAFT_STORAGE_KEY)
+    const parsed = raw ? (JSON.parse(raw) as Partial<LocalDraftState>) : {}
+    const draftsByCardId =
+      parsed.draftsByCardId && typeof parsed.draftsByCardId === "object" ? parsed.draftsByCardId : {}
+    const dirtyByCardId =
+      parsed.dirtyByCardId && typeof parsed.dirtyByCardId === "object" ? parsed.dirtyByCardId : {}
+
+    draftsByCardId[cardId] = sheet
+    dirtyByCardId[cardId] = false
+
+    localStorage.setItem(
+      LOCAL_DRAFT_STORAGE_KEY,
+      JSON.stringify({
+        draftsByCardId,
+        dirtyByCardId,
+      } satisfies LocalDraftState),
+    )
+  } catch {
+    localStorage.setItem(
+      LOCAL_DRAFT_STORAGE_KEY,
+      JSON.stringify({
+        draftsByCardId: {
+          [cardId]: sheet,
+        },
+        dirtyByCardId: {
+          [cardId]: false,
+        },
+      } satisfies LocalDraftState),
+    )
+  }
+}
 
 function formatDate(value: string): string {
   if (!value) return "Unknown update time"
@@ -84,17 +137,19 @@ export function CardsWorkspace() {
   }, [loadCards])
 
   async function handleCreateCard() {
-    if (!userId) {
-      toast.error("Sign in to create a card")
-      return
-    }
-
     setIsCreatingCard(true)
     try {
-      const created = await createCard({
-        name: "Untitled card",
-      })
-      router.push(`/cards/${created.id}`)
+      if (userId) {
+        const created = await createCard({
+          name: "Untitled card",
+        })
+        router.push(`/cards/${created.id}`)
+        return
+      }
+
+      const localCardId = `local-${crypto.randomUUID()}`
+      addLocalDraftCard(localCardId, INITIAL_LOCAL_SHEET)
+      router.push(`/cards/${localCardId}`)
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to create card"
       toast.error(message)
@@ -175,7 +230,7 @@ export function CardsWorkspace() {
                   onClick={() => {
                     void handleCreateCard()
                   }}
-                  disabled={!isAuthLoaded || !userId || isCreatingCard}
+                  disabled={isCreatingCard}
                 >
                   <Plus className="h-4 w-4 mr-1" />
                   {isCreatingCard ? "Creating..." : "New Card"}

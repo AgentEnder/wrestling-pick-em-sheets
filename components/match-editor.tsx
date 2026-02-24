@@ -458,9 +458,32 @@ export function MatchEditor({
                 <Label>Match Type</Label>
                 <Select
                   value={match.type}
-                  onValueChange={(value) =>
-                    onChange({ ...match, type: value })
-                  }
+                  onValueChange={(value) => {
+                    const selectedMatchType = matchTypeOptions.find(
+                      (matchType) => matchType.id === value,
+                    );
+                    const defaultRuleSetIds =
+                      selectedMatchType?.defaultRuleSetIds ?? [];
+                    const isBattleRoyal = defaultRuleSetIds.includes(
+                      "timed-entry",
+                    );
+                    const isEliminationStyle = defaultRuleSetIds.includes(
+                      "elimination",
+                    );
+
+                    onChange({
+                      ...match,
+                      type: value,
+                      isBattleRoyal,
+                      isEliminationStyle,
+                      surpriseSlots: isBattleRoyal
+                        ? Math.max(match.surpriseSlots, 5)
+                        : 0,
+                      surpriseEntrantPoints: isBattleRoyal
+                        ? match.surpriseEntrantPoints
+                        : null,
+                    });
+                  }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select type" />
