@@ -9,6 +9,46 @@ export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
   : ColumnType<T, T | undefined, T>;
 
+export interface BonusQuestionPools {
+  created_at: Generated<string>;
+  description: Generated<string>;
+  id: string | null;
+  is_active: Generated<number>;
+  match_type_ids_json: Generated<string>;
+  name: string;
+  rule_set_ids_json: Generated<string>;
+  sort_order: Generated<number>;
+  updated_at: Generated<string>;
+}
+
+export interface BonusQuestionTemplates {
+  answer_type: string;
+  created_at: Generated<string>;
+  default_points: number | null;
+  default_section: Generated<string>;
+  id: string | null;
+  is_active: Generated<number>;
+  is_count_based: Generated<number>;
+  is_time_based: Generated<number>;
+  label: string;
+  options_json: Generated<string>;
+  pool_id: string;
+  question_template: string;
+  sort_order: Generated<number>;
+  updated_at: Generated<string>;
+  value_type: Generated<string>;
+}
+
+export interface CardLiveKeys {
+  card_id: string;
+  created_at: Generated<string>;
+  id: string | null;
+  is_official: Generated<number>;
+  payload_json: Generated<string>;
+  updated_at: Generated<string>;
+  user_id: string;
+}
+
 export interface CardMatches {
   announced_participants_json: Generated<string>;
   bonus_questions_json: Generated<string>;
@@ -16,11 +56,15 @@ export interface CardMatches {
   created_at: Generated<string>;
   description: Generated<string>;
   id: string | null;
+  is_elimination_style: Generated<number>;
   is_custom: Generated<number>;
   match_type: string;
+  match_type_id: Generated<string>;
+  match_type_name_override: string | null;
   participants_json: Generated<string>;
   points: number | null;
   sort_order: number;
+  surprise_points: number | null;
   surprise_slots: number | null;
   title: string;
   updated_at: Generated<string>;
@@ -33,9 +77,11 @@ export interface CardMatchOverrides {
   description: string | null;
   hidden: Generated<number>;
   id: string | null;
+  is_elimination_style: number | null;
   participants_json: string | null;
   points: number | null;
   sort_order: number | null;
+  surprise_points: number | null;
   surprise_slots: number | null;
   template_match_id: string;
   title: string | null;
@@ -45,10 +91,13 @@ export interface CardMatchOverrides {
 export interface CardOverrides {
   card_id: string | null;
   default_points: number | null;
+  event_bonus_questions_json: string | null;
   event_date: string | null;
   event_name: string | null;
   event_tagline: string | null;
   name: string | null;
+  promotion_name: string | null;
+  tiebreaker_is_time_based: number | null;
   tiebreaker_label: string | null;
   updated_at: Generated<string>;
 }
@@ -56,6 +105,7 @@ export interface CardOverrides {
 export interface Cards {
   created_at: Generated<string>;
   default_points: number | null;
+  event_bonus_questions_json: Generated<string>;
   event_date: string | null;
   event_name: string | null;
   event_tagline: string | null;
@@ -63,9 +113,80 @@ export interface Cards {
   is_template: Generated<number>;
   name: string | null;
   owner_id: string | null;
+  promotion_name: string | null;
   public: Generated<number>;
   template_card_id: string | null;
+  tiebreaker_is_time_based: Generated<number>;
   tiebreaker_label: string | null;
+  updated_at: Generated<string>;
+}
+
+export interface PromotionRosterMembers {
+  aliases_json: Generated<string>;
+  created_at: Generated<string>;
+  display_name: string;
+  id: string | null;
+  is_active: Generated<number>;
+  normalized_name: string;
+  promotion_id: string;
+  updated_at: Generated<string>;
+}
+
+export interface Promotions {
+  aliases_json: Generated<string>;
+  created_at: Generated<string>;
+  id: string | null;
+  is_active: Generated<number>;
+  name: string;
+  sort_order: Generated<number>;
+  updated_at: Generated<string>;
+}
+
+export interface MatchTypes {
+  created_at: Generated<string>;
+  default_rule_set_ids_json: Generated<string>;
+  default_is_battle_royal: Generated<number>;
+  id: string | null;
+  is_active: Generated<number>;
+  name: string;
+  sort_order: Generated<number>;
+  updated_at: Generated<string>;
+}
+
+export interface LiveGameEvents {
+  created_at: Generated<string>;
+  event_payload_json: Generated<string>;
+  event_type: string;
+  game_id: string;
+  id: string | null;
+}
+
+export interface LiveGamePlayers {
+  game_id: string;
+  id: string | null;
+  is_submitted: Generated<number>;
+  joined_at: Generated<string>;
+  last_seen_at: Generated<string>;
+  nickname: string;
+  normalized_nickname: string;
+  picks_json: Generated<string>;
+  session_token_hash: string;
+  submitted_at: string | null;
+  updated_at: Generated<string>;
+}
+
+export interface LiveGames {
+  card_id: string;
+  created_at: Generated<string>;
+  ended_at: string | null;
+  expires_at: string;
+  host_user_id: string;
+  id: string | null;
+  join_code: string;
+  key_payload_json: Generated<string>;
+  lock_state_json: Generated<string>;
+  mode: Generated<string>;
+  status: Generated<string>;
   updated_at: Generated<string>;
 }
 
@@ -79,10 +200,28 @@ export interface Sheets {
   updated_at: Generated<string>;
 }
 
+export interface SportsdbCacheEntries {
+  cache_key: string | null;
+  created_at: Generated<string>;
+  expires_at: string;
+  payload_json: string;
+  updated_at: Generated<string>;
+}
+
 export interface DB {
+  bonus_question_pools: BonusQuestionPools;
+  bonus_question_templates: BonusQuestionTemplates;
+  card_live_keys: CardLiveKeys;
   card_match_overrides: CardMatchOverrides;
   card_matches: CardMatches;
   card_overrides: CardOverrides;
   cards: Cards;
+  live_game_events: LiveGameEvents;
+  live_game_players: LiveGamePlayers;
+  live_games: LiveGames;
+  match_types: MatchTypes;
+  promotion_roster_members: PromotionRosterMembers;
+  promotions: Promotions;
   sheets: Sheets;
+  sportsdb_cache_entries: SportsdbCacheEntries;
 }
