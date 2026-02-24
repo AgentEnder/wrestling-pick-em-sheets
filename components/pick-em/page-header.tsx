@@ -1,34 +1,40 @@
-"use client"
+"use client";
 
-import { SignInButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
-import { Button } from "@/components/ui/button"
+import { AppNavbar } from "@/components/pick-em/app-navbar";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
+import { SignInButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import {
-  BadgeCheck,
+  ChevronLeft,
   Download,
   EllipsisVertical,
   Printer,
   RotateCcw,
   Save,
   Swords,
+  Timer,
   Upload,
-} from "lucide-react"
+} from "lucide-react";
+import Link from "next/link";
 
 interface PageHeaderProps {
-  hasMatches: boolean
-  hasEventName: boolean
-  onImportClick: () => void
-  onExport: () => void
-  onReset: () => void
-  onPrint: () => void
-  onSave: () => void
-  isSaving: boolean
-  canSave: boolean
+  hasMatches: boolean;
+  hasEventName: boolean;
+  onImportClick: () => void;
+  onExport: () => void;
+  onReset: () => void;
+  onPrint: () => void;
+  onSave: () => void;
+  isSaving: boolean;
+  canSave: boolean;
+  backHref?: string;
+  backLabel?: string;
+  liveHref?: string;
 }
 
 export function PageHeader({
@@ -41,11 +47,17 @@ export function PageHeader({
   onSave,
   isSaving,
   canSave,
+  backHref,
+  backLabel = "Back",
+  liveHref,
 }: PageHeaderProps) {
   return (
     <header className="no-print sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
+        <Link
+          href="/"
+          className="flex items-center gap-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-[0_0_0_1px_rgba(0,0,0,0.25)]">
             <Swords className="h-4 w-4 text-primary-foreground" />
           </div>
@@ -57,16 +69,33 @@ export function PageHeader({
               Create printable pick sheets for wrestling events
             </p>
           </div>
-          <span className="hidden items-center gap-1 rounded-full border border-border bg-card/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground lg:inline-flex">
-            <BadgeCheck className="h-3.5 w-3.5 text-primary" />
-            API connected
-          </span>
-        </div>
+        </Link>
 
-        <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          <AppNavbar />
+          {backHref ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={backHref}>
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                {backLabel}
+              </Link>
+            </Button>
+          ) : null}
+          {liveHref ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={liveHref}>
+                <Timer className="h-4 w-4 mr-1" />
+                Live Game
+              </Link>
+            </Button>
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="text-muted-foreground">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+              >
                 <EllipsisVertical className="h-4 w-4" />
                 <span className="sr-only">Open actions</span>
               </Button>
@@ -122,10 +151,10 @@ export function PageHeader({
             </SignInButton>
           </SignedOut>
           <SignedIn>
-            <UserButton />
+            <UserButton afterSignOutUrl="/" />
           </SignedIn>
         </div>
       </div>
     </header>
-  )
+  );
 }

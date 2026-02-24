@@ -1,5 +1,5 @@
-import { PickEmApp } from "@/components/pick-em/pick-em-app"
+import { CardsWorkspace } from "@/components/pick-em/cards-workspace"
 
 export default function Page() {
-  return <PickEmApp />
+  return <CardsWorkspace />
 }
