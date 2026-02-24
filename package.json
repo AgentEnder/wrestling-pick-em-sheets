@@ -10,7 +10,8 @@
     "db:migrate": "tsx scripts/migrate.ts up",
     "db:migrate:down": "tsx scripts/migrate.ts down",
     "db:migrate:latest": "tsx scripts/migrate.ts latest",
-    "db:codegen": "pnpm db:migrate:latest && kysely-codegen --config-file .kysely-codegenrc.js"
+    "db:codegen": "pnpm db:migrate:latest && kysely-codegen --config-file .kysely-codegenrc.js",
+    "build:deploy": "echo 'Running database migrations...' && pnpm run db:migrate:latest && echo 'Building Next.js app...' && next build"
   },
   "dependencies": {
     "@libsql/client": "^0.8.1",
