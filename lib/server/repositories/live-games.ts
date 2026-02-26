@@ -14,8 +14,13 @@ import type {
 import { isCardOwner } from '@/lib/server/db/permissions'
 import { sendLiveGamePushToSubscribers } from '@/lib/server/live-game-push'
 import { normalizeLiveKeyPayload } from '@/lib/server/repositories/live-keys'
+import {
+  answerEquals,
+  normalizeText,
+  parseValueByType,
+  scoreForQuestion,
+} from '@/lib/server/scoring'
 import type {
-  BonusGradingRule,
   BonusQuestion,
   LiveGame,
   LiveGameKeyPayload,
@@ -558,10 +563,6 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
-function normalizeText(value: string): string {
-  return value.trim().replace(/\s+/g, ' ').toLowerCase()
-}
-
 function buildJoinCode(): string {
   let code = ''
   for (let i = 0; i < JOIN_CODE_LENGTH; i += 1) {
@@ -592,22 +593,6 @@ async function createUniqueJoinCode(): Promise<string> {
   throw new Error('Failed to allocate a unique join code')
 }
 
-function getQuestionRule(question: BonusQuestion): BonusGradingRule {
-  if (question.valueType !== 'numerical' && question.valueType !== 'time') {
-    return 'exact'
-  }
-
-  if (
-    question.gradingRule === 'closest' ||
-    question.gradingRule === 'atOrAbove' ||
-    question.gradingRule === 'atOrBelow'
-  ) {
-    return question.gradingRule
-  }
-
-  return 'exact'
-}
-
 function toMatchBonusKey(matchId: string, questionId: string): string {
   return `${matchId}:${questionId}`
 }
@@ -625,50 +610,6 @@ function isMatchBonusLocked(lockState: LiveGameLockState, matchId: string, quest
 function isEventBonusLocked(lockState: LiveGameLockState, questionId: string): boolean {
   if (lockState.globalLocked) return true
   return lockState.eventBonusLocks[questionId]?.locked === true
-}
-
-function parseNumericLike(value: string): number | null {
-  const trimmed = value.trim()
-  if (!trimmed) return null
-
-  const numberLike = Number.parseFloat(trimmed)
-  if (Number.isFinite(numberLike)) {
-    return numberLike
-  }
-
-  return null
-}
-
-function parseTimeLike(value: string): number | null {
-  const trimmed = value.trim()
-  if (!trimmed) return null
-
-  if (trimmed.includes(':')) {
-    const parts = trimmed.split(':').map((part) => Number.parseFloat(part))
-    if (parts.some((part) => !Number.isFinite(part))) {
-      return null
-    }
-
-    let total = 0
-    for (let i = 0; i < parts.length; i += 1) {
-      total = (total * 60) + (parts[i] ?? 0)
-    }
-    return total
-  }
-
-  return parseNumericLike(trimmed)
-}
-
-function parseValueByType(value: string, valueType: BonusQuestion['valueType']): number | null {
-  if (valueType === 'time') {
-    return parseTimeLike(value)
-  }
-
-  if (valueType === 'numerical') {
-    return parseNumericLike(value)
-  }
-
-  return null
 }
 
 interface CardLookup {
@@ -1219,11 +1160,6 @@ function buildLockMutationEvents(
   return trimDetailedEvents(events)
 }
 
-function answerEquals(a: string, b: string): boolean {
-  if (!a.trim() || !b.trim()) return false
-  return normalizeText(a) === normalizeText(b)
-}
-
 function pickBonusAnswer(answers: LivePlayerAnswer[], questionId: string): string {
   const found = answers.find((answer) => answer.questionId === questionId)
   return found?.answer ?? ''
@@ -1250,60 +1186,6 @@ interface ClosestBucket {
   key: string
   points: number
   entries: Array<{ playerId: string; distance: number }>
-}
-
-function scoreForQuestion(
-  question: BonusQuestion,
-  defaultPoints: number,
-  keyAnswer: string,
-  playerAnswer: string,
-): { score: number; isClosestCandidate: boolean; distance?: number } {
-  const points = question.points ?? defaultPoints
-  if (!keyAnswer.trim() || !playerAnswer.trim() || points <= 0) {
-    return { score: 0, isClosestCandidate: false }
-  }
-
-  const rule = getQuestionRule(question)
-
-  if (rule === 'exact') {
-    if (question.valueType === 'numerical' || question.valueType === 'time') {
-      const keyValue = parseValueByType(keyAnswer, question.valueType)
-      const playerValue = parseValueByType(playerAnswer, question.valueType)
-
-      if (keyValue !== null && playerValue !== null) {
-        return {
-          score: Math.abs(keyValue - playerValue) < 0.0001 ? points : 0,
-          isClosestCandidate: false,
-        }
-      }
-    }
-
-    return {
-      score: answerEquals(keyAnswer, playerAnswer) ? points : 0,
-      isClosestCandidate: false,
-    }
-  }
-
-  const keyValue = parseValueByType(keyAnswer, question.valueType)
-  const playerValue = parseValueByType(playerAnswer, question.valueType)
-
-  if (keyValue === null || playerValue === null) {
-    return { score: 0, isClosestCandidate: false }
-  }
-
-  if (rule === 'atOrAbove') {
-    return { score: playerValue >= keyValue ? points : 0, isClosestCandidate: false }
-  }
-
-  if (rule === 'atOrBelow') {
-    return { score: playerValue <= keyValue ? points : 0, isClosestCandidate: false }
-  }
-
-  return {
-    score: 0,
-    isClosestCandidate: true,
-    distance: Math.abs(playerValue - keyValue),
-  }
 }
 
 function computeLeaderboard(
