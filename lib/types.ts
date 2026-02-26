@@ -1,6 +1,23 @@
-export type BonusQuestionAnswerType = "write-in" | "multiple-choice"
+export type BonusQuestionAnswerType = "write-in" | "multiple-choice" | "threshold"
 export type BonusQuestionValueType = "string" | "numerical" | "time" | "rosterMember"
 export type BonusGradingRule = "exact" | "closest" | "atOrAbove" | "atOrBelow"
+
+export interface ScoreOverride {
+  questionId: string
+  playerNickname: string
+  accepted: boolean
+  source: "auto" | "host"
+  confidence: number
+}
+
+export interface WinnerOverride {
+  matchId: string
+  playerNickname: string
+  accepted: boolean
+  source: "auto" | "host"
+  confidence: number
+}
+
 export type BonusPoolRuleSet = "timed-entry" | "elimination"
 
 export interface BonusQuestion {
@@ -11,6 +28,8 @@ export interface BonusQuestion {
   options: string[] // only used when answerType is "multiple-choice"
   valueType: BonusQuestionValueType
   gradingRule?: BonusGradingRule
+  thresholdValue?: number
+  thresholdLabels?: [string, string]
 }
 
 export interface BonusQuestionTemplate {
@@ -121,6 +140,8 @@ export interface CardLiveKeyPayload {
   tiebreakerAnswer: string
   tiebreakerRecordedAt: string | null
   tiebreakerTimerId: string | null
+  scoreOverrides: ScoreOverride[]
+  winnerOverrides: WinnerOverride[]
 }
 
 export interface CardLiveKey {
@@ -165,8 +186,15 @@ export interface LiveGame {
   hostUserId: string
   mode: LiveGameMode
   joinCode: string
+  qrJoinSecret: string | null
   allowLateJoins: boolean
   status: LiveGameStatus
+  hostJoinIp: string | null
+  hostGeoCity: string | null
+  hostGeoCountry: string | null
+  hostGeoLatitude: number | null
+  hostGeoLongitude: number | null
+  geoRadiusKm: number
   expiresAt: string
   endedAt: string | null
   createdAt: string
@@ -178,6 +206,14 @@ export interface LiveGame {
 export interface LiveGamePlayer {
   id: string
   gameId: string
+  joinStatus: "pending" | "approved" | "rejected"
+  approvedAt: string | null
+  joinRequestIp: string | null
+  joinRequestCity: string | null
+  joinRequestCountry: string | null
+  joinRequestLatitude: number | null
+  joinRequestLongitude: number | null
+  joinRequestDistanceKm: number | null
   authMethod: "guest" | "clerk"
   clerkUserId: string | null
   nickname: string

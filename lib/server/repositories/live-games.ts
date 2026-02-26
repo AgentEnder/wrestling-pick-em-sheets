@@ -79,6 +79,21 @@ export interface LiveGameComputedState {
     model: string | null
   }>
   leaderboard: LiveGameLeaderboardEntry[]
+  pendingJoinRequests: Array<{
+    id: string
+    nickname: string
+    joinedAt: string
+    authMethod: 'guest' | 'clerk'
+    browserName: string | null
+    osName: string | null
+    deviceType: string | null
+    platform: string | null
+    model: string | null
+    joinRequestIp: string | null
+    joinRequestCity: string | null
+    joinRequestCountry: string | null
+    joinRequestDistanceKm: number | null
+  }>
   events: LiveGameEventFeedItem[]
   playerCount: number
   submittedCount: number
@@ -128,7 +143,21 @@ interface ParsedJoinDeviceInfo {
 interface JoinLiveGameOptions {
   clerkUserId?: string | null
   deviceInfo?: JoinDeviceInfoInput
+  requestIp?: string | null
+  requestCity?: string | null
+  requestCountry?: string | null
+  requestLatitude?: number | null
+  requestLongitude?: number | null
+  bypassSecret?: string | null
 }
+
+type JoinDecision = {
+  status: 'pending' | 'approved'
+  approvedAt: string | null
+  distanceKm: number | null
+}
+
+const DEFAULT_GEO_RADIUS_KM = 50
 
 function normalizeNickname(value: string): string {
   return value.trim().replace(/\s+/g, ' ')
@@ -142,6 +171,91 @@ function normalizeOptionalText(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
+}
+
+function normalizeOptionalNumber(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return value
+}
+
+function normalizeIpForComparison(value: string | null): string | null {
+  if (!value) return null
+  let normalized = value.trim().toLowerCase()
+  if (!normalized) return null
+
+  if (normalized.startsWith('::ffff:')) {
+    normalized = normalized.slice(7)
+  }
+
+  const bracketMatch = normalized.match(/^\[([^[\]]+)\](?::\d+)?$/)
+  if (bracketMatch?.[1]) {
+    normalized = bracketMatch[1]
+  } else {
+    const ipv4PortMatch = normalized.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/)
+    if (ipv4PortMatch?.[1]) {
+      normalized = ipv4PortMatch[1]
+    }
+  }
+
+  return normalized
+}
+
+function parseIpv4(value: string | null): [number, number, number, number] | null {
+  if (!value) return null
+  const parts = value.split('.')
+  if (parts.length !== 4) return null
+  const parsed = parts.map((part) => Number.parseInt(part, 10))
+  if (parsed.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null
+  return [parsed[0], parsed[1], parsed[2], parsed[3]]
+}
+
+function isPrivateIpv4(value: string | null): boolean {
+  const parsed = parseIpv4(value)
+  if (!parsed) return false
+  const [a, b] = parsed
+  if (a === 10) return true
+  if (a === 192 && b === 168) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  return false
+}
+
+function isSameLanSubnet(requestIp: string | null, hostIp: string | null): boolean {
+  if (!isPrivateIpv4(requestIp) || !isPrivateIpv4(hostIp)) return false
+  const request = parseIpv4(requestIp)
+  const host = parseIpv4(hostIp)
+  if (!request || !host) return false
+  // Conservative LAN heuristic: same /24 private subnet.
+  return request[0] === host[0] && request[1] === host[1] && request[2] === host[2]
+}
+
+function shouldLogLobbyDebug(): boolean {
+  return process.env.NODE_ENV !== 'test'
+}
+
+function lobbyDebugLog(event: string, payload: Record<string, unknown>): void {
+  if (!shouldLogLobbyDebug()) return
+  console.info(`[live-games:lobby] ${event}`, payload)
+}
+
+function degreesToRadians(value: number): number {
+  return value * (Math.PI / 180)
+}
+
+function haversineKm(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+): number {
+  const earthRadiusKm = 6371
+  const dLat = degreesToRadians(b.latitude - a.latitude)
+  const dLon = degreesToRadians(b.longitude - a.longitude)
+  const lat1 = degreesToRadians(a.latitude)
+  const lat2 = degreesToRadians(b.latitude)
+
+  const term =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2)
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
+
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(term))
 }
 
 function parseJoinDeviceInfo(deviceInfo?: JoinDeviceInfoInput): ParsedJoinDeviceInfo {
@@ -333,8 +447,15 @@ function mapLiveGame(row: LiveGameSelectable): LiveGame {
     hostUserId: row.host_user_id,
     mode,
     joinCode: row.join_code,
+    qrJoinSecret: row.qr_join_secret,
     allowLateJoins: Number(row.allow_late_joins) === 1,
     status,
+    hostJoinIp: row.host_join_ip,
+    hostGeoCity: row.host_geo_city,
+    hostGeoCountry: row.host_geo_country,
+    hostGeoLatitude: normalizeOptionalNumber(row.host_geo_latitude),
+    hostGeoLongitude: normalizeOptionalNumber(row.host_geo_longitude),
+    geoRadiusKm: Number.isFinite(Number(row.geo_radius_km)) ? Number(row.geo_radius_km) : DEFAULT_GEO_RADIUS_KM,
     expiresAt: row.expires_at,
     endedAt: row.ended_at,
     createdAt: row.created_at,
@@ -348,6 +469,14 @@ function mapLiveGamePlayer(row: LiveGamePlayerSelectable): LiveGamePlayer {
   return {
     id: String(row.id),
     gameId: row.game_id,
+    joinStatus: row.join_status === 'pending' || row.join_status === 'rejected' ? row.join_status : 'approved',
+    approvedAt: row.approved_at,
+    joinRequestIp: row.join_request_ip,
+    joinRequestCity: row.join_request_city,
+    joinRequestCountry: row.join_request_country,
+    joinRequestLatitude: normalizeOptionalNumber(row.join_request_latitude),
+    joinRequestLongitude: normalizeOptionalNumber(row.join_request_longitude),
+    joinRequestDistanceKm: normalizeOptionalNumber(row.join_request_distance_km),
     authMethod: row.auth_method === 'clerk' ? 'clerk' : 'guest',
     clerkUserId: row.clerk_user_id,
     nickname: row.nickname,
@@ -440,6 +569,10 @@ function buildJoinCode(): string {
     code += JOIN_CODE_ALPHABET[index]
   }
   return code
+}
+
+function buildJoinBypassSecret(): string {
+  return randomBytes(32).toString('base64url')
 }
 
 async function createUniqueJoinCode(): Promise<string> {
@@ -1451,6 +1584,8 @@ function mergeLiveKeyPayload(previous: LiveGameKeyPayload, incoming: LiveGameKey
     tiebreakerAnswer: incoming.tiebreakerAnswer,
     tiebreakerRecordedAt: incoming.tiebreakerRecordedAt,
     tiebreakerTimerId: incoming.tiebreakerTimerId,
+    scoreOverrides: incoming.scoreOverrides,
+    winnerOverrides: incoming.winnerOverrides,
   })
 }
 
@@ -1532,12 +1667,23 @@ export function hashLiveGameSessionToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 
-export async function createLiveGame(cardId: string, hostUserId: string): Promise<LiveGame | null> {
+export async function createLiveGame(
+  cardId: string,
+  hostUserId: string,
+  options?: {
+    hostIp?: string | null
+    hostCity?: string | null
+    hostCountry?: string | null
+    hostLatitude?: number | null
+    hostLongitude?: number | null
+  },
+): Promise<LiveGame | null> {
   const ownsCard = await getHostOwnedCard(cardId, hostUserId)
   if (!ownsCard) return null
 
   const now = nowIso()
   const joinCode = await createUniqueJoinCode()
+  const qrJoinSecret = buildJoinBypassSecret()
   const id = randomUUID()
 
   const values: Insertable<LiveGames> = {
@@ -1548,6 +1694,13 @@ export async function createLiveGame(cardId: string, hostUserId: string): Promis
     join_code: joinCode,
     allow_late_joins: 1,
     status: 'lobby',
+    host_join_ip: normalizeOptionalText(options?.hostIp),
+    host_geo_city: normalizeOptionalText(options?.hostCity),
+    host_geo_country: normalizeOptionalText(options?.hostCountry),
+    host_geo_latitude: normalizeOptionalNumber(options?.hostLatitude),
+    host_geo_longitude: normalizeOptionalNumber(options?.hostLongitude),
+    geo_radius_km: DEFAULT_GEO_RADIUS_KM,
+    qr_join_secret: qrJoinSecret,
     key_payload_json: JSON.stringify(normalizeLiveKeyPayload(null)),
     lock_state_json: JSON.stringify(normalizeLiveGameLockState(null)),
     expires_at: new Date(Date.now() + LIVE_GAME_DURATION_MS).toISOString(),
@@ -1555,6 +1708,20 @@ export async function createLiveGame(cardId: string, hostUserId: string): Promis
     created_at: now,
     updated_at: now,
   }
+
+  lobbyDebugLog('host-room-created', {
+    gameId: id,
+    joinCode,
+    hostUserId,
+    hostJoinIp: values.host_join_ip ?? null,
+    hostJoinIpNormalized: normalizeIpForComparison(values.host_join_ip ?? null),
+    hostGeoCity: values.host_geo_city ?? null,
+    hostGeoCountry: values.host_geo_country ?? null,
+    hostGeoLatitude: values.host_geo_latitude ?? null,
+    hostGeoLongitude: values.host_geo_longitude ?? null,
+    geoRadiusKm: values.geo_radius_km ?? DEFAULT_GEO_RADIUS_KM,
+    hasQrJoinSecret: typeof values.qr_join_secret === 'string' && values.qr_join_secret.length > 0,
+  })
 
   await db.insertInto('live_games').values(values).execute()
 
@@ -1840,16 +2007,210 @@ export async function updateLiveGameKeyForHost(
 export async function findLiveGamePlayerBySession(
   gameId: string,
   sessionTokenHash: string,
+  options?: { includeNonApproved?: boolean },
 ): Promise<LiveGamePlayer | null> {
-  const row = await db
+  let query = db
     .selectFrom('live_game_players')
     .selectAll()
     .where('game_id', '=', gameId)
     .where('session_token_hash', '=', sessionTokenHash)
-    .executeTakeFirst()
+  if (!options?.includeNonApproved) {
+    query = query.where('join_status', '=', 'approved')
+  }
+  const row = await query.executeTakeFirst()
 
   if (!row) return null
   return mapLiveGamePlayer(row)
+}
+
+function evaluateJoinDecision(game: LiveGame, options?: JoinLiveGameOptions): JoinDecision {
+  const requestIp = normalizeOptionalText(options?.requestIp)
+  const requestIpNormalized = normalizeIpForComparison(requestIp)
+  const hostIpNormalized = normalizeIpForComparison(game.hostJoinIp)
+  const bypassSecret = normalizeOptionalText(options?.bypassSecret)
+  const requestLatitude = normalizeOptionalNumber(options?.requestLatitude)
+  const requestLongitude = normalizeOptionalNumber(options?.requestLongitude)
+  const hasHostCoordinates = game.hostGeoLatitude !== null && game.hostGeoLongitude !== null
+  const hasGuardrails = Boolean(game.hostJoinIp) || hasHostCoordinates || Boolean(game.qrJoinSecret)
+  const hasBypassSecret = Boolean(bypassSecret)
+  const bypassMatched = Boolean(bypassSecret && game.qrJoinSecret && bypassSecret === game.qrJoinSecret)
+  const sameIpMatched = Boolean(
+    requestIp
+    && game.hostJoinIp
+    && requestIpNormalized
+    && hostIpNormalized
+    && requestIpNormalized === hostIpNormalized,
+  )
+  const sameLanMatched = isSameLanSubnet(requestIpNormalized, hostIpNormalized)
+
+  if (!hasGuardrails) {
+    lobbyDebugLog('join-decision', {
+      gameId: game.id,
+      joinCode: game.joinCode,
+      reason: 'no-guardrails-configured',
+      decision: 'approved',
+      requestIp,
+      requestIpNormalized,
+      hostIp: game.hostJoinIp,
+      hostIpNormalized,
+      hasBypassSecret,
+      bypassMatched,
+    })
+    return {
+      status: 'approved',
+      approvedAt: nowIso(),
+      distanceKm: null,
+    }
+  }
+
+  if (bypassMatched) {
+    lobbyDebugLog('join-decision', {
+      gameId: game.id,
+      joinCode: game.joinCode,
+      reason: 'qr-secret-match',
+      decision: 'approved',
+      requestIp,
+      requestIpNormalized,
+      hostIp: game.hostJoinIp,
+      hostIpNormalized,
+      hasBypassSecret,
+      bypassMatched,
+    })
+    return {
+      status: 'approved',
+      approvedAt: nowIso(),
+      distanceKm: null,
+    }
+  }
+
+  if (sameIpMatched) {
+    lobbyDebugLog('join-decision', {
+      gameId: game.id,
+      joinCode: game.joinCode,
+      reason: 'same-public-ip-match',
+      decision: 'approved',
+      requestIp,
+      requestIpNormalized,
+      hostIp: game.hostJoinIp,
+      hostIpNormalized,
+      hasBypassSecret,
+      bypassMatched,
+    })
+    return {
+      status: 'approved',
+      approvedAt: nowIso(),
+      distanceKm: null,
+    }
+  }
+
+  if (sameLanMatched) {
+    lobbyDebugLog('join-decision', {
+      gameId: game.id,
+      joinCode: game.joinCode,
+      reason: 'same-lan-subnet-match',
+      decision: 'approved',
+      requestIp,
+      requestIpNormalized,
+      hostIp: game.hostJoinIp,
+      hostIpNormalized,
+      hasBypassSecret,
+      bypassMatched,
+    })
+    return {
+      status: 'approved',
+      approvedAt: nowIso(),
+      distanceKm: null,
+    }
+  }
+
+  if (
+    hasHostCoordinates
+    && requestLatitude !== null
+    && requestLongitude !== null
+    && game.hostGeoLatitude !== null
+    && game.hostGeoLongitude !== null
+  ) {
+    const distanceKm = haversineKm(
+      { latitude: requestLatitude, longitude: requestLongitude },
+      { latitude: game.hostGeoLatitude, longitude: game.hostGeoLongitude },
+    )
+    const radiusKm = Math.max(0, game.geoRadiusKm || DEFAULT_GEO_RADIUS_KM)
+
+    if (distanceKm <= radiusKm) {
+      lobbyDebugLog('join-decision', {
+        gameId: game.id,
+        joinCode: game.joinCode,
+        reason: 'geo-within-radius',
+        decision: 'approved',
+        requestIp,
+        requestIpNormalized,
+        hostIp: game.hostJoinIp,
+        hostIpNormalized,
+        requestLatitude,
+        requestLongitude,
+        hostLatitude: game.hostGeoLatitude,
+        hostLongitude: game.hostGeoLongitude,
+        distanceKm,
+        radiusKm,
+        hasBypassSecret,
+        bypassMatched,
+      })
+      return {
+        status: 'approved',
+        approvedAt: nowIso(),
+        distanceKm,
+      }
+    }
+
+    lobbyDebugLog('join-decision', {
+      gameId: game.id,
+      joinCode: game.joinCode,
+      reason: 'geo-outside-radius',
+      decision: 'pending',
+      requestIp,
+      requestIpNormalized,
+      hostIp: game.hostJoinIp,
+      hostIpNormalized,
+      requestLatitude,
+      requestLongitude,
+      hostLatitude: game.hostGeoLatitude,
+      hostLongitude: game.hostGeoLongitude,
+      distanceKm,
+      radiusKm,
+      hasBypassSecret,
+      bypassMatched,
+    })
+    return {
+      status: 'pending',
+      approvedAt: null,
+      distanceKm,
+    }
+  }
+
+  lobbyDebugLog('join-decision', {
+    gameId: game.id,
+    joinCode: game.joinCode,
+    reason: 'no-auto-approval-signal',
+    decision: 'pending',
+    requestIp,
+    requestIpNormalized,
+    hostIp: game.hostJoinIp,
+    hostIpNormalized,
+    requestLatitude,
+    requestLongitude,
+    hostLatitude: game.hostGeoLatitude,
+    hostLongitude: game.hostGeoLongitude,
+    hasHostCoordinates,
+    hasBypassSecret,
+    bypassMatched,
+    sameIpMatched,
+    sameLanMatched,
+  })
+  return {
+    status: 'pending',
+    approvedAt: null,
+    distanceKm: null,
+  }
 }
 
 export async function joinLiveGameWithNickname(
@@ -1859,7 +2220,7 @@ export async function joinLiveGameWithNickname(
   options?: JoinLiveGameOptions,
 ): Promise<
   | { ok: true; game: LiveGame; player: LiveGamePlayer; isNew: boolean }
-  | { ok: false; reason: 'not-found' | 'expired' | 'ended' | 'entry-closed' | 'nickname-taken' | 'session-mismatch' }
+  | { ok: false; reason: 'not-found' | 'expired' | 'ended' | 'entry-closed' | 'nickname-taken' | 'session-mismatch' | 'pending-approval' | 'rejected' }
 > {
   const game = await getLiveGameByJoinCode(joinCode)
   if (!game) {
@@ -1879,6 +2240,12 @@ export async function joinLiveGameWithNickname(
   const now = nowIso()
   const deviceInfo = parseJoinDeviceInfo(options?.deviceInfo)
   const normalizedClerkUserId = normalizeOptionalText(options?.clerkUserId)
+  const requestIp = normalizeOptionalText(options?.requestIp)
+  const requestCity = normalizeOptionalText(options?.requestCity)
+  const requestCountry = normalizeOptionalText(options?.requestCountry)
+  const requestLatitude = normalizeOptionalNumber(options?.requestLatitude)
+  const requestLongitude = normalizeOptionalNumber(options?.requestLongitude)
+  const joinDecision = evaluateJoinDecision(game, options)
 
   if (normalizedClerkUserId) {
     const existingByClerkUser = await db
@@ -1926,6 +2293,24 @@ export async function joinLiveGameWithNickname(
           platform: deviceInfo.platform,
           platform_version: deviceInfo.platformVersion,
           architecture: deviceInfo.architecture,
+          join_request_ip: requestIp ?? existingByClerkUser.join_request_ip,
+          join_request_city: requestCity ?? existingByClerkUser.join_request_city,
+          join_request_country: requestCountry ?? existingByClerkUser.join_request_country,
+          join_request_latitude: requestLatitude ?? existingByClerkUser.join_request_latitude,
+          join_request_longitude: requestLongitude ?? existingByClerkUser.join_request_longitude,
+          join_request_distance_km: joinDecision.distanceKm ?? existingByClerkUser.join_request_distance_km,
+          join_status: existingByClerkUser.join_status === 'rejected'
+            ? 'rejected'
+            : joinDecision.status === 'approved'
+              ? 'approved'
+              : existingByClerkUser.join_status === 'pending'
+                ? 'pending'
+                : 'approved',
+          approved_at: existingByClerkUser.join_status === 'rejected'
+            ? existingByClerkUser.approved_at
+            : joinDecision.status === 'approved'
+              ? now
+              : existingByClerkUser.approved_at,
         })
         .where('id', '=', String(existingByClerkUser.id))
         .execute()
@@ -1936,21 +2321,37 @@ export async function joinLiveGameWithNickname(
         .where('id', '=', String(existingByClerkUser.id))
         .executeTakeFirstOrThrow()
 
+      const mapped = mapLiveGamePlayer(refreshed)
+      if (mapped.joinStatus === 'pending') {
+        return { ok: false, reason: 'pending-approval' }
+      }
+      if (mapped.joinStatus === 'rejected') {
+        return { ok: false, reason: 'rejected' }
+      }
+
       return {
         ok: true,
         game,
-        player: mapLiveGamePlayer(refreshed),
+        player: mapped,
         isNew: false,
       }
     }
   }
 
   if (sessionTokenHash) {
-    const existingBySession = await findLiveGamePlayerBySession(game.id, sessionTokenHash)
+    const existingBySession = await findLiveGamePlayerBySession(game.id, sessionTokenHash, {
+      includeNonApproved: true,
+    })
     if (existingBySession) {
       if (normalizeNicknameKey(existingBySession.nickname) !== nicknameKey) {
         return { ok: false, reason: 'session-mismatch' }
       }
+
+      if (existingBySession.joinStatus === 'rejected') {
+        return { ok: false, reason: 'rejected' }
+      }
+
+      const nextJoinStatus = joinDecision.status === 'approved' ? 'approved' : existingBySession.joinStatus
 
       await db
         .updateTable('live_game_players')
@@ -1971,9 +2372,21 @@ export async function joinLiveGameWithNickname(
           platform: deviceInfo.platform,
           platform_version: deviceInfo.platformVersion,
           architecture: deviceInfo.architecture,
+          join_request_ip: requestIp ?? existingBySession.joinRequestIp,
+          join_request_city: requestCity ?? existingBySession.joinRequestCity,
+          join_request_country: requestCountry ?? existingBySession.joinRequestCountry,
+          join_request_latitude: requestLatitude ?? existingBySession.joinRequestLatitude,
+          join_request_longitude: requestLongitude ?? existingBySession.joinRequestLongitude,
+          join_request_distance_km: joinDecision.distanceKm ?? existingBySession.joinRequestDistanceKm,
+          join_status: nextJoinStatus,
+          approved_at: nextJoinStatus === 'approved' ? now : existingBySession.approvedAt,
         })
         .where('id', '=', existingBySession.id)
         .execute()
+
+      if (nextJoinStatus === 'pending') {
+        return { ok: false, reason: 'pending-approval' }
+      }
 
       return {
         ok: true,
@@ -1994,6 +2407,14 @@ export async function joinLiveGameWithNickname(
           platform: deviceInfo.platform,
           platformVersion: deviceInfo.platformVersion,
           architecture: deviceInfo.architecture,
+          joinStatus: nextJoinStatus,
+          approvedAt: nextJoinStatus === 'approved' ? now : existingBySession.approvedAt,
+          joinRequestIp: requestIp ?? existingBySession.joinRequestIp,
+          joinRequestCity: requestCity ?? existingBySession.joinRequestCity,
+          joinRequestCountry: requestCountry ?? existingBySession.joinRequestCountry,
+          joinRequestLatitude: requestLatitude ?? existingBySession.joinRequestLatitude,
+          joinRequestLongitude: requestLongitude ?? existingBySession.joinRequestLongitude,
+          joinRequestDistanceKm: joinDecision.distanceKm ?? existingBySession.joinRequestDistanceKm,
         },
         isNew: false,
       }
@@ -2045,10 +2466,22 @@ export async function joinLiveGameWithNickname(
       platform: deviceInfo.platform,
       platform_version: deviceInfo.platformVersion,
       architecture: deviceInfo.architecture,
+      join_status: joinDecision.status,
+      approved_at: joinDecision.status === 'approved' ? joinDecision.approvedAt : null,
+      join_request_ip: requestIp,
+      join_request_city: requestCity,
+      join_request_country: requestCountry,
+      join_request_latitude: requestLatitude,
+      join_request_longitude: requestLongitude,
+      join_request_distance_km: joinDecision.distanceKm,
     })
     .execute()
 
-  await insertLiveGameEvent(game.id, 'player.joined', `${cleanedNickname} joined the game`)
+  if (joinDecision.status === 'approved') {
+    await insertLiveGameEvent(game.id, 'player.joined', `${cleanedNickname} joined the game`)
+  } else {
+    await insertLiveGameEvent(game.id, 'player.pending', `${cleanedNickname} is waiting for host approval`)
+  }
 
   const playerRow = await db
     .selectFrom('live_game_players')
@@ -2056,10 +2489,15 @@ export async function joinLiveGameWithNickname(
     .where('id', '=', playerId)
     .executeTakeFirstOrThrow()
 
+  const mapped = mapLiveGamePlayer(playerRow)
+  if (mapped.joinStatus === 'pending') {
+    return { ok: false, reason: 'pending-approval' }
+  }
+
   return {
     ok: true,
     game,
-    player: mapLiveGamePlayer(playerRow),
+    player: mapped,
     isNew: true,
   }
 }
@@ -2321,12 +2759,16 @@ export async function getLiveGameState(
   ])
 
   const players = playerRows.map((row) => mapLiveGamePlayer(row))
-  const leaderboard = computeLeaderboard(access.card, access.game.keyPayload, players)
+  const approvedPlayers = players.filter((player) => player.joinStatus === 'approved')
+  const pendingPlayers = access.isHost
+    ? players.filter((player) => player.joinStatus === 'pending')
+    : []
+  const leaderboard = computeLeaderboard(access.card, access.game.keyPayload, approvedPlayers)
 
   return {
     game: access.game,
     card: access.card,
-    joinedPlayers: players.map((player) => ({
+    joinedPlayers: approvedPlayers.map((player) => ({
       id: player.id,
       nickname: player.nickname,
       joinedAt: player.joinedAt,
@@ -2339,11 +2781,64 @@ export async function getLiveGameState(
       platform: player.platform,
       model: player.deviceModel,
     })),
+    pendingJoinRequests: pendingPlayers.map((player) => ({
+      id: player.id,
+      nickname: player.nickname,
+      joinedAt: player.joinedAt,
+      authMethod: player.authMethod,
+      browserName: player.browserName,
+      osName: player.osName,
+      deviceType: player.deviceType,
+      platform: player.platform,
+      model: player.deviceModel,
+      joinRequestIp: player.joinRequestIp,
+      joinRequestCity: player.joinRequestCity,
+      joinRequestCountry: player.joinRequestCountry,
+      joinRequestDistanceKm: player.joinRequestDistanceKm,
+    })),
     leaderboard,
     events: eventRows.map((row) => mapLiveGameEvent(row)),
-    playerCount: players.length,
-    submittedCount: players.filter((player) => player.isSubmitted).length,
+    playerCount: approvedPlayers.length,
+    submittedCount: approvedPlayers.filter((player) => player.isSubmitted).length,
   }
+}
+
+export async function reviewLiveGameJoinRequest(
+  gameId: string,
+  hostUserId: string,
+  playerId: string,
+  action: 'approve' | 'deny',
+): Promise<'ok' | 'not-found'> {
+  const game = await getHostLiveGame(gameId, hostUserId)
+  if (!game) return 'not-found'
+
+  const nextStatus = action === 'approve' ? 'approved' : 'rejected'
+  const now = nowIso()
+
+  const updated = await db
+    .updateTable('live_game_players')
+    .set({
+      join_status: nextStatus,
+      approved_at: action === 'approve' ? now : null,
+      updated_at: now,
+    })
+    .where('id', '=', playerId)
+    .where('game_id', '=', gameId)
+    .where('join_status', '=', 'pending')
+    .returningAll()
+    .executeTakeFirst()
+
+  if (!updated) return 'not-found'
+
+  await insertLiveGameEvent(
+    gameId,
+    action === 'approve' ? 'player.approved' : 'player.denied',
+    action === 'approve'
+      ? `${updated.nickname} was approved to join`
+      : `${updated.nickname} was denied entry`,
+  )
+
+  return 'ok'
 }
 
 export async function getLiveGameMe(

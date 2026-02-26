@@ -29,6 +29,8 @@ const EMPTY_PAYLOAD: CardLiveKeyPayload = {
   tiebreakerAnswer: "",
   tiebreakerRecordedAt: null,
   tiebreakerTimerId: null,
+  scoreOverrides: [],
+  winnerOverrides: [],
 }
 
 interface LocalLiveKeyRecord {
@@ -136,6 +138,8 @@ function normalizePayload(value: Partial<CardLiveKeyPayload> | CardLiveKeyPayloa
     tiebreakerAnswer: typeof value.tiebreakerAnswer === "string" ? value.tiebreakerAnswer : "",
     tiebreakerRecordedAt: typeof value.tiebreakerRecordedAt === "string" ? value.tiebreakerRecordedAt : null,
     tiebreakerTimerId: typeof value.tiebreakerTimerId === "string" ? value.tiebreakerTimerId : null,
+    scoreOverrides: Array.isArray(value.scoreOverrides) ? value.scoreOverrides : [],
+    winnerOverrides: Array.isArray(value.winnerOverrides) ? value.winnerOverrides : [],
   }
 }
 

@@ -11,6 +11,8 @@ import type {
   LiveKeyAnswer,
   LiveKeyMatchResult,
   LiveKeyTimer,
+  ScoreOverride,
+  WinnerOverride,
 } from '@/lib/types'
 
 type LiveGameSelectable = Selectable<LiveGames>
@@ -75,6 +77,34 @@ function normalizeLiveKeyMatchResult(value: unknown): LiveKeyMatchResult | null 
   }
 }
 
+function normalizeScoreOverride(value: unknown): ScoreOverride | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<ScoreOverride>
+  if (typeof raw.questionId !== 'string' || typeof raw.playerNickname !== 'string') return null
+
+  return {
+    questionId: raw.questionId,
+    playerNickname: raw.playerNickname,
+    accepted: raw.accepted === true,
+    source: raw.source === 'auto' || raw.source === 'host' ? raw.source : 'host',
+    confidence: typeof raw.confidence === 'number' && Number.isFinite(raw.confidence) ? raw.confidence : 1,
+  }
+}
+
+function normalizeWinnerOverride(value: unknown): WinnerOverride | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<WinnerOverride>
+  if (typeof raw.matchId !== 'string' || typeof raw.playerNickname !== 'string') return null
+
+  return {
+    matchId: raw.matchId,
+    playerNickname: raw.playerNickname,
+    accepted: raw.accepted === true,
+    source: raw.source === 'auto' || raw.source === 'host' ? raw.source : 'host',
+    confidence: typeof raw.confidence === 'number' && Number.isFinite(raw.confidence) ? raw.confidence : 1,
+  }
+}
+
 export function normalizeLiveKeyPayload(value: unknown): CardLiveKeyPayload {
   if (!value || typeof value !== 'object') {
     return {
@@ -84,6 +114,8 @@ export function normalizeLiveKeyPayload(value: unknown): CardLiveKeyPayload {
       tiebreakerAnswer: '',
       tiebreakerRecordedAt: null,
       tiebreakerTimerId: null,
+      scoreOverrides: [],
+      winnerOverrides: [],
     }
   }
 
@@ -108,6 +140,16 @@ export function normalizeLiveKeyPayload(value: unknown): CardLiveKeyPayload {
     tiebreakerAnswer: typeof raw.tiebreakerAnswer === 'string' ? raw.tiebreakerAnswer : '',
     tiebreakerRecordedAt: typeof raw.tiebreakerRecordedAt === 'string' ? raw.tiebreakerRecordedAt : null,
     tiebreakerTimerId: typeof raw.tiebreakerTimerId === 'string' ? raw.tiebreakerTimerId : null,
+    scoreOverrides: Array.isArray(raw.scoreOverrides)
+      ? raw.scoreOverrides
+        .map((override) => normalizeScoreOverride(override))
+        .filter((override): override is ScoreOverride => override !== null)
+      : [],
+    winnerOverrides: Array.isArray(raw.winnerOverrides)
+      ? raw.winnerOverrides
+        .map((override) => normalizeWinnerOverride(override))
+        .filter((override): override is WinnerOverride => override !== null)
+      : [],
   }
 }
 

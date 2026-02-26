@@ -32,6 +32,22 @@ const timerSchema = z.object({
   startedAt: z.string().datetime().nullable(),
 })
 
+const scoreOverrideSchema = z.object({
+  questionId: z.string(),
+  playerNickname: z.string(),
+  accepted: z.boolean(),
+  source: z.enum(['auto', 'host']),
+  confidence: z.number().min(0).max(1),
+})
+
+const winnerOverrideSchema = z.object({
+  matchId: z.string(),
+  playerNickname: z.string(),
+  accepted: z.boolean(),
+  source: z.enum(['auto', 'host']),
+  confidence: z.number().min(0).max(1),
+})
+
 const liveKeyPayloadSchema = z.object({
   timers: z.array(timerSchema).max(200),
   matchResults: z.array(matchResultSchema).max(100),
@@ -39,6 +55,8 @@ const liveKeyPayloadSchema = z.object({
   tiebreakerAnswer: z.string().trim().max(200),
   tiebreakerRecordedAt: z.string().datetime().nullable(),
   tiebreakerTimerId: z.string().trim().min(1).max(200).nullable(),
+  scoreOverrides: z.array(scoreOverrideSchema).max(500).optional().default([]),
+  winnerOverrides: z.array(winnerOverrideSchema).max(500).optional().default([]),
 })
 
 const liveKeyPutEnvelopeSchema = z.object({
