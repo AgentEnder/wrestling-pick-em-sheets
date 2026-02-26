@@ -15,12 +15,28 @@ const BATTLE_ROYAL_CHECKBOX_THRESHOLD = 10
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return "";
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString("en-US", {
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) {
+    const d = new Date(`${dateStr}T00:00:00`);
+    return d.toLocaleDateString("en-US", {
+      weekday: "short",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  return parsed.toLocaleString("en-US", {
     weekday: "short",
     year: "numeric",
     month: "short",
     day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
   });
 }
 

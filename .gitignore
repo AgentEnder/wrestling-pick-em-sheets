@@ -10,6 +10,7 @@ node_modules/
 !.env.example
 .local-db/
 .DS_Store
+test-results
 
 # Generated files
 next-env.d.ts
