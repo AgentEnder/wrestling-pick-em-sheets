@@ -3,6 +3,9 @@ import { Inter, Oswald } from 'next/font/google'
 import { ClerkProvider } from '@clerk/nextjs'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from 'sonner'
+
+import { serverEnv } from '@/lib/server/env'
+import { isTestAuthRuntimeEnabled } from '@/lib/server/test-auth-guard'
 import './globals.css'
 
 const _inter = Inter({
@@ -46,15 +49,31 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const shouldBypassClerk = isTestAuthRuntimeEnabled({
+    TEST_AUTH_MODE: serverEnv.TEST_AUTH_MODE,
+    TEST_AUTH_SECRET: serverEnv.TEST_AUTH_SECRET,
+    NEXT_PUBLIC_TEST_AUTH_MODE: serverEnv.NEXT_PUBLIC_TEST_AUTH_MODE,
+    VERCEL: serverEnv.VERCEL,
+    VERCEL_ENV: serverEnv.VERCEL_ENV,
+  })
+
+  const document = (
+    <html lang="en">
+      <body className={`${_inter.variable} ${_oswald.variable} font-sans antialiased`}>
+        {children}
+        <Toaster theme="dark" richColors />
+        <Analytics />
+      </body>
+    </html>
+  )
+
+  if (shouldBypassClerk) {
+    return document
+  }
+
   return (
     <ClerkProvider>
-      <html lang="en">
-        <body className={`${_inter.variable} ${_oswald.variable} font-sans antialiased`}>
-          {children}
-          <Toaster theme="dark" richColors />
-          <Analytics />
-        </body>
-      </html>
+      {document}
     </ClerkProvider>
   )
 }
