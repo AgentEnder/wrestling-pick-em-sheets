@@ -34,8 +34,6 @@ import type {
   LiveKeyAnswer,
   LiveKeyMatchResult,
   LiveKeyTimer,
-  ScoreOverride,
-  WinnerOverride,
 } from "@/lib/types";
 import {
   Pause,
@@ -135,6 +133,18 @@ function parseValueForDisplay(value: string, valueType: string): number | null {
   }
   const num = Number.parseFloat(trimmed);
   return Number.isFinite(num) ? num : null;
+}
+
+function formatThresholdValue(
+  seconds: number,
+  valueType: string,
+): string {
+  if (valueType === "time") {
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+  return String(seconds);
 }
 
 function ensureMatchTimer(
@@ -1868,9 +1878,11 @@ export function LiveGameKeyHostApp({
                               question.valueType,
                             );
                             if (parsed === null) return "Enter a valid value";
+                            const fmtParsed = formatThresholdValue(parsed, question.valueType);
+                            const fmtThreshold = formatThresholdValue(question.thresholdValue, question.valueType);
                             return parsed > question.thresholdValue
-                              ? `Result: ${labels[0]} (${parsed} > ${question.thresholdValue})`
-                              : `Result: ${labels[1]} (${parsed} ≤ ${question.thresholdValue})`;
+                              ? `Result: ${labels[0]} (${fmtParsed} > ${fmtThreshold})`
+                              : `Result: ${labels[1]} (${fmtParsed} ≤ ${fmtThreshold})`;
                           })()}
                         </p>
                       ) : null}

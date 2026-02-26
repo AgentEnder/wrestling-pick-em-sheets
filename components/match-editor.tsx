@@ -27,6 +27,7 @@ import type {
 import {
   ArrowDown,
   ArrowUp,
+  ArrowUpDown,
   ChevronDown,
   ChevronUp,
   Copy,
@@ -41,6 +42,68 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+
+function secondsToTimeDisplay(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60);
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function timeDisplayToSeconds(display: string): number | null {
+  const trimmed = display.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.includes(":")) {
+    const parts = trimmed.split(":").map(Number);
+    if (parts.some((p) => Number.isNaN(p))) return null;
+    let total = 0;
+    for (const part of parts) total = total * 60 + part;
+    return total;
+  }
+
+  const num = Number.parseFloat(trimmed);
+  return Number.isFinite(num) ? num : null;
+}
+
+function ThresholdTimeInput({
+  value,
+  onChange,
+}: {
+  value: number | undefined;
+  onChange: (seconds: number | undefined) => void;
+}) {
+  const [display, setDisplay] = useState(
+    value != null ? secondsToTimeDisplay(value) : "",
+  );
+
+  // Sync from external changes (e.g., undo or pool template application)
+  useEffect(() => {
+    const currentParsed = timeDisplayToSeconds(display);
+    if (value == null && !display) return;
+    if (value != null && currentParsed != null && Math.abs(currentParsed - value) < 0.5) return;
+    setDisplay(value != null ? secondsToTimeDisplay(value) : "");
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="flex items-center gap-2 max-w-[200px]">
+      <Input
+        placeholder="MM:SS"
+        value={display}
+        onChange={(e) => {
+          setDisplay(e.target.value);
+          const seconds = timeDisplayToSeconds(e.target.value);
+          onChange(seconds ?? undefined);
+        }}
+        className="text-sm"
+      />
+      {value != null ? (
+        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+          {value}s
+        </span>
+      ) : null}
+    </div>
+  );
+}
 
 interface MatchEditorProps {
   match: Match;
@@ -256,38 +319,42 @@ export function MatchEditor({
       .slice(0, 8);
   }, [combinedSuggestions, normalizedInput, participants]);
 
-  const bonusQuestionPoolsWithTemplates = useMemo(
-    () => {
-      const activeRuleSetIds = [
-        match.isBattleRoyal ? "timed-entry" : null,
-        match.isEliminationStyle ? "elimination" : null,
-      ].filter((value): value is "timed-entry" | "elimination" => value !== null);
+  const bonusQuestionPoolsWithTemplates = useMemo(() => {
+    const activeRuleSetIds = [
+      match.isBattleRoyal ? "timed-entry" : null,
+      match.isEliminationStyle ? "elimination" : null,
+    ].filter((value): value is "timed-entry" | "elimination" => value !== null);
 
-      return bonusQuestionPools
-        .map((pool) => ({
-          ...pool,
-          templates: pool.templates.filter(
-            (template) => template.defaultSection === "match",
+    return bonusQuestionPools
+      .map((pool) => ({
+        ...pool,
+        templates: pool.templates.filter(
+          (template) => template.defaultSection === "match",
+        ),
+        isRecommended:
+          pool.matchTypeIds.includes(match.type) ||
+          pool.ruleSetIds.some((ruleSetId) =>
+            activeRuleSetIds.includes(ruleSetId),
           ),
-          isRecommended:
-            pool.matchTypeIds.includes(match.type) ||
-            pool.ruleSetIds.some((ruleSetId) => activeRuleSetIds.includes(ruleSetId)),
-        }))
-        .filter((pool) => pool.templates.length > 0)
-        .sort((a, b) => {
-          if (a.isRecommended !== b.isRecommended) {
-            return a.isRecommended ? -1 : 1;
-          }
+      }))
+      .filter((pool) => pool.templates.length > 0)
+      .sort((a, b) => {
+        if (a.isRecommended !== b.isRecommended) {
+          return a.isRecommended ? -1 : 1;
+        }
 
-          if (a.sortOrder !== b.sortOrder) {
-            return a.sortOrder - b.sortOrder;
-          }
+        if (a.sortOrder !== b.sortOrder) {
+          return a.sortOrder - b.sortOrder;
+        }
 
-          return a.name.localeCompare(b.name);
-        });
-    },
-    [bonusQuestionPools, match.isBattleRoyal, match.isEliminationStyle, match.type],
-  );
+        return a.name.localeCompare(b.name);
+      });
+  }, [
+    bonusQuestionPools,
+    match.isBattleRoyal,
+    match.isEliminationStyle,
+    match.type,
+  ]);
 
   const selectedPool =
     bonusQuestionPoolsWithTemplates.find(
@@ -464,12 +531,10 @@ export function MatchEditor({
                     );
                     const defaultRuleSetIds =
                       selectedMatchType?.defaultRuleSetIds ?? [];
-                    const isBattleRoyal = defaultRuleSetIds.includes(
-                      "timed-entry",
-                    );
-                    const isEliminationStyle = defaultRuleSetIds.includes(
-                      "elimination",
-                    );
+                    const isBattleRoyal =
+                      defaultRuleSetIds.includes("timed-entry");
+                    const isEliminationStyle =
+                      defaultRuleSetIds.includes("elimination");
 
                     onChange({
                       ...match,
@@ -828,71 +893,115 @@ export function MatchEditor({
                     </Button>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-[5.5rem_1fr] gap-x-3 gap-y-2 sm:items-center">
                     <span className="text-xs text-muted-foreground">
                       Answer type:
                     </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateBonusQuestion(qi, { answerType: "write-in", options: [] })
-                      }
-                      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                        q.answerType === "write-in"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                      }`}
-                    >
-                      <PenLine className="h-3 w-3" />
-                      Write-in
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateBonusQuestion(qi, {
-                          answerType: "multiple-choice",
-                        })
-                      }
-                      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                        q.answerType === "multiple-choice"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                      }`}
-                    >
-                      <ListChecks className="h-3 w-3" />
-                      Multiple Choice
-                    </button>
-                    <div className="ml-auto flex items-center gap-1 rounded-md border border-border bg-background/50 p-1">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() =>
-                          updateBonusQuestion(qi, { valueType: "string", gradingRule: "exact" })
+                          updateBonusQuestion(qi, {
+                            answerType: "write-in",
+                            options: [],
+                          })
                         }
-                        className={`rounded px-2 py-1 text-xs transition-colors ${
-                          q.valueType === "string"
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                          q.answerType === "write-in"
                             ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:text-foreground"
+                            : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
                         }`}
                       >
-                        Standard
+                        <PenLine className="h-3 w-3" />
+                        Write-in
                       </button>
                       <button
                         type="button"
                         onClick={() =>
-                          updateBonusQuestion(qi, { valueType: "rosterMember", gradingRule: "exact" })
+                          updateBonusQuestion(qi, {
+                            answerType: "multiple-choice",
+                          })
                         }
-                        className={`rounded px-2 py-1 text-xs transition-colors ${
-                          q.valueType === "rosterMember"
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                          q.answerType === "multiple-choice"
                             ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:text-foreground"
+                            : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
                         }`}
                       >
-                        Roster
+                        <ListChecks className="h-3 w-3" />
+                        Multiple Choice
                       </button>
                       <button
                         type="button"
                         onClick={() =>
-                          updateBonusQuestion(qi, { valueType: "time", gradingRule: q.gradingRule ?? "exact" })
+                          updateBonusQuestion(qi, {
+                            answerType: "threshold",
+                            options: [],
+                            valueType:
+                              q.valueType === "string" ||
+                              q.valueType === "rosterMember"
+                                ? "numerical"
+                                : q.valueType,
+                          })
+                        }
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                          q.answerType === "threshold"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                        }`}
+                      >
+                        <ArrowUpDown className="h-3 w-3" />
+                        Threshold
+                      </button>
+                    </div>
+
+                    <span className="text-xs text-muted-foreground">
+                      Value type:
+                    </span>
+                    <div className="flex items-center gap-1 rounded-md border border-border bg-background/50 p-1 w-fit">
+                      {q.answerType !== "threshold" && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateBonusQuestion(qi, {
+                              valueType: "string",
+                              gradingRule: "exact",
+                            })
+                          }
+                          className={`rounded px-2 py-1 text-xs transition-colors ${
+                            q.valueType === "string"
+                              ? "bg-primary text-primary-foreground"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          Standard
+                        </button>
+                      )}
+                      {q.answerType !== "threshold" && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateBonusQuestion(qi, {
+                              valueType: "rosterMember",
+                              gradingRule: "exact",
+                            })
+                          }
+                          className={`rounded px-2 py-1 text-xs transition-colors ${
+                            q.valueType === "rosterMember"
+                              ? "bg-primary text-primary-foreground"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          Roster
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateBonusQuestion(qi, {
+                            valueType: "time",
+                            gradingRule: q.gradingRule ?? "exact",
+                          })
                         }
                         className={`rounded px-2 py-1 text-xs transition-colors ${
                           q.valueType === "time"
@@ -905,7 +1014,10 @@ export function MatchEditor({
                       <button
                         type="button"
                         onClick={() =>
-                          updateBonusQuestion(qi, { valueType: "numerical", gradingRule: q.gradingRule ?? "exact" })
+                          updateBonusQuestion(qi, {
+                            valueType: "numerical",
+                            gradingRule: q.gradingRule ?? "exact",
+                          })
                         }
                         className={`rounded px-2 py-1 text-xs transition-colors ${
                           q.valueType === "numerical"
@@ -916,35 +1028,109 @@ export function MatchEditor({
                         Count
                       </button>
                     </div>
+
+                    {(q.valueType === "time" ||
+                      q.valueType === "numerical") && (
+                      <>
+                        <span className="text-xs text-muted-foreground">
+                          Grading:
+                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {[
+                            { value: "exact", label: "Exact" },
+                            { value: "closest", label: "Closest" },
+                            { value: "atOrAbove", label: "At/Above" },
+                            { value: "atOrBelow", label: "At/Below" },
+                          ].map((rule) => (
+                            <button
+                              key={rule.value}
+                              type="button"
+                              onClick={() =>
+                                updateBonusQuestion(qi, {
+                                  gradingRule:
+                                    rule.value as BonusQuestion["gradingRule"],
+                                })
+                              }
+                              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                                (q.gradingRule ?? "exact") === rule.value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                              }`}
+                            >
+                              {rule.label}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+
+                    {q.answerType === "threshold" && (
+                      <>
+                        <span className="text-xs text-muted-foreground">
+                          Threshold:
+                        </span>
+                        {q.valueType === "time" ? (
+                          <ThresholdTimeInput
+                            value={q.thresholdValue}
+                            onChange={(seconds) =>
+                              updateBonusQuestion(qi, {
+                                thresholdValue: seconds,
+                              })
+                            }
+                          />
+                        ) : (
+                          <Input
+                            type="number"
+                            step="any"
+                            placeholder="Threshold value"
+                            value={q.thresholdValue ?? ""}
+                            onChange={(e) =>
+                              updateBonusQuestion(qi, {
+                                thresholdValue: e.target.value
+                                  ? Number(e.target.value)
+                                  : undefined,
+                              })
+                            }
+                            className="text-sm max-w-[200px]"
+                          />
+                        )}
+                        <span className="text-xs text-muted-foreground">
+                          Labels:
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            placeholder="Over"
+                            value={q.thresholdLabels?.[0] ?? ""}
+                            onChange={(e) =>
+                              updateBonusQuestion(qi, {
+                                thresholdLabels: [
+                                  e.target.value || "Over",
+                                  q.thresholdLabels?.[1] ?? "Under",
+                                ],
+                              })
+                            }
+                            className="text-sm max-w-[120px]"
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            /
+                          </span>
+                          <Input
+                            placeholder="Under"
+                            value={q.thresholdLabels?.[1] ?? ""}
+                            onChange={(e) =>
+                              updateBonusQuestion(qi, {
+                                thresholdLabels: [
+                                  q.thresholdLabels?.[0] ?? "Over",
+                                  e.target.value || "Under",
+                                ],
+                              })
+                            }
+                            className="text-sm max-w-[120px]"
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
-                  {q.valueType === "time" || q.valueType === "numerical" ? (
-                    <div className="flex flex-wrap items-center gap-2 pl-2">
-                      <span className="text-xs text-muted-foreground">Grading:</span>
-                      {[
-                        { value: "exact", label: "Exact" },
-                        { value: "closest", label: "Closest" },
-                        { value: "atOrAbove", label: "At/Above" },
-                        { value: "atOrBelow", label: "At/Below" },
-                      ].map((rule) => (
-                        <button
-                          key={rule.value}
-                          type="button"
-                          onClick={() =>
-                            updateBonusQuestion(qi, {
-                              gradingRule: rule.value as BonusQuestion["gradingRule"],
-                            })
-                          }
-                          className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                            (q.gradingRule ?? "exact") === rule.value
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                          }`}
-                        >
-                          {rule.label}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
 
                   {q.answerType === "multiple-choice" && (
                     <div className="flex flex-col gap-1.5 pl-2">
