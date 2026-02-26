@@ -12,12 +12,14 @@ import { updateCardOverrides } from '@/lib/client/cards-api'
 import {
   getLiveGameKey,
   getLiveGameState,
+  reviewLiveGameJoinRequest,
   saveLiveGameKey,
   updateLiveGameLocks,
   updateLiveGameStatus,
   type LiveGameStateResponse,
 } from '@/lib/client/live-games-api'
 import { getConnectionStatus } from '@/lib/client/connection-status'
+import { computeFuzzyConfidence } from '@/lib/fuzzy-match'
 import { getRosterSuggestions } from '@/lib/client/roster-api'
 import type {
   LiveGame,
@@ -26,6 +28,8 @@ import type {
   LiveKeyAnswer,
   LiveKeyMatchResult,
   LiveKeyTimer,
+  ScoreOverride,
+  WinnerOverride,
 } from '@/lib/types'
 import { Pause, Play, Plus, RefreshCcw, RotateCcw, Save, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -37,6 +41,20 @@ interface LiveGameKeyHostAppProps {
 
 const POLL_INTERVAL_MS = 10_000
 const REFRESH_STALE_THRESHOLD_MS = POLL_INTERVAL_MS * 5
+const FUZZY_AUTO_THRESHOLD = 0.90
+const FUZZY_REVIEW_THRESHOLD = 0.60
+
+interface FuzzyCandidate {
+  playerNickname: string
+  normalizedNickname: string
+  playerAnswer: string
+  confidence: number
+  isAutoAccepted: boolean
+}
+
+function normalizeText(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase()
+}
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -167,6 +185,90 @@ function snapshotPayload(payload: LiveGameKeyPayload): string {
   return JSON.stringify(payload)
 }
 
+function FuzzyReviewPanel({
+  candidates,
+  onAccept,
+  onReject,
+}: {
+  candidates: FuzzyCandidate[]
+  onAccept: (normalizedNickname: string) => void
+  onReject: (normalizedNickname: string) => void
+}) {
+  if (candidates.length === 0) return null
+
+  return (
+    <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 space-y-1.5">
+      <p className="text-xs font-medium text-amber-600">Fuzzy Matches</p>
+      {candidates.map((c) => (
+        <div key={c.normalizedNickname} className="flex items-center justify-between gap-2 text-xs">
+          <span className="min-w-0 truncate">
+            <span className="font-medium">{c.playerNickname}</span>
+            {' answered '}
+            <span className="italic">&ldquo;{c.playerAnswer}&rdquo;</span>
+            {' \u2014 '}
+            <span className="font-mono">{Math.round(c.confidence * 100)}%</span>
+            {c.isAutoAccepted ? <span className="ml-1 text-emerald-600">(auto)</span> : null}
+          </span>
+          <div className="flex gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => onAccept(c.normalizedNickname)}
+              className="rounded bg-emerald-600 px-2 py-0.5 text-white hover:bg-emerald-700"
+            >
+              &#10003;
+            </button>
+            <button
+              type="button"
+              onClick={() => onReject(c.normalizedNickname)}
+              className="rounded bg-red-600 px-2 py-0.5 text-white hover:bg-red-700"
+            >
+              &#10007;
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function computeFuzzyCandidatesForAnswer(
+  keyAnswer: string,
+  playerAnswers: Array<{ nickname: string; normalizedNickname: string; answer: string }>,
+  existingOverrides: Array<{ playerNickname: string; accepted: boolean }>,
+): FuzzyCandidate[] {
+  if (!keyAnswer.trim()) return []
+
+  const candidates: FuzzyCandidate[] = []
+
+  for (const pa of playerAnswers) {
+    if (!pa.answer.trim()) continue
+
+    // Skip if exact match (already scored correctly)
+    const normKey = normalizeText(keyAnswer)
+    const normPlayer = normalizeText(pa.answer)
+    if (normKey === normPlayer) continue
+
+    // Skip if already has an override
+    const hasOverride = existingOverrides.some(
+      (o) => normalizeText(o.playerNickname) === pa.normalizedNickname
+    )
+    if (hasOverride) continue
+
+    const confidence = computeFuzzyConfidence(pa.answer, keyAnswer)
+    if (confidence >= FUZZY_REVIEW_THRESHOLD) {
+      candidates.push({
+        playerNickname: pa.nickname,
+        normalizedNickname: pa.normalizedNickname,
+        playerAnswer: pa.answer,
+        confidence,
+        isAutoAccepted: confidence >= FUZZY_AUTO_THRESHOLD,
+      })
+    }
+  }
+
+  return candidates.sort((a, b) => b.confidence - a.confidence)
+}
+
 export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostAppProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -174,6 +276,7 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
   const [isEndingGame, setIsEndingGame] = useState(false)
   const [isStatusSaving, setIsStatusSaving] = useState(false)
   const [isLockSaving, setIsLockSaving] = useState(false)
+  const [activeJoinReviewPlayerId, setActiveJoinReviewPlayerId] = useState<string | null>(null)
   const [payload, setPayload] = useState<LiveGameKeyPayload | null>(null)
   const [game, setGame] = useState<LiveGame | null>(null)
   const [card, setCard] = useState<LiveGameStateResponse['card'] | null>(null)
@@ -502,6 +605,95 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
     })
   }
 
+  function handleAcceptOverride(
+    type: 'score' | 'winner',
+    questionOrMatchId: string,
+    normalizedNickname: string,
+    confidence: number,
+  ) {
+    setPayload((prev) => {
+      if (!prev) return prev
+
+      if (type === 'score') {
+        return {
+          ...prev,
+          scoreOverrides: [
+            ...prev.scoreOverrides.filter(
+              (o) => !(o.questionId === questionOrMatchId && normalizeText(o.playerNickname) === normalizedNickname)
+            ),
+            {
+              questionId: questionOrMatchId,
+              playerNickname: normalizedNickname,
+              accepted: true,
+              source: 'host' as const,
+              confidence,
+            },
+          ],
+        }
+      }
+
+      return {
+        ...prev,
+        winnerOverrides: [
+          ...prev.winnerOverrides.filter(
+            (o) => !(o.matchId === questionOrMatchId && normalizeText(o.playerNickname) === normalizedNickname)
+          ),
+          {
+            matchId: questionOrMatchId,
+            playerNickname: normalizedNickname,
+            accepted: true,
+            source: 'host' as const,
+            confidence,
+          },
+        ],
+      }
+    })
+  }
+
+  function handleRejectOverride(
+    type: 'score' | 'winner',
+    questionOrMatchId: string,
+    normalizedNickname: string,
+  ) {
+    setPayload((prev) => {
+      if (!prev) return prev
+
+      if (type === 'score') {
+        return {
+          ...prev,
+          scoreOverrides: [
+            ...prev.scoreOverrides.filter(
+              (o) => !(o.questionId === questionOrMatchId && normalizeText(o.playerNickname) === normalizedNickname)
+            ),
+            {
+              questionId: questionOrMatchId,
+              playerNickname: normalizedNickname,
+              accepted: false,
+              source: 'host' as const,
+              confidence: 0,
+            },
+          ],
+        }
+      }
+
+      return {
+        ...prev,
+        winnerOverrides: [
+          ...prev.winnerOverrides.filter(
+            (o) => !(o.matchId === questionOrMatchId && normalizeText(o.playerNickname) === normalizedNickname)
+          ),
+          {
+            matchId: questionOrMatchId,
+            playerNickname: normalizedNickname,
+            accepted: false,
+            source: 'host' as const,
+            confidence: 0,
+          },
+        ],
+      }
+    })
+  }
+
   function setTiebreakerAnswer(answer: string) {
     setPayload((prev) => {
       if (!prev) return prev
@@ -690,6 +882,21 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
     }
   }
 
+  async function handleReviewJoinRequest(playerId: string, action: 'approve' | 'deny') {
+    setActiveJoinReviewPlayerId(playerId)
+    try {
+      await reviewLiveGameJoinRequest(gameId, playerId, action)
+      const refreshed = await getLiveGameState(gameId, joinCodeFromUrl ?? undefined)
+      setState(refreshed)
+      toast.success(action === 'approve' ? 'Player approved' : 'Player denied')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update join request'
+      toast.error(message)
+    } finally {
+      setActiveJoinReviewPlayerId(null)
+    }
+  }
+
   async function handleSaveEventStartTime(forceEventStartAt?: string | null) {
     if (!game || game.status === 'ended') return
 
@@ -793,6 +1000,90 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
     void saveLocks(next)
   }
 
+  // Auto-accept high-confidence fuzzy matches
+  useEffect(() => {
+    if (!state?.playerAnswerSummaries?.length || !payload) return
+
+    // Check all match bonus questions
+    for (const match of card?.matches ?? []) {
+      const matchResult = payload.matchResults.find((r) => r.matchId === match.id)
+      if (!matchResult) continue
+
+      // Winner auto-accept
+      if (matchResult.winnerName.trim()) {
+        const playerWinners = (state.playerAnswerSummaries ?? []).map((p) => ({
+          nickname: p.nickname,
+          normalizedNickname: p.normalizedNickname,
+          answer: p.matchPicks.find((mp) => mp.matchId === match.id)?.winnerName ?? '',
+        }))
+        for (const pa of playerWinners) {
+          if (!pa.answer.trim()) continue
+          if (normalizeText(pa.answer) === normalizeText(matchResult.winnerName)) continue
+          const existingOverride = payload.winnerOverrides.some(
+            (o) => o.matchId === match.id && normalizeText(o.playerNickname) === pa.normalizedNickname
+          )
+          if (existingOverride) continue
+          const confidence = computeFuzzyConfidence(pa.answer, matchResult.winnerName)
+          if (confidence >= FUZZY_AUTO_THRESHOLD) {
+            handleAcceptOverride('winner', match.id, pa.normalizedNickname, confidence)
+          }
+        }
+      }
+
+      // Bonus question auto-accept
+      for (const question of match.bonusQuestions) {
+        if (question.answerType !== 'write-in' || (question.valueType !== 'string' && question.valueType !== 'rosterMember')) continue
+        const keyAnswer = matchResult.bonusAnswers.find((a) => a.questionId === question.id)?.answer ?? ''
+        if (!keyAnswer.trim()) continue
+
+        const playerAnswers = (state.playerAnswerSummaries ?? []).map((p) => ({
+          nickname: p.nickname,
+          normalizedNickname: p.normalizedNickname,
+          answer: p.matchPicks.find((mp) => mp.matchId === match.id)
+            ?.bonusAnswers.find((ba) => ba.questionId === question.id)?.answer ?? '',
+        }))
+        for (const pa of playerAnswers) {
+          if (!pa.answer.trim()) continue
+          if (normalizeText(pa.answer) === normalizeText(keyAnswer)) continue
+          const existingOverride = payload.scoreOverrides.some(
+            (o) => o.questionId === question.id && normalizeText(o.playerNickname) === pa.normalizedNickname
+          )
+          if (existingOverride) continue
+          const confidence = computeFuzzyConfidence(pa.answer, keyAnswer)
+          if (confidence >= FUZZY_AUTO_THRESHOLD) {
+            handleAcceptOverride('score', question.id, pa.normalizedNickname, confidence)
+          }
+        }
+      }
+    }
+
+    // Event bonus auto-accept
+    for (const question of card?.eventBonusQuestions ?? []) {
+      if (question.answerType !== 'write-in' || (question.valueType !== 'string' && question.valueType !== 'rosterMember')) continue
+      const keyAnswer = payload.eventBonusAnswers.find((a) => a.questionId === question.id)?.answer ?? ''
+      if (!keyAnswer.trim()) continue
+
+      const playerAnswers = (state.playerAnswerSummaries ?? []).map((p) => ({
+        nickname: p.nickname,
+        normalizedNickname: p.normalizedNickname,
+        answer: p.eventBonusAnswers.find((ba) => ba.questionId === question.id)?.answer ?? '',
+      }))
+      for (const pa of playerAnswers) {
+        if (!pa.answer.trim()) continue
+        if (normalizeText(pa.answer) === normalizeText(keyAnswer)) continue
+        const existingOverride = payload.scoreOverrides.some(
+          (o) => o.questionId === question.id && normalizeText(o.playerNickname) === pa.normalizedNickname
+        )
+        if (existingOverride) continue
+        const confidence = computeFuzzyConfidence(pa.answer, keyAnswer)
+        if (confidence >= FUZZY_AUTO_THRESHOLD) {
+          handleAcceptOverride('score', question.id, pa.normalizedNickname, confidence)
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.playerAnswerSummaries, payload?.matchResults, payload?.eventBonusAnswers, payload?.scoreOverrides, payload?.winnerOverrides])
+
   if (isLoading || !payload || !game || !card || !lockState) {
     return (
       <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-4 text-sm text-muted-foreground">
@@ -817,12 +1108,21 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
               {isDirty ? 'Unsynced key changes (auto-saving)...' : 'All key changes synced.'}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/games/${game.id}/display?code=${encodeURIComponent(game.joinCode)}`}>Open Display</Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/join?code=${encodeURIComponent(game.joinCode)}`}>Open Join</Link>
-              </Button>
+              {(() => {
+                const secretSuffix = game.qrJoinSecret ? `&s=${encodeURIComponent(game.qrJoinSecret)}` : ''
+                const displayUrl = `/games/${game.id}/display?code=${encodeURIComponent(game.joinCode)}${secretSuffix}`
+                const joinUrl = `/join?code=${encodeURIComponent(game.joinCode)}${secretSuffix}`
+                return (
+                  <>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={displayUrl}>Open Display</Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={joinUrl}>Open Join</Link>
+                    </Button>
+                  </>
+                )
+              })()}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -867,6 +1167,59 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
             />
           </div>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <p className="font-medium">Join Lobby</p>
+            <p className="text-xs text-muted-foreground">
+              Guests outside your network/proximity wait here for host approval.
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Pending: {state?.pendingJoinRequests.length ?? 0}
+          </p>
+        </div>
+
+        {state?.pendingJoinRequests.length ? (
+          <div className="mt-3 space-y-2">
+            {state.pendingJoinRequests.map((request) => (
+              <div
+                key={request.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/70 bg-background/40 px-3 py-2"
+              >
+                <div>
+                  <p className="text-sm font-medium">{request.nickname}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {request.joinRequestCity || 'Unknown city'}
+                    {request.joinRequestCountry ? `, ${request.joinRequestCountry}` : ''}
+                    {typeof request.joinRequestDistanceKm === 'number' ? ` • ${request.joinRequestDistanceKm.toFixed(1)}km` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={activeJoinReviewPlayerId === request.id}
+                    onClick={() => void handleReviewJoinRequest(request.id, 'deny')}
+                  >
+                    Deny
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={activeJoinReviewPlayerId === request.id}
+                    onClick={() => void handleReviewJoinRequest(request.id, 'approve')}
+                  >
+                    Approve
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">No pending join requests.</p>
+        )}
       </section>
 
       <section className="rounded-lg border border-border bg-card p-4">
@@ -963,6 +1316,39 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
                     ))}
                   </SelectContent>
                 </Select>
+                {state?.playerAnswerSummaries && matchResult?.winnerName?.trim() && (
+                  <FuzzyReviewPanel
+                    candidates={computeFuzzyCandidatesForAnswer(
+                      matchResult.winnerName,
+                      (state.playerAnswerSummaries ?? []).map((p) => {
+                        const pick = p.matchPicks.find((mp) => mp.matchId === match.id)
+                        return {
+                          nickname: p.nickname,
+                          normalizedNickname: p.normalizedNickname,
+                          answer: pick?.winnerName ?? '',
+                        }
+                      }),
+                      payload.winnerOverrides.filter((o) => o.matchId === match.id),
+                    )}
+                    onAccept={(nn) => {
+                      const candidates = computeFuzzyCandidatesForAnswer(
+                        matchResult.winnerName,
+                        (state.playerAnswerSummaries ?? []).map((p) => {
+                          const pick = p.matchPicks.find((mp) => mp.matchId === match.id)
+                          return {
+                            nickname: p.nickname,
+                            normalizedNickname: p.normalizedNickname,
+                            answer: pick?.winnerName ?? '',
+                          }
+                        }),
+                        payload.winnerOverrides.filter((o) => o.matchId === match.id),
+                      )
+                      const candidate = candidates.find((c) => c.normalizedNickname === nn)
+                      if (candidate) handleAcceptOverride('winner', match.id, nn, candidate.confidence)
+                    }}
+                    onReject={(nn) => handleRejectOverride('winner', match.id, nn)}
+                  />
+                )}
 
                 {match.isBattleRoyal ? (
                   <div className="space-y-2">
@@ -1102,6 +1488,35 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
                           ) : null}
                         </div>
                       ) : null}
+                      {state?.playerAnswerSummaries && (
+                        <FuzzyReviewPanel
+                          candidates={computeFuzzyCandidatesForAnswer(
+                            answer?.answer ?? '',
+                            (state.playerAnswerSummaries ?? []).map((p) => ({
+                              nickname: p.nickname,
+                              normalizedNickname: p.normalizedNickname,
+                              answer: p.matchPicks.find((mp) => mp.matchId === match.id)
+                                ?.bonusAnswers.find((ba) => ba.questionId === question.id)?.answer ?? '',
+                            })),
+                            payload.scoreOverrides.filter((o) => o.questionId === question.id),
+                          )}
+                          onAccept={(nn) => {
+                            const candidates = computeFuzzyCandidatesForAnswer(
+                              answer?.answer ?? '',
+                              (state.playerAnswerSummaries ?? []).map((p) => ({
+                                nickname: p.nickname,
+                                normalizedNickname: p.normalizedNickname,
+                                answer: p.matchPicks.find((mp) => mp.matchId === match.id)
+                                  ?.bonusAnswers.find((ba) => ba.questionId === question.id)?.answer ?? '',
+                              })),
+                              payload.scoreOverrides.filter((o) => o.questionId === question.id),
+                            )
+                            const candidate = candidates.find((c) => c.normalizedNickname === nn)
+                            if (candidate) handleAcceptOverride('score', question.id, nn, candidate.confidence)
+                          }}
+                          onReject={(nn) => handleRejectOverride('score', question.id, nn)}
+                        />
+                      )}
                     </div>
                   )
                 })}
@@ -1166,6 +1581,33 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
                       ) : null}
                     </div>
                   ) : null}
+                  {state?.playerAnswerSummaries && (
+                    <FuzzyReviewPanel
+                      candidates={computeFuzzyCandidatesForAnswer(
+                        answer?.answer ?? '',
+                        (state.playerAnswerSummaries ?? []).map((p) => ({
+                          nickname: p.nickname,
+                          normalizedNickname: p.normalizedNickname,
+                          answer: p.eventBonusAnswers.find((ba) => ba.questionId === question.id)?.answer ?? '',
+                        })),
+                        payload.scoreOverrides.filter((o) => o.questionId === question.id),
+                      )}
+                      onAccept={(nn) => {
+                        const candidates = computeFuzzyCandidatesForAnswer(
+                          answer?.answer ?? '',
+                          (state.playerAnswerSummaries ?? []).map((p) => ({
+                            nickname: p.nickname,
+                            normalizedNickname: p.normalizedNickname,
+                            answer: p.eventBonusAnswers.find((ba) => ba.questionId === question.id)?.answer ?? '',
+                          })),
+                          payload.scoreOverrides.filter((o) => o.questionId === question.id),
+                        )
+                        const candidate = candidates.find((c) => c.normalizedNickname === nn)
+                        if (candidate) handleAcceptOverride('score', question.id, nn, candidate.confidence)
+                      }}
+                      onReject={(nn) => handleRejectOverride('score', question.id, nn)}
+                    />
+                  )}
                 </div>
               )
             })}
