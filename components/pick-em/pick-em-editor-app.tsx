@@ -24,7 +24,7 @@ import type {
   Match,
   PickEmSheet,
 } from "@/lib/types";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth } from "@/lib/client/clerk-test-mode";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 

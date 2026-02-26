@@ -1,5 +1,5 @@
-import { CardsWorkspace } from "@/components/pick-em/cards-workspace"
+import { HomeHub } from "@/components/pick-em/home-hub"
 
 export default function Page() {
-  return <CardsWorkspace />
+  return <HomeHub />
 }

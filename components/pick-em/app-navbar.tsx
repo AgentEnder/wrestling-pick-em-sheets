@@ -26,6 +26,8 @@ interface AppNavbarProps {
 
 const PRIMARY_ITEMS: NavItem[] = [
   { href: "/", label: "Home" },
+  { href: "/join", label: "Join" },
+  { href: "/cards", label: "Cards" },
 ]
 
 const ADMIN_ITEMS: NavItem[] = [

@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation"
+import { CardsWorkspace } from "@/components/pick-em/cards-workspace"
 
 export default function CardsPage() {
-  redirect("/")
+  return <CardsWorkspace />
 }
