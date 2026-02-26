@@ -1224,7 +1224,16 @@ function computeLeaderboard(
 
       const playerMatchPick = pickMatchPick(player.picks.matchPicks, match.id)
 
-      if (keyMatchResult.winnerName.trim() && playerMatchPick?.winnerName && answerEquals(keyMatchResult.winnerName, playerMatchPick.winnerName)) {
+      const winnerOverride = keyPayload.winnerOverrides.find(
+        (o) => o.matchId === match.id && normalizeText(o.playerNickname) === normalizeText(player.nickname),
+      )
+
+      if (winnerOverride) {
+        if (winnerOverride.accepted) {
+          score.score += winnerPoints
+          score.winnerPoints += winnerPoints
+        }
+      } else if (keyMatchResult.winnerName.trim() && playerMatchPick?.winnerName && answerEquals(keyMatchResult.winnerName, playerMatchPick.winnerName)) {
         score.score += winnerPoints
         score.winnerPoints += winnerPoints
       }
@@ -1250,7 +1259,10 @@ function computeLeaderboard(
       for (const question of match.bonusQuestions) {
         const keyAnswer = keyMatchResult.bonusAnswers.find((answer) => answer.questionId === question.id)?.answer ?? ''
         const playerAnswer = pickBonusAnswer(playerMatchPick?.bonusAnswers ?? [], question.id)
-        const result = scoreForQuestion(question, card.defaultPoints, keyAnswer, playerAnswer)
+        const override = keyPayload.scoreOverrides.find(
+          (o) => o.questionId === question.id && normalizeText(o.playerNickname) === normalizeText(player.nickname),
+        )
+        const result = scoreForQuestion(question, card.defaultPoints, keyAnswer, playerAnswer, override)
 
         if (result.score > 0) {
           score.score += result.score
@@ -1284,7 +1296,10 @@ function computeLeaderboard(
       if (!score) continue
 
       const playerAnswer = pickBonusAnswer(player.picks.eventBonusAnswers, question.id)
-      const result = scoreForQuestion(question, card.defaultPoints, keyAnswer, playerAnswer)
+      const override = keyPayload.scoreOverrides.find(
+        (o) => o.questionId === question.id && normalizeText(o.playerNickname) === normalizeText(player.nickname),
+      )
+      const result = scoreForQuestion(question, card.defaultPoints, keyAnswer, playerAnswer, override)
 
       if (result.score > 0) {
         score.score += result.score
