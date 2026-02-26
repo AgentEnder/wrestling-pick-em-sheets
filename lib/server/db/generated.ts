@@ -162,6 +162,14 @@ export interface LiveGameEvents {
 }
 
 export interface LiveGamePlayers {
+  architecture: string | null;
+  auth_method: Generated<string>;
+  browser_name: string | null;
+  browser_version: string | null;
+  clerk_user_id: string | null;
+  device_model: string | null;
+  device_type: string | null;
+  device_vendor: string | null;
   game_id: string;
   id: string | null;
   is_submitted: Generated<number>;
@@ -169,13 +177,32 @@ export interface LiveGamePlayers {
   last_seen_at: Generated<string>;
   nickname: string;
   normalized_nickname: string;
+  os_name: string | null;
+  os_version: string | null;
+  platform: string | null;
+  platform_version: string | null;
   picks_json: Generated<string>;
   session_token_hash: string;
   submitted_at: string | null;
+  user_agent: string | null;
+  user_agent_data_json: string | null;
+  updated_at: Generated<string>;
+}
+
+export interface LiveGamePushSubscriptions {
+  auth: string;
+  created_at: Generated<string>;
+  endpoint: string;
+  expiration_time: number | null;
+  game_id: string;
+  id: string | null;
+  p256dh: string;
+  player_id: string | null;
   updated_at: Generated<string>;
 }
 
 export interface LiveGames {
+  allow_late_joins: Generated<number>;
   card_id: string;
   created_at: Generated<string>;
   ended_at: string | null;
@@ -218,6 +245,7 @@ export interface DB {
   cards: Cards;
   live_game_events: LiveGameEvents;
   live_game_players: LiveGamePlayers;
+  live_game_push_subscriptions: LiveGamePushSubscriptions;
   live_games: LiveGames;
   match_types: MatchTypes;
   promotion_roster_members: PromotionRosterMembers;

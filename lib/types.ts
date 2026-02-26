@@ -165,6 +165,7 @@ export interface LiveGame {
   hostUserId: string
   mode: LiveGameMode
   joinCode: string
+  allowLateJoins: boolean
   status: LiveGameStatus
   expiresAt: string
   endedAt: string | null
@@ -177,6 +178,8 @@ export interface LiveGame {
 export interface LiveGamePlayer {
   id: string
   gameId: string
+  authMethod: "guest" | "clerk"
+  clerkUserId: string | null
   nickname: string
   picks: LivePlayerPicksPayload
   isSubmitted: boolean
@@ -184,6 +187,16 @@ export interface LiveGamePlayer {
   joinedAt: string
   lastSeenAt: string
   updatedAt: string
+  browserName: string | null
+  browserVersion: string | null
+  osName: string | null
+  osVersion: string | null
+  deviceType: string | null
+  deviceVendor: string | null
+  deviceModel: string | null
+  platform: string | null
+  platformVersion: string | null
+  architecture: string | null
 }
 
 export interface LiveGameLeaderboardEntry {
