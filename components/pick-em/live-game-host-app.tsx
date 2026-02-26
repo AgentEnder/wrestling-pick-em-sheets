@@ -23,7 +23,7 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
   const [games, setGames] = useState<LiveGame[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
-  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null)
+  const [endingGameId, setEndingGameId] = useState<string | null>(null)
 
   const loadGames = useCallback(async () => {
     setIsLoading(true)
@@ -56,17 +56,17 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
     }
   }
 
-  async function handleStatusChange(gameId: string, status: LiveGame['status']) {
-    setUpdatingStatusId(gameId)
+  async function handleEndGame(gameId: string) {
+    setEndingGameId(gameId)
     try {
-      const updated = await updateLiveGameStatus(gameId, status)
+      const updated = await updateLiveGameStatus(gameId, 'ended')
       setGames((prev) => prev.map((game) => (game.id === gameId ? updated : game)))
-      toast.success(`Game marked ${status}`)
+      toast.success('Game ended')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update status'
       toast.error(message)
     } finally {
-      setUpdatingStatusId(null)
+      setEndingGameId(null)
     }
   }
 
@@ -78,14 +78,14 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 px-4 py-6">
       <header className="rounded-lg border border-border bg-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold">Live Game Rooms</h1>
             <p className="text-sm text-muted-foreground">
               Manage room-owned game keys, join codes, and display screens.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             <Button asChild variant="outline">
               <Link href={`/cards/${cardId}/live/solo`}>Solo Key</Link>
             </Button>
@@ -123,39 +123,39 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
                       Updated {formatDate(game.updatedAt)}
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={joinUrl}>
-                        <Users className="mr-1 h-4 w-4" />
-                        Join Page
-                      </Link>
-                    </Button>
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={displayUrl}>
-                        <Tv className="mr-1 h-4 w-4" />
-                        Display
-                      </Link>
-                    </Button>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                     <Button asChild size="sm">
                       <Link href={`/games/${game.id}/host`}>Host Keying</Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={game.status === 'ended' || endingGameId === game.id}
+                      onClick={() => void handleEndGame(game.id)}
+                    >
+                      {game.status === 'ended'
+                        ? 'Ended'
+                        : endingGameId === game.id
+                          ? 'Ending...'
+                          : 'End Game'}
                     </Button>
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">Status:</span>
-                  {(['lobby', 'live', 'ended'] as const).map((status) => (
-                    <Button
-                      key={status}
-                      type="button"
-                      variant={game.status === status ? 'default' : 'outline'}
-                      size="sm"
-                      disabled={updatingStatusId === game.id}
-                      onClick={() => void handleStatusChange(game.id, status)}
-                    >
-                      {status}
-                    </Button>
-                  ))}
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={joinUrl}>
+                      <Users className="mr-1 h-4 w-4" />
+                      Join Page
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={displayUrl}>
+                      <Tv className="mr-1 h-4 w-4" />
+                      Display
+                    </Link>
+                  </Button>
                 </div>
               </section>
             )

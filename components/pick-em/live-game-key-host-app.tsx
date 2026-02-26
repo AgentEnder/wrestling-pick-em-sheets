@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { updateCardOverrides } from '@/lib/client/cards-api'
 import {
   getLiveGameKey,
   getLiveGameState,
@@ -34,6 +36,7 @@ interface LiveGameKeyHostAppProps {
 }
 
 const POLL_INTERVAL_MS = 10_000
+const REFRESH_STALE_THRESHOLD_MS = POLL_INTERVAL_MS * 5
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -41,6 +44,22 @@ function nowIso(): string {
 
 function nowMs(): number {
   return Date.now()
+}
+
+function isoToDatetimeLocalInput(value: string | null): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const tzOffsetMs = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - tzOffsetMs).toISOString().slice(0, 16)
+}
+
+function datetimeLocalInputToIso(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const date = new Date(trimmed)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toISOString()
 }
 
 function formatDuration(ms: number): string {
@@ -152,6 +171,7 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isEndingGame, setIsEndingGame] = useState(false)
   const [isStatusSaving, setIsStatusSaving] = useState(false)
   const [isLockSaving, setIsLockSaving] = useState(false)
   const [payload, setPayload] = useState<LiveGameKeyPayload | null>(null)
@@ -166,6 +186,9 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
   const [activeRosterFieldKey, setActiveRosterFieldKey] = useState<string | null>(null)
   const [activeRosterQuery, setActiveRosterQuery] = useState('')
   const [battleRoyalEntryInputByMatchId, setBattleRoyalEntryInputByMatchId] = useState<Record<string, string>>({})
+  const [eventStartInput, setEventStartInput] = useState('')
+  const [lastRefreshAtMs, setLastRefreshAtMs] = useState<number | null>(null)
+  const [nowTickMs, setNowTickMs] = useState(nowMs())
 
   const hasInitializedRef = useRef(false)
   const payloadRef = useRef<LiveGameKeyPayload | null>(null)
@@ -186,6 +209,7 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
       setPayload(nextPayload)
       setLockState(keyResponse.locks)
       setState(stateResponse)
+      setLastRefreshAtMs(nowMs())
       payloadRef.current = nextPayload
       lastSyncedSnapshotRef.current = snapshotPayload(nextPayload)
       hasInitializedRef.current = true
@@ -212,10 +236,28 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
+      setNowTickMs(nowMs())
+    }, 1_000)
+
+    return () => window.clearInterval(intervalId)
+  }, [])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
       void getLiveGameState(gameId, joinCodeFromUrl ?? undefined)
         .then((response) => {
           setState(response)
-          setGame((current) => (current ? { ...current, status: response.game.status, updatedAt: response.game.updatedAt } : current))
+          setLastRefreshAtMs(nowMs())
+          setGame((current) => (
+            current
+              ? {
+                ...current,
+                status: response.game.status,
+                allowLateJoins: response.game.allowLateJoins,
+                updatedAt: response.game.updatedAt,
+              }
+              : current
+          ))
         })
         .catch(() => {
           // keep existing state if poll fails
@@ -228,6 +270,10 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
   useEffect(() => {
     payloadRef.current = payload
   }, [payload])
+
+  useEffect(() => {
+    setEventStartInput(isoToDatetimeLocalInput(card?.eventDate ?? null))
+  }, [card?.eventDate])
 
   useEffect(() => {
     const promotionName = card?.promotionName?.trim() ?? ''
@@ -526,7 +572,9 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
     isSyncingRef.current = true
 
     try {
-      const saved = await saveLiveGameKey(gameId, currentPayload)
+      const saved = await saveLiveGameKey(gameId, currentPayload, {
+        expectedUpdatedAt: game?.updatedAt,
+      })
       setGame(saved)
       setLockState(saved.lockState)
       lastSyncedSnapshotRef.current = payloadSnapshot
@@ -549,6 +597,9 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
       return true
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save room key'
+      if (message.includes('changed in another session')) {
+        await load()
+      }
       if (mode === 'manual') {
         toast.error(message)
       }
@@ -563,7 +614,7 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
         void syncPayload('auto')
       }
     }
-  }, [gameId, joinCodeFromUrl])
+  }, [game?.updatedAt, gameId, joinCodeFromUrl, load])
 
   async function handleSaveKey() {
     await syncPayload('manual')
@@ -573,11 +624,12 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
     setIsRefreshing(true)
     try {
       await load()
-      toast.success('Refreshed')
     } finally {
       setIsRefreshing(false)
     }
   }
+
+  const isRefreshStale = lastRefreshAtMs !== null && (nowTickMs - lastRefreshAtMs) > REFRESH_STALE_THRESHOLD_MS
 
   useEffect(() => {
     if (!hasInitializedRef.current || !isDirty) return
@@ -589,14 +641,80 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
     return () => window.clearTimeout(timeoutId)
   }, [isDirty, payload, syncPayload])
 
-  async function handleStatusChange(status: LiveGame['status']) {
-    setIsStatusSaving(true)
+  async function handleEndGame() {
+    setIsEndingGame(true)
     try {
-      const updated = await updateLiveGameStatus(gameId, status)
+      const updated = await updateLiveGameStatus(gameId, 'ended')
       setGame(updated)
-      toast.success(`Status set to ${status}`)
+      toast.success('Game ended')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update status'
+      toast.error(message)
+    } finally {
+      setIsEndingGame(false)
+    }
+  }
+
+  async function handleStartGame() {
+    if (!game) return
+
+    setIsStatusSaving(true)
+    try {
+      const updated = await updateLiveGameStatus(gameId, 'live', {
+        allowLateJoins: game.allowLateJoins,
+      })
+      setGame(updated)
+      toast.success('Game started')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to start game'
+      toast.error(message)
+    } finally {
+      setIsStatusSaving(false)
+    }
+  }
+
+  async function handleAllowLateJoinsChange(allowLateJoins: boolean) {
+    if (!game || game.status === 'ended') return
+
+    setIsStatusSaving(true)
+    try {
+      const updated = await updateLiveGameStatus(gameId, game.status, {
+        allowLateJoins,
+      })
+      setGame(updated)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update entry settings'
+      toast.error(message)
+    } finally {
+      setIsStatusSaving(false)
+    }
+  }
+
+  async function handleSaveEventStartTime(forceEventStartAt?: string | null) {
+    if (!game || game.status === 'ended') return
+
+    const eventStartAt = typeof forceEventStartAt === 'undefined'
+      ? datetimeLocalInputToIso(eventStartInput)
+      : forceEventStartAt
+    if (typeof forceEventStartAt === 'undefined' && eventStartInput.trim() && !eventStartAt) {
+      toast.error('Invalid start date/time')
+      return
+    }
+
+    setIsStatusSaving(true)
+    try {
+      await updateCardOverrides(game.cardId, {
+        eventDate: eventStartAt,
+      })
+      setCard((current) => (current
+        ? {
+          ...current,
+          eventDate: eventStartAt ?? '',
+        }
+        : current))
+      toast.success(eventStartAt ? 'Start time saved' : 'Start time cleared')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update start time'
       toast.error(message)
     } finally {
       setIsStatusSaving(false)
@@ -686,48 +804,107 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 px-4 py-6">
       <header className="rounded-lg border border-border bg-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="text-2xl font-semibold">Host Keying Console</h1>
             <p className="text-sm text-muted-foreground">
               Join code <span className="font-mono">{game.joinCode}</span> • {card.eventName || 'Untitled Event'}
             </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Status: <span className="capitalize text-foreground">{game.status}</span>
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {isDirty ? 'Unsynced key changes (auto-saving)...' : 'All key changes synced.'}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/games/${game.id}/display?code=${encodeURIComponent(game.joinCode)}`}>Open Display</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/join?code=${encodeURIComponent(game.joinCode)}`}>Open Join</Link>
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => void handleRefresh()} disabled={isRefreshing}>
-              <RefreshCcw className="mr-1 h-4 w-4" />
-              {isRefreshing ? 'Refreshing...' : 'Refresh'}
-            </Button>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             <Button onClick={() => void handleSaveKey()} disabled={isSaving}>
               <Save className="mr-1 h-4 w-4" />
               {isSaving ? 'Saving...' : 'Save Key'}
             </Button>
+            {game.status === 'lobby' ? (
+              <Button onClick={() => void handleStartGame()} disabled={isStatusSaving}>
+                {isStatusSaving ? 'Starting...' : 'Start Game'}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={game.status === 'ended' || isEndingGame || isStatusSaving}
+              onClick={() => void handleEndGame()}
+            >
+              {game.status === 'ended' ? 'Ended' : isEndingGame ? 'Ending...' : 'End Game'}
+            </Button>
           </div>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {isDirty ? 'Unsynced key changes (auto-saving)...' : 'All key changes synced.'}
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-muted-foreground">Room status:</span>
-          {(['lobby', 'live', 'ended'] as const).map((status) => (
-            <Button
-              key={status}
-              variant={game.status === status ? 'default' : 'outline'}
-              size="sm"
-              disabled={isStatusSaving}
-              onClick={() => void handleStatusChange(status)}
-            >
-              {status}
-            </Button>
-          ))}
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/games/${game.id}/display?code=${encodeURIComponent(game.joinCode)}`}>Open Display</Link>
-          </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/join?code=${encodeURIComponent(game.joinCode)}`}>Open Join</Link>
-          </Button>
-        </div>
       </header>
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <p className="font-medium">Mid-Game Entries</p>
+            <p className="text-xs text-muted-foreground">
+              Allow new players to join after the game has started.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{game.allowLateJoins ? 'Allowed' : 'Closed'}</span>
+            <Switch
+              checked={game.allowLateJoins}
+              onCheckedChange={(checked) => {
+                void handleAllowLateJoinsChange(checked)
+              }}
+              disabled={game.status === 'ended' || isStatusSaving}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <div className="space-y-3">
+          <div>
+            <p className="font-medium">Scheduled Start</p>
+            <p className="text-xs text-muted-foreground">
+              Room auto-starts when this time is reached.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+            <Input
+              type="datetime-local"
+              value={eventStartInput}
+              onChange={(event) => setEventStartInput(event.target.value)}
+              disabled={game.status === 'ended' || isStatusSaving}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setEventStartInput('')
+                void handleSaveEventStartTime(null)
+              }}
+              disabled={game.status === 'ended' || isStatusSaving}
+            >
+              Clear
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSaveEventStartTime()}
+              disabled={game.status === 'ended' || isStatusSaving}
+            >
+              {isStatusSaving ? 'Saving...' : 'Save Start'}
+            </Button>
+          </div>
+        </div>
+      </section>
 
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1055,6 +1232,33 @@ export function LiveGameKeyHostApp({ gameId, joinCodeFromUrl }: LiveGameKeyHostA
           </div>
         </div>
       </section>
+
+      {isRefreshStale ? (
+        <div className="fixed bottom-20 right-4 z-40">
+          <Button
+            type="button"
+            size="icon"
+            className="h-12 w-12 rounded-full shadow-lg"
+            onClick={() => void handleRefresh()}
+            disabled={isRefreshing}
+            title={isRefreshing ? 'Refreshing...' : 'Refresh now'}
+          >
+            <RefreshCcw className={isRefreshing ? 'h-5 w-5 animate-spin' : 'h-5 w-5'} />
+          </Button>
+        </div>
+      ) : null}
+
+      {isDirty ? (
+        <div className="fixed inset-x-0 bottom-3 z-40 px-4">
+          <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-card/95 px-3 py-2 shadow-lg backdrop-blur">
+            <p className="text-sm text-amber-200">Unsaved key changes. Auto-save is in progress.</p>
+            <Button size="sm" onClick={() => void handleSaveKey()} disabled={isSaving}>
+              <Save className="mr-1 h-4 w-4" />
+              {isSaving ? 'Saving...' : 'Save Now'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

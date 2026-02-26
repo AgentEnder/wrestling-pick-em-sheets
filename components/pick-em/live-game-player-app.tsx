@@ -1,8 +1,11 @@
 "use client"
 
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Reorder } from 'motion/react'
 
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -16,9 +19,21 @@ import {
   type LiveGameStateResponse,
 } from '@/lib/client/live-games-api'
 import { getConnectionStatus } from '@/lib/client/connection-status'
+import {
+  createScreenWakeLockManager,
+  getNotificationPermission,
+  isWebPushSupported,
+  registerLiveGameServiceWorker,
+  requestNotificationPermission,
+  subscribeToLiveGamePush,
+  subscribeToLiveGameSwMessages,
+  unsubscribeFromLiveGamePush,
+  vibrateForeground,
+  type WakeLockManager,
+} from '@/lib/client/live-game-pwa'
 import type { LivePlayerAnswer, LivePlayerMatchPick, LivePlayerPicksPayload } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { ArrowDown, ArrowUp, Flame, Plus, RefreshCcw, Save, Sparkles, Trash2 } from 'lucide-react'
+import { Bell, BellOff, Maximize2, Minimize2, Plus, RefreshCcw, Save, Sparkles, Trash2, Trophy, Tv, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface LiveGamePlayerAppProps {
@@ -27,9 +42,86 @@ interface LiveGamePlayerAppProps {
 }
 
 const POLL_INTERVAL_MS = 10_000
-const HIGHLIGHT_DURATION_MS = 4_000
+const REFRESH_STALE_THRESHOLD_MS = POLL_INTERVAL_MS * 5
+const FULLSCREEN_EFFECT_DURATION_MS = 15_000
+const FULLSCREEN_LEADERBOARD_LIMIT = 8
+const LEADERBOARD_SWAP_DURATION_MS = 1_000
+const LEADERBOARD_FINAL_PAUSE_MS = 5_000
+const UPDATE_VIBRATE_PATTERN = [110, 60, 110]
 
-type LeaderboardEffect = 'rank-up' | 'rank-down' | 'score'
+function getPushPromptStorageKey(gameId: string, playerId: string): string {
+  return `live-game-push-prompted:${gameId}:${playerId}`
+}
+
+type FullscreenEffect =
+  | {
+    kind: 'events'
+    events: LiveGameStateResponse['events']
+  }
+  | {
+    kind: 'leaderboard'
+    previous: LiveGameStateResponse['leaderboard']
+    current: LiveGameStateResponse['leaderboard']
+    swapCount: number
+  }
+
+function formatEventTypeLabel(type: string): string {
+  const normalized = type.toLowerCase()
+  if (normalized.includes('bonus')) return 'Bonus Question'
+  if (normalized.includes('result')) return 'Match Result'
+  if (normalized.includes('tiebreaker')) return 'Tiebreaker'
+  return type.replace(/[_-]/g, ' ')
+}
+
+function hasLeaderboardChanged(previous: LiveGameStateResponse, next: LiveGameStateResponse): boolean {
+  if (previous.leaderboard.length !== next.leaderboard.length) return true
+  for (let index = 0; index < next.leaderboard.length; index += 1) {
+    const prior = previous.leaderboard[index]
+    const current = next.leaderboard[index]
+    if (!prior || !current) return true
+    if (prior.nickname !== current.nickname) return true
+    if (prior.rank !== current.rank) return true
+    if (prior.score !== current.score) return true
+  }
+  return false
+}
+
+function buildBubbleSortSteps(previous: string[], current: string[]): string[][] {
+  const currentSet = new Set(current)
+  const start = [
+    ...previous.filter((name) => currentSet.has(name)),
+    ...current.filter((name) => !previous.includes(name)),
+  ]
+  const steps: string[][] = [start]
+  const working = [...start]
+  const targetIndex = new Map(current.map((name, index) => [name, index]))
+
+  for (let outer = 0; outer < working.length; outer += 1) {
+    let swapped = false
+    for (let inner = 0; inner < working.length - 1; inner += 1) {
+      const left = working[inner]
+      const right = working[inner + 1]
+      if ((targetIndex.get(left) ?? Infinity) <= (targetIndex.get(right) ?? Infinity)) continue
+      working[inner] = right
+      working[inner + 1] = left
+      steps.push([...working])
+      swapped = true
+    }
+    if (!swapped) break
+  }
+
+  const finalOrder = steps[steps.length - 1]
+  if (finalOrder.length !== current.length || finalOrder.some((name, index) => name !== current[index])) {
+    steps.push([...current])
+  }
+
+  return steps
+}
+
+function getFullscreenEffectDurationMs(effect: FullscreenEffect): number {
+  if (effect.kind === 'events') return FULLSCREEN_EFFECT_DURATION_MS
+  return (effect.swapCount * LEADERBOARD_SWAP_DURATION_MS) + LEADERBOARD_FINAL_PAUSE_MS
+}
 
 function findMatchPick(picks: LivePlayerPicksPayload, matchId: string): LivePlayerMatchPick | null {
   return picks.matchPicks.find((pick) => pick.matchId === matchId) ?? null
@@ -72,7 +164,6 @@ function filterRosterMemberSuggestions(input: string, candidates: string[]): str
 export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerAppProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [me, setMe] = useState<LiveGameMeResponse | null>(null)
   const [state, setState] = useState<LiveGameStateResponse | null>(null)
@@ -82,14 +173,153 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
   const [activeRosterFieldKey, setActiveRosterFieldKey] = useState<string | null>(null)
   const [activeRosterQuery, setActiveRosterQuery] = useState('')
   const [battleRoyalEntryInputByMatchId, setBattleRoyalEntryInputByMatchId] = useState<Record<string, string>>({})
-  const [leaderboardEffects, setLeaderboardEffects] = useState<Record<string, LeaderboardEffect>>({})
-  const [newEventIds, setNewEventIds] = useState<string[]>([])
-  const [momentHeadline, setMomentHeadline] = useState<string | null>(null)
+  const [fullscreenEffectQueue, setFullscreenEffectQueue] = useState<FullscreenEffect[]>([])
+  const [activeFullscreenEffect, setActiveFullscreenEffect] = useState<FullscreenEffect | null>(null)
+  const [animatedLeaderboardOrder, setAnimatedLeaderboardOrder] = useState<string[]>([])
+  const [isPageFullscreen, setIsPageFullscreen] = useState(false)
+  const [isWakeLockActive, setIsWakeLockActive] = useState(false)
+  const [wakeLockSupported, setWakeLockSupported] = useState(false)
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('unsupported')
+  const [isPushSupported, setIsPushSupported] = useState(false)
+  const [isPushPromptOpen, setIsPushPromptOpen] = useState(false)
+  const [isPushSubscribed, setIsPushSubscribed] = useState(false)
+  const [isPushSubscribing, setIsPushSubscribing] = useState(false)
+  const [lastRefreshAtMs, setLastRefreshAtMs] = useState<number | null>(null)
+  const [nowTickMs, setNowTickMs] = useState(Date.now())
   const previousStateRef = useRef<LiveGameStateResponse | null>(null)
-  const clearEffectsTimeoutRef = useRef<number | null>(null)
+  const fullscreenEffectTimeoutRef = useRef<number | null>(null)
+  const leaderboardStepIntervalRef = useRef<number | null>(null)
   const hasHydratedInitialStateRef = useRef(false)
+  const wakeLockManagerRef = useRef<WakeLockManager | null>(null)
+
+  function queueFullscreenEffects(effects: FullscreenEffect[]) {
+    if (effects.length === 0) return
+    setFullscreenEffectQueue((previous) => [...previous, ...effects])
+  }
+
+  function dismissActiveFullscreenEffect() {
+    if (fullscreenEffectTimeoutRef.current) {
+      window.clearTimeout(fullscreenEffectTimeoutRef.current)
+      fullscreenEffectTimeoutRef.current = null
+    }
+    if (leaderboardStepIntervalRef.current) {
+      window.clearInterval(leaderboardStepIntervalRef.current)
+      leaderboardStepIntervalRef.current = null
+    }
+    setAnimatedLeaderboardOrder([])
+    setActiveFullscreenEffect(null)
+  }
+
+  useEffect(() => {
+    if (activeFullscreenEffect || fullscreenEffectQueue.length === 0) return
+
+    const [nextEffect, ...remaining] = fullscreenEffectQueue
+    setFullscreenEffectQueue(remaining)
+    setActiveFullscreenEffect(nextEffect)
+
+    if (fullscreenEffectTimeoutRef.current) {
+      window.clearTimeout(fullscreenEffectTimeoutRef.current)
+    }
+    fullscreenEffectTimeoutRef.current = window.setTimeout(() => {
+      setActiveFullscreenEffect(null)
+    }, getFullscreenEffectDurationMs(nextEffect))
+  }, [activeFullscreenEffect, fullscreenEffectQueue])
+
+  useEffect(() => {
+    if (leaderboardStepIntervalRef.current) {
+      window.clearInterval(leaderboardStepIntervalRef.current)
+      leaderboardStepIntervalRef.current = null
+    }
+
+    if (!activeFullscreenEffect || activeFullscreenEffect.kind !== 'leaderboard') {
+      setAnimatedLeaderboardOrder([])
+      return
+    }
+
+    const steps = buildBubbleSortSteps(
+      activeFullscreenEffect.previous.map((entry) => entry.nickname),
+      activeFullscreenEffect.current.map((entry) => entry.nickname),
+    )
+    setAnimatedLeaderboardOrder(steps[0] ?? [])
+
+    if (steps.length > 1) {
+      let stepIndex = 0
+      leaderboardStepIntervalRef.current = window.setInterval(() => {
+        stepIndex += 1
+        if (stepIndex >= steps.length) {
+          if (leaderboardStepIntervalRef.current) {
+            window.clearInterval(leaderboardStepIntervalRef.current)
+            leaderboardStepIntervalRef.current = null
+          }
+          return
+        }
+        setAnimatedLeaderboardOrder(steps[stepIndex])
+      }, LEADERBOARD_SWAP_DURATION_MS)
+    }
+
+    return () => {
+      if (leaderboardStepIntervalRef.current) {
+        window.clearInterval(leaderboardStepIntervalRef.current)
+        leaderboardStepIntervalRef.current = null
+      }
+    }
+  }, [activeFullscreenEffect])
 
   const applyGameUpdate = useCallback((nextState: LiveGameStateResponse, nextMe: LiveGameMeResponse, animate: boolean) => {
+    if (!animate) {
+      previousStateRef.current = nextState
+      setState(nextState)
+      setMe((current) => {
+        if (!current) return nextMe
+        return {
+          ...current,
+          game: nextMe.game,
+          locks: nextMe.locks,
+          player: {
+            ...current.player,
+            isSubmitted: nextMe.player.isSubmitted,
+            submittedAt: nextMe.player.submittedAt,
+            updatedAt: nextMe.player.updatedAt,
+          },
+        }
+      })
+      if (!hasHydratedInitialStateRef.current) {
+        setPicks(nextMe.player.picks)
+        hasHydratedInitialStateRef.current = true
+      }
+      return
+    }
+
+    const previousState = previousStateRef.current
+    previousStateRef.current = nextState
+    if (!previousState) return
+
+    const previousEventIds = new Set(previousState.events.map((event) => event.id))
+    const addedEvents = nextState.events.filter((event) => !previousEventIds.has(event.id))
+    const leaderboardChanged = hasLeaderboardChanged(previousState, nextState)
+
+    const queuedFullscreenEffects: FullscreenEffect[] = []
+    if (addedEvents.length > 0) {
+      queuedFullscreenEffects.push({
+        kind: 'events',
+        events: addedEvents.slice(0, 4),
+      })
+      vibrateForeground(UPDATE_VIBRATE_PATTERN)
+    }
+    if (leaderboardChanged) {
+      const bubbleSteps = buildBubbleSortSteps(
+        previousState.leaderboard.slice(0, FULLSCREEN_LEADERBOARD_LIMIT).map((entry) => entry.nickname),
+        nextState.leaderboard.slice(0, FULLSCREEN_LEADERBOARD_LIMIT).map((entry) => entry.nickname),
+      )
+      queuedFullscreenEffects.push({
+        kind: 'leaderboard',
+        previous: previousState.leaderboard.slice(0, FULLSCREEN_LEADERBOARD_LIMIT),
+        current: nextState.leaderboard.slice(0, FULLSCREEN_LEADERBOARD_LIMIT),
+        swapCount: Math.max(1, bubbleSteps.length - 1),
+      })
+    }
+    queueFullscreenEffects(queuedFullscreenEffects)
+
     setState(nextState)
     setMe((current) => {
       if (!current) return nextMe
@@ -105,68 +335,10 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
         },
       }
     })
-
     if (!hasHydratedInitialStateRef.current) {
       setPicks(nextMe.player.picks)
       hasHydratedInitialStateRef.current = true
     }
-
-    if (!animate) {
-      previousStateRef.current = nextState
-      return
-    }
-
-    const previousState = previousStateRef.current
-    previousStateRef.current = nextState
-    if (!previousState) return
-
-    const nextEffects: Record<string, LeaderboardEffect> = {}
-    const previousByNickname = new Map(previousState.leaderboard.map((entry) => [entry.nickname, entry]))
-    let nextMomentHeadline: string | null = null
-
-    for (const entry of nextState.leaderboard) {
-      const prior = previousByNickname.get(entry.nickname)
-      if (!prior) continue
-
-      const rankDelta = prior.rank - entry.rank
-      const scoreDelta = entry.score - prior.score
-      if (rankDelta > 0) {
-        nextEffects[entry.nickname] = 'rank-up'
-        if (!nextMomentHeadline) nextMomentHeadline = `${entry.nickname} climbs ${rankDelta} place${rankDelta === 1 ? '' : 's'}`
-        continue
-      }
-
-      if (rankDelta < 0) {
-        nextEffects[entry.nickname] = 'rank-down'
-        continue
-      }
-
-      if (scoreDelta !== 0) {
-        nextEffects[entry.nickname] = 'score'
-        if (!nextMomentHeadline) nextMomentHeadline = `${entry.nickname} scores +${scoreDelta}`
-      }
-    }
-
-    const previousEventIds = new Set(previousState.events.map((event) => event.id))
-    const addedEvents = nextState.events.filter((event) => !previousEventIds.has(event.id))
-    if (addedEvents.length > 0) {
-      setNewEventIds(addedEvents.map((event) => event.id))
-      if (!nextMomentHeadline) nextMomentHeadline = addedEvents[0].message
-    } else {
-      setNewEventIds([])
-    }
-
-    setLeaderboardEffects(nextEffects)
-    setMomentHeadline(nextMomentHeadline)
-
-    if (clearEffectsTimeoutRef.current) {
-      window.clearTimeout(clearEffectsTimeoutRef.current)
-    }
-    clearEffectsTimeoutRef.current = window.setTimeout(() => {
-      setLeaderboardEffects({})
-      setNewEventIds([])
-      setMomentHeadline(null)
-    }, HIGHLIGHT_DURATION_MS)
   }, [])
 
   const load = useCallback(async () => {
@@ -178,6 +350,7 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
       ])
 
       applyGameUpdate(loadedState, loadedMe, false)
+      setLastRefreshAtMs(Date.now())
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load game'
       toast.error(message)
@@ -192,12 +365,83 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
+      setNowTickMs(Date.now())
+    }, 1_000)
+
+    return () => window.clearInterval(intervalId)
+  }, [])
+
+  useEffect(() => {
+    setWakeLockSupported('wakeLock' in navigator)
+    setIsPushSupported(isWebPushSupported())
+    setNotificationPermission(getNotificationPermission())
+
+    void registerLiveGameServiceWorker().catch(() => {})
+    const unsubscribeMessages = subscribeToLiveGameSwMessages(() => {
+      vibrateForeground(UPDATE_VIBRATE_PATTERN)
+      void load()
+    })
+
+    const manager = createScreenWakeLockManager((isActive) => {
+      setIsWakeLockActive(isActive)
+    })
+    wakeLockManagerRef.current = manager
+
+    return () => {
+      unsubscribeMessages()
+      wakeLockManagerRef.current = null
+      void manager.destroy()
+    }
+  }, [load])
+
+  useEffect(() => {
+    if (!isPushSupported || !me) return
+
+    const promptStorageKey = getPushPromptStorageKey(gameId, me.player.id)
+    const promptedBefore = window.localStorage.getItem(promptStorageKey) === '1'
+
+    if (notificationPermission === 'granted') {
+      if (isPushSubscribed || isPushSubscribing) return
+      setIsPushSubscribing(true)
+      void subscribeToLiveGamePush(gameId)
+        .then(() => {
+          setIsPushSubscribed(true)
+        })
+        .catch(() => {
+          setIsPushSubscribed(false)
+        })
+        .finally(() => {
+          setIsPushSubscribing(false)
+        })
+      return
+    }
+
+    if (notificationPermission === 'default' && !promptedBefore) {
+      setIsPushPromptOpen(true)
+    }
+  }, [
+    gameId,
+    isPushSubscribed,
+    isPushSubscribing,
+    isPushSupported,
+    me,
+    notificationPermission,
+  ])
+
+  useEffect(() => {
+    const hasPushTransport = notificationPermission === 'granted' && isPushSubscribed
+    if (hasPushTransport) {
+      return () => {}
+    }
+
+    const intervalId = window.setInterval(() => {
       void Promise.all([
         getLiveGameState(gameId, joinCodeFromUrl ?? undefined),
         getLiveGameMe(gameId),
       ])
         .then(([nextState, nextMe]) => {
           applyGameUpdate(nextState, nextMe, true)
+          setLastRefreshAtMs(Date.now())
         })
         .catch(() => {
           // Keep current state when polling fails.
@@ -205,7 +449,7 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
     }, POLL_INTERVAL_MS)
 
     return () => window.clearInterval(intervalId)
-  }, [applyGameUpdate, gameId, joinCodeFromUrl])
+  }, [applyGameUpdate, gameId, isPushSubscribed, joinCodeFromUrl, notificationPermission])
 
   useEffect(() => {
     const promotionName = state?.card.promotionName?.trim() ?? ''
@@ -241,8 +485,23 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
   }, [activeRosterQuery, state?.card.promotionName])
 
   useEffect(() => () => {
-    if (clearEffectsTimeoutRef.current) {
-      window.clearTimeout(clearEffectsTimeoutRef.current)
+    if (fullscreenEffectTimeoutRef.current) {
+      window.clearTimeout(fullscreenEffectTimeoutRef.current)
+    }
+    if (leaderboardStepIntervalRef.current) {
+      window.clearInterval(leaderboardStepIntervalRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      setIsPageFullscreen(document.fullscreenElement != null)
+    }
+
+    syncFullscreenState()
+    document.addEventListener('fullscreenchange', syncFullscreenState)
+    return () => {
+      document.removeEventListener('fullscreenchange', syncFullscreenState)
     }
   }, [])
 
@@ -255,11 +514,12 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
     setIsRefreshing(true)
     try {
       await load()
-      toast.success('Refreshed')
     } finally {
       setIsRefreshing(false)
     }
   }
+
+  const isRefreshStale = lastRefreshAtMs !== null && (nowTickMs - lastRefreshAtMs) > REFRESH_STALE_THRESHOLD_MS
 
   function setMatchWinner(matchId: string, winnerName: string) {
     setPicks((prev) => {
@@ -417,37 +677,13 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
   }
 
   async function handleSave() {
-    if (!picks) return
+    if (!picks || !me) return
 
     setIsSaving(true)
     try {
-      const result = await saveMyLiveGamePicks(gameId, picks)
-      setMe((prev) => prev
-        ? {
-          ...prev,
-          player: result.player,
-        }
-        : prev)
-
-      if (result.ignoredLocks.length > 0) {
-        toast.warning(`Saved with ${result.ignoredLocks.length} locked field(s) ignored.`)
-      } else {
-        toast.success('Picks saved')
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to save picks'
-      toast.error(message)
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  async function handleSubmit() {
-    if (!picks) return
-
-    setIsSubmitting(true)
-    try {
-      const saved = await saveMyLiveGamePicks(gameId, picks)
+      const saved = await saveMyLiveGamePicks(gameId, picks, {
+        expectedUpdatedAt: me.player.updatedAt,
+      })
       setMe((prev) => prev
         ? {
           ...prev,
@@ -455,20 +691,100 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
         }
         : prev)
 
-      const submitted = await submitMyLiveGamePicks(gameId)
-      setMe((prev) => prev
-        ? {
-          ...prev,
-          player: submitted,
-        }
-        : prev)
-      toast.success('Picks submitted')
+      if (!saved.player.isSubmitted) {
+        const submitted = await submitMyLiveGamePicks(gameId)
+        setMe((prev) => prev
+          ? {
+            ...prev,
+            player: submitted,
+          }
+          : prev)
+      }
+
+      if (saved.ignoredLocks.length > 0) {
+        toast.warning(`Saved with ${saved.ignoredLocks.length} locked field(s) ignored.`)
+      } else {
+        toast.success('Picks saved')
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to submit picks'
+      const message = error instanceof Error ? error.message : 'Failed to save picks'
+      if (message.includes('changed in another session')) {
+        await load()
+      }
       toast.error(message)
     } finally {
-      setIsSubmitting(false)
+      setIsSaving(false)
     }
+  }
+
+  async function handleTogglePageFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      } else {
+        await document.documentElement.requestFullscreen()
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to toggle fullscreen mode'
+      toast.error(message)
+    }
+  }
+
+  async function handleToggleWakeLock() {
+    const manager = wakeLockManagerRef.current
+    if (!manager) return
+    if (isWakeLockActive) {
+      await manager.release()
+      return
+    }
+
+    const locked = await manager.request()
+    if (!locked) {
+      toast.error('Wake lock unavailable. Keep this page visible and retry.')
+    }
+  }
+
+  async function handleEnableNotifications() {
+    if (!isPushSupported) {
+      toast.error('Push notifications are not supported in this browser.')
+      return
+    }
+
+    if (!me) return
+
+    const promptStorageKey = getPushPromptStorageKey(gameId, me.player.id)
+    window.localStorage.setItem(promptStorageKey, '1')
+
+    const nextPermission = await requestNotificationPermission()
+    setNotificationPermission(nextPermission)
+
+    if (nextPermission === 'granted') {
+      setIsPushSubscribing(true)
+      try {
+        await subscribeToLiveGamePush(gameId)
+        setIsPushSubscribed(true)
+        toast.success('Notifications enabled')
+      } catch {
+        setIsPushSubscribed(false)
+        toast.error('Unable to enable push notifications for this game')
+      } finally {
+        setIsPushSubscribing(false)
+      }
+    } else if (nextPermission === 'denied') {
+      toast.error('Notifications blocked in browser settings')
+      await unsubscribeFromLiveGamePush(gameId)
+      setIsPushSubscribed(false)
+    }
+
+    setIsPushPromptOpen(false)
+  }
+
+  function handleDismissPushPrompt() {
+    if (me) {
+      const promptStorageKey = getPushPromptStorageKey(gameId, me.player.id)
+      window.localStorage.setItem(promptStorageKey, '1')
+    }
+    setIsPushPromptOpen(false)
   }
 
   const lockSnapshot = me?.locks
@@ -477,7 +793,10 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
     () => state?.leaderboard.find((entry) => entry.nickname === me?.player.nickname) ?? null,
     [state?.leaderboard, me?.player.nickname],
   )
-  const myLeaderboardEffect = me?.player.nickname ? leaderboardEffects[me.player.nickname] : undefined
+  const displayHref = useMemo(
+    () => `/games/${gameId}/display?code=${encodeURIComponent(state?.game.joinCode ?? joinCodeFromUrl ?? '')}`,
+    [gameId, joinCodeFromUrl, state?.game.joinCode],
+  )
   const eventParticipantCandidates = useMemo(
     () => Array.from(new Set((state?.card.matches ?? []).flatMap((match) => match.participants))),
     [state?.card.matches],
@@ -493,48 +812,189 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 px-4 py-6">
+      <Dialog
+        open={isPushPromptOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setIsPushPromptOpen(true)
+            return
+          }
+          handleDismissPushPrompt()
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Enable Live Game Alerts?</DialogTitle>
+            <DialogDescription>
+              We use push notifications to alert you about scoring updates while this live game is in progress,
+              including when the app is backgrounded.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleDismissPushPrompt}>
+              Not Now
+            </Button>
+            <Button onClick={() => void handleEnableNotifications()}>
+              Enable Notifications
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {activeFullscreenEffect ? (
+        <div
+          className={cn(
+            'lg-fullscreen-effect',
+            activeFullscreenEffect.kind === 'events' ? 'lg-fullscreen-effect-events' : 'lg-fullscreen-effect-leaderboard',
+          )}
+          onClick={dismissActiveFullscreenEffect}
+        >
+          {activeFullscreenEffect.kind === 'events' ? (
+            <div className="lg-fullscreen-effect-panel">
+              <div className="lg-fullscreen-effect-title">
+                <Sparkles className="h-6 w-6" />
+                <span className="font-heading text-2xl uppercase tracking-wide">Live Results</span>
+              </div>
+              <div className="lg-fullscreen-effect-body">
+                {activeFullscreenEffect.events.map((event, index) => (
+                  <div
+                    key={event.id}
+                    className="lg-fullscreen-event-item"
+                    style={{ animationDelay: `${index * 110}ms` }}
+                  >
+                    <p className="text-xs uppercase tracking-wide text-primary/90">
+                      {formatEventTypeLabel(event.type)}
+                    </p>
+                    <p className="text-base text-foreground">{event.message}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="lg-fullscreen-effect-panel">
+              <div className="lg-fullscreen-effect-title">
+                <Trophy className="h-6 w-6" />
+                <span className="font-heading text-2xl uppercase tracking-wide">Leaderboard Shift</span>
+              </div>
+              <div
+                className="lg-fullscreen-effect-body"
+              >
+                {(() => {
+                  const currentByNickname = new Map(activeFullscreenEffect.current.map((entry) => [entry.nickname, entry]))
+                  const previousByNickname = new Map(activeFullscreenEffect.previous.map((entry) => [entry.nickname, entry]))
+                  const order = animatedLeaderboardOrder.length > 0
+                    ? animatedLeaderboardOrder
+                    : activeFullscreenEffect.previous.map((entry) => entry.nickname)
+
+                  return (
+                    <Reorder.Group
+                      axis="y"
+                      values={order}
+                      onReorder={() => {}}
+                      className="lg-fullscreen-reorder-list"
+                    >
+                      {order.map((nickname) => {
+                        const entry = currentByNickname.get(nickname)
+                        if (!entry) return null
+                        const previousRank = previousByNickname.get(nickname)?.rank ?? null
+                        const rankDelta = previousRank == null ? 0 : previousRank - entry.rank
+
+                        return (
+                          <Reorder.Item
+                            key={`fullscreen-lb-${nickname}`}
+                            value={nickname}
+                            className="lg-fullscreen-leaderboard-row"
+                            transition={{ duration: 0.9, ease: [0.2, 0.8, 0.2, 1] }}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-base font-semibold">#{entry.rank} {entry.nickname}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {previousRank == null ? 'New to board' : `Was #${previousRank}`}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-mono text-lg font-semibold">{entry.score}</p>
+                              {rankDelta > 0 ? <p className="text-xs text-emerald-300">+{rankDelta} rank</p> : null}
+                              {rankDelta < 0 ? <p className="text-xs text-amber-300">{rankDelta} rank</p> : null}
+                            </div>
+                          </Reorder.Item>
+                        )
+                      })}
+                    </Reorder.Group>
+                  )
+                })()}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
       <header className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-3">
           <div>
             <h1 className="text-2xl font-heading font-semibold">{state.card.eventName || 'Live Game'}</h1>
             <p className="text-sm text-muted-foreground">
               Playing as <span className="font-semibold text-foreground">{me.player.nickname}</span> • code{' '}
               <span className="font-mono">{state.game.joinCode}</span>
             </p>
-            {myRank ? (
-              <p
-                className={cn(
-                  'text-xs text-muted-foreground',
-                  myLeaderboardEffect === 'rank-up' && 'lg-rank-up text-emerald-300',
-                  myLeaderboardEffect === 'rank-down' && 'lg-rank-down text-amber-300',
-                  myLeaderboardEffect === 'score' && 'lg-score-bump text-primary',
-                )}
-              >
-                Current rank: #{myRank.rank} ({myRank.score} pts)
-              </p>
-            ) : null}
-            {momentHeadline ? (
-              <p className="lg-event-pop mt-2 inline-flex max-w-[58ch] items-center gap-2 rounded-full border border-primary/40 bg-primary/15 px-3 py-1 text-xs text-primary">
-                <Sparkles className="h-3.5 w-3.5" />
-                {momentHeadline}
-              </p>
-            ) : null}
+            {myRank ? <p className="text-xs text-muted-foreground">Current rank: #{myRank.rank} ({myRank.score} pts)</p> : null}
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => void handleRefresh()} disabled={isRefreshing}>
-              <RefreshCcw className="mr-1 h-4 w-4" />
-              {isRefreshing ? 'Refreshing...' : 'Refresh'}
-            </Button>
-            <Button variant="outline" onClick={() => void handleSave()} disabled={isSaving}>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <Button onClick={() => void handleSave()} disabled={isSaving}>
               <Save className="mr-1 h-4 w-4" />
               {isSaving ? 'Saving...' : 'Save Picks'}
             </Button>
-            <Button onClick={() => void handleSubmit()} disabled={isSubmitting || me.player.isSubmitted}>
-              {me.player.isSubmitted ? 'Submitted' : isSubmitting ? 'Submitting...' : 'Submit Picks'}
+            <Button variant="outline" onClick={() => void handleTogglePageFullscreen()}>
+              {isPageFullscreen ? <Minimize2 className="mr-1 h-4 w-4" /> : <Maximize2 className="mr-1 h-4 w-4" />}
+              {isPageFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+            </Button>
+            <Button variant="outline" onClick={() => void handleToggleWakeLock()} disabled={!wakeLockSupported}>
+              <Zap className="mr-1 h-4 w-4" />
+              {isWakeLockActive ? 'Wake Lock On' : 'Keep Screen Awake'}
+            </Button>
+            {notificationPermission === 'granted' && isPushSubscribed ? (
+              <Button variant="outline" disabled>
+                <BellOff className="mr-1 h-4 w-4" />
+                Alerts Enabled
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (notificationPermission === 'default') {
+                    setIsPushPromptOpen(true)
+                    return
+                  }
+                  void handleEnableNotifications()
+                }}
+                disabled={notificationPermission === 'unsupported' || isPushSubscribing}
+              >
+                <Bell className="mr-1 h-4 w-4" />
+                {isPushSubscribing ? 'Enabling...' : 'Enable Alerts'}
+              </Button>
+            )}
+            <Button asChild variant="outline">
+              <Link href={displayHref} target="_blank" rel="noreferrer">
+                <Tv className="mr-1 h-4 w-4" />
+                TV Display
+              </Link>
             </Button>
           </div>
         </div>
       </header>
+
+      {isRefreshStale ? (
+        <div className="fixed bottom-4 right-4 z-40">
+          <Button
+            type="button"
+            size="icon"
+            className="h-12 w-12 rounded-full shadow-lg"
+            onClick={() => void handleRefresh()}
+            disabled={isRefreshing}
+            title={isRefreshing ? 'Refreshing...' : 'Refresh now'}
+          >
+            <RefreshCcw className={isRefreshing ? 'h-5 w-5 animate-spin' : 'h-5 w-5'} />
+          </Button>
+        </div>
+      ) : null}
 
       {state.card.matches.map((match, index) => {
         const matchPick = findMatchPick(picks, match.id)
@@ -555,7 +1015,10 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
           : []
 
         return (
-          <section key={match.id} className="rounded-lg border border-border bg-card p-4">
+          <section
+            key={match.id}
+            className="rounded-lg border border-border bg-card p-4"
+          >
             <div className="mb-2 flex items-center justify-between gap-2">
               <h2 className="font-semibold">Match {index + 1}: {match.title || 'Untitled Match'}</h2>
               {isMatchLocked ? <span className="text-xs text-amber-500">Locked</span> : null}
@@ -802,17 +1265,10 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
                 : presence.state === 'idle'
                   ? 'bg-amber-500'
                   : 'bg-slate-400'
-              const effect = leaderboardEffects[entry.nickname]
-
               return (
                 <div
                   key={`${entry.rank}:${entry.nickname}`}
-                  className={cn(
-                    'flex items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1 text-sm transition-colors',
-                    effect === 'rank-up' && 'lg-rank-up border-emerald-500/40 bg-emerald-500/10',
-                    effect === 'rank-down' && 'lg-rank-down border-amber-500/40 bg-amber-500/10',
-                    effect === 'score' && 'lg-score-bump border-primary/45 bg-primary/10',
-                  )}
+                  className="flex items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1 text-sm"
                 >
                   <div className="min-w-0">
                     <p className="truncate">#{entry.rank} {entry.nickname}</p>
@@ -824,9 +1280,6 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
                   </div>
                   <div className="shrink-0">
                     <span className="font-mono">{entry.score}</span>
-                    {effect === 'rank-up' ? <ArrowUp className="ml-1 inline h-3.5 w-3.5 text-emerald-400" /> : null}
-                    {effect === 'rank-down' ? <ArrowDown className="ml-1 inline h-3.5 w-3.5 text-amber-400" /> : null}
-                    {effect === 'score' ? <Flame className="ml-1 inline h-3.5 w-3.5 text-primary" /> : null}
                   </div>
                 </div>
               )
@@ -842,10 +1295,7 @@ export function LiveGamePlayerApp({ gameId, joinCodeFromUrl }: LiveGamePlayerApp
             {state.events.slice(0, 12).map((event) => (
               <p
                 key={event.id}
-                className={cn(
-                  'rounded-md border border-transparent px-2 py-1 text-sm',
-                  newEventIds.includes(event.id) && 'lg-event-pop border-primary/45 bg-primary/10',
-                )}
+                className="rounded-md border border-transparent px-2 py-1 text-sm"
               >
                 <span className="text-muted-foreground">{new Date(event.createdAt).toLocaleTimeString()} </span>
                 {event.message}
