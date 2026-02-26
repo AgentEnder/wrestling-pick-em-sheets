@@ -110,11 +110,11 @@ const saveCardSchema = z.object({
 })
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ cardId: string }> },
 ) {
   const { cardId } = await context.params
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   const card = await findResolvedReadableCardById(cardId, userId)
 
   if (!card) {
@@ -133,7 +133,7 @@ export async function PUT(
     return csrfError
   }
 
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

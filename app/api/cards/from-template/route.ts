@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     return csrfError
   }
 
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

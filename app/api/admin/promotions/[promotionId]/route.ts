@@ -28,7 +28,7 @@ export async function PATCH(
   const csrfError = enforceSameOrigin(request)
   if (csrfError) return csrfError
 
-  const adminError = await ensureAdminRequest()
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const body = await request.json().catch(() => null)
@@ -59,7 +59,7 @@ export async function DELETE(
   const csrfError = enforceSameOrigin(request)
   if (csrfError) return csrfError
 
-  const adminError = await ensureAdminRequest()
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const { promotionId } = await context.params

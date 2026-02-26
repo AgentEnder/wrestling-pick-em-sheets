@@ -10,8 +10,8 @@ const createCardSchema = z.object({
   isPublic: z.boolean().optional().default(false),
 })
 
-export async function GET() {
-  const userId = await getRequestUserId()
+export async function GET(request: Request) {
+  const userId = await getRequestUserId(request)
   const cards = await listReadableCards(userId)
 
   return NextResponse.json({ data: cards })
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     return csrfError
   }
 
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

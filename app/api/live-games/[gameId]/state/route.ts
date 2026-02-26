@@ -12,7 +12,7 @@ export async function GET(
   context: { params: Promise<{ gameId: string }> },
 ) {
   const { gameId } = await context.params
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   const sessionToken = readLiveGameSessionTokenFromRequest(request)
   const joinCode = new URL(request.url).searchParams.get('code')
 

@@ -15,10 +15,10 @@ const createRosterMemberSchema = z.object({
 })
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ promotionId: string }> },
 ) {
-  const adminError = await ensureAdminRequest()
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const { promotionId } = await context.params
@@ -33,7 +33,7 @@ export async function POST(
   const csrfError = enforceSameOrigin(request)
   if (csrfError) return csrfError
 
-  const adminError = await ensureAdminRequest()
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const body = await request.json().catch(() => null)

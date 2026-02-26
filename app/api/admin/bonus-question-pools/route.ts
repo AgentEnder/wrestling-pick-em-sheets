@@ -17,8 +17,8 @@ const createPoolSchema = z.object({
   ruleSetIds: z.array(z.enum(['timed-entry', 'elimination'])).max(10).optional().default([]),
 })
 
-export async function GET() {
-  const adminError = await ensureAdminRequest()
+export async function GET(request: Request) {
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const pools = await listBonusQuestionPools({ includeInactive: true })
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     return csrfError
   }
 
-  const adminError = await ensureAdminRequest()
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const body = await request.json().catch(() => null)

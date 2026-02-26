@@ -37,7 +37,7 @@ export async function PATCH(
     return csrfError
   }
 
-  const adminError = await ensureAdminRequest()
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const body = await request.json().catch(() => null)
@@ -72,7 +72,7 @@ export async function DELETE(
     return csrfError
   }
 
-  const adminError = await ensureAdminRequest()
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const { poolId } = await context.params

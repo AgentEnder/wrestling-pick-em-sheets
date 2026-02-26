@@ -42,10 +42,10 @@ const liveKeyPayloadSchema = z.object({
 })
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ cardId: string }> },
 ) {
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -73,7 +73,7 @@ export async function PUT(
     return csrfError
   }
 
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

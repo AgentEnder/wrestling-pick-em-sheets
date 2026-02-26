@@ -12,8 +12,8 @@ const createPromotionSchema = z.object({
   isActive: z.boolean().optional().default(true),
 })
 
-export async function GET() {
-  const adminError = await ensureAdminRequest()
+export async function GET(request: Request) {
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const promotions = await listPromotions({ includeInactive: true })
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   const csrfError = enforceSameOrigin(request)
   if (csrfError) return csrfError
 
-  const adminError = await ensureAdminRequest()
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const body = await request.json().catch(() => null)

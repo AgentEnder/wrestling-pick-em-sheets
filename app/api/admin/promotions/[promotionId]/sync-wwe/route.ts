@@ -11,7 +11,7 @@ export async function POST(
   const csrfError = enforceSameOrigin(request)
   if (csrfError) return csrfError
 
-  const adminError = await ensureAdminRequest()
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const { promotionId } = await context.params

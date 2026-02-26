@@ -14,8 +14,8 @@ const createTemplateCardSchema = z.object({
   isPublic: z.boolean().optional().default(true),
 })
 
-export async function GET() {
-  const adminError = await ensureAdminRequest()
+export async function GET(request: Request) {
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
   const cards = await listTemplateCardsForAdmin()
@@ -28,10 +28,10 @@ export async function POST(request: Request) {
     return csrfError
   }
 
-  const adminError = await ensureAdminRequest()
+  const adminError = await ensureAdminRequest(request)
   if (adminError) return adminError
 
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
