@@ -1,12 +1,18 @@
 import { createHash, randomBytes, randomUUID } from 'crypto'
 
 import type { Insertable, Selectable } from 'kysely'
+import { UAParser } from 'ua-parser-js'
 
 import type { ResolvedCard } from '@/lib/server/repositories/cards'
 import { findResolvedReadableCardById } from '@/lib/server/repositories/cards'
 import { db } from '@/lib/server/db/client'
-import type { LiveGameEvents, LiveGamePlayers, LiveGames } from '@/lib/server/db/generated'
+import type {
+  LiveGameEvents,
+  LiveGamePlayers,
+  LiveGames,
+} from '@/lib/server/db/generated'
 import { isCardOwner } from '@/lib/server/db/permissions'
+import { sendLiveGamePushToSubscribers } from '@/lib/server/live-game-push'
 import { normalizeLiveKeyPayload } from '@/lib/server/repositories/live-keys'
 import type {
   BonusGradingRule,
@@ -18,6 +24,8 @@ import type {
   LiveGameMode,
   LiveGamePlayer,
   LiveGameStatus,
+  LiveKeyAnswer,
+  LiveKeyMatchResult,
   LiveKeyTimer,
   LivePlayerAnswer,
   LivePlayerMatchPick,
@@ -57,6 +65,19 @@ export interface LiveGameEventFeedItem {
 export interface LiveGameComputedState {
   game: LiveGame
   card: ResolvedCard
+  joinedPlayers: Array<{
+    id: string
+    nickname: string
+    joinedAt: string
+    lastSeenAt: string
+    isSubmitted: boolean
+    authMethod: 'guest' | 'clerk'
+    browserName: string | null
+    osName: string | null
+    deviceType: string | null
+    platform: string | null
+    model: string | null
+  }>
   leaderboard: LiveGameLeaderboardEntry[]
   events: LiveGameEventFeedItem[]
   playerCount: number
@@ -75,12 +96,86 @@ interface PendingLiveGameEvent {
   message: string
 }
 
+interface LiveGamePushSubscriptionInput {
+  endpoint: string
+  expirationTime: number | null
+  keys: {
+    p256dh: string
+    auth: string
+  }
+}
+
+interface JoinDeviceInfoInput {
+  userAgent?: string | null
+  userAgentData?: Record<string, unknown>
+}
+
+interface ParsedJoinDeviceInfo {
+  userAgent: string | null
+  userAgentDataJson: string | null
+  browserName: string | null
+  browserVersion: string | null
+  osName: string | null
+  osVersion: string | null
+  deviceType: string | null
+  deviceVendor: string | null
+  deviceModel: string | null
+  platform: string | null
+  platformVersion: string | null
+  architecture: string | null
+}
+
+interface JoinLiveGameOptions {
+  clerkUserId?: string | null
+  deviceInfo?: JoinDeviceInfoInput
+}
+
 function normalizeNickname(value: string): string {
   return value.trim().replace(/\s+/g, ' ')
 }
 
 function normalizeNicknameKey(value: string): string {
   return normalizeNickname(value).toLowerCase()
+}
+
+function normalizeOptionalText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function parseJoinDeviceInfo(deviceInfo?: JoinDeviceInfoInput): ParsedJoinDeviceInfo {
+  const userAgent = normalizeOptionalText(deviceInfo?.userAgent) ?? null
+  const uaData = deviceInfo?.userAgentData ?? null
+  const parser = new UAParser(userAgent ?? undefined)
+  const parsed = parser.getResult()
+  const fallbackPlatform = normalizeOptionalText(uaData?.platform)
+  const fallbackPlatformVersion = normalizeOptionalText(uaData?.platformVersion)
+  const fallbackArchitecture = normalizeOptionalText(uaData?.architecture)
+  const fallbackModel = normalizeOptionalText(uaData?.model)
+  const fallbackBrowserName =
+    Array.isArray(uaData?.fullVersionList) && uaData.fullVersionList.length > 0
+      ? normalizeOptionalText(uaData.fullVersionList[0]?.brand)
+      : null
+  const fallbackBrowserVersion =
+    Array.isArray(uaData?.fullVersionList) && uaData.fullVersionList.length > 0
+      ? normalizeOptionalText(uaData.fullVersionList[0]?.version)
+      : null
+
+  return {
+    userAgent,
+    userAgentDataJson: uaData ? JSON.stringify(uaData) : null,
+    browserName: normalizeOptionalText(parsed.browser.name) ?? fallbackBrowserName,
+    browserVersion: normalizeOptionalText(parsed.browser.version) ?? fallbackBrowserVersion,
+    osName: normalizeOptionalText(parsed.os.name) ?? fallbackPlatform,
+    osVersion: normalizeOptionalText(parsed.os.version) ?? fallbackPlatformVersion,
+    deviceType: normalizeOptionalText(parsed.device.type),
+    deviceVendor: normalizeOptionalText(parsed.device.vendor),
+    deviceModel: normalizeOptionalText(parsed.device.model) ?? fallbackModel,
+    platform: fallbackPlatform ?? normalizeOptionalText(parsed.os.name),
+    platformVersion: fallbackPlatformVersion ?? normalizeOptionalText(parsed.os.version),
+    architecture: normalizeOptionalText(parsed.cpu.architecture) ?? fallbackArchitecture,
+  }
 }
 
 function normalizeAnswer(value: unknown): LivePlayerAnswer | null {
@@ -221,6 +316,13 @@ function parseJson<T>(value: string, fallback: T): T {
   }
 }
 
+function hasReachedEventStartTime(eventDate: string | null | undefined): boolean {
+  if (!eventDate) return false
+  const parsed = new Date(eventDate).getTime()
+  if (!Number.isFinite(parsed)) return false
+  return parsed <= Date.now()
+}
+
 function mapLiveGame(row: LiveGameSelectable): LiveGame {
   const status: LiveGameStatus = row.status === 'live' || row.status === 'ended' ? row.status : 'lobby'
   const mode: LiveGameMode = row.mode === 'solo' ? 'solo' : 'room'
@@ -231,6 +333,7 @@ function mapLiveGame(row: LiveGameSelectable): LiveGame {
     hostUserId: row.host_user_id,
     mode,
     joinCode: row.join_code,
+    allowLateJoins: Number(row.allow_late_joins) === 1,
     status,
     expiresAt: row.expires_at,
     endedAt: row.ended_at,
@@ -245,6 +348,8 @@ function mapLiveGamePlayer(row: LiveGamePlayerSelectable): LiveGamePlayer {
   return {
     id: String(row.id),
     gameId: row.game_id,
+    authMethod: row.auth_method === 'clerk' ? 'clerk' : 'guest',
+    clerkUserId: row.clerk_user_id,
     nickname: row.nickname,
     picks: normalizeLivePlayerPicks(parseJson<unknown>(row.picks_json, {})),
     isSubmitted: Number(row.is_submitted) === 1,
@@ -252,7 +357,60 @@ function mapLiveGamePlayer(row: LiveGamePlayerSelectable): LiveGamePlayer {
     joinedAt: row.joined_at,
     lastSeenAt: row.last_seen_at,
     updatedAt: row.updated_at,
+    browserName: row.browser_name,
+    browserVersion: row.browser_version,
+    osName: row.os_name,
+    osVersion: row.os_version,
+    deviceType: row.device_type,
+    deviceVendor: row.device_vendor,
+    deviceModel: row.device_model,
+    platform: row.platform,
+    platformVersion: row.platform_version,
+    architecture: row.architecture,
   }
+}
+
+function isGameStartedByCardEvent(game: LiveGame, card: ResolvedCard): boolean {
+  if (game.status === 'live' || game.status === 'ended') return true
+  return hasReachedEventStartTime(card.eventDate)
+}
+
+async function autoStartGameForCardEvent(row: LiveGameSelectable, card: ResolvedCard): Promise<LiveGameSelectable> {
+  const status: LiveGameStatus = row.status === 'live' || row.status === 'ended' ? row.status : 'lobby'
+  if (status !== 'lobby') return row
+  if (!hasReachedEventStartTime(card.eventDate)) return row
+
+  const gameId = String(row.id)
+  const now = nowIso()
+  const updated = await db
+    .updateTable('live_games')
+    .set({
+      status: 'live',
+      updated_at: now,
+    })
+    .where('id', '=', gameId)
+    .where('status', '=', 'lobby')
+    .returningAll()
+    .executeTakeFirst()
+
+  if (updated) {
+    await insertLiveGameEvent(gameId, 'game.status', 'Room auto-started at event start time')
+    await sendLiveGamePushToSubscribers(gameId, {
+      title: 'Live Game Update',
+      body: 'Room auto-started.',
+      url: `/games/${gameId}/play?code=${encodeURIComponent(updated.join_code)}`,
+      tag: `live-game-status:${gameId}`,
+    })
+    return updated
+  }
+
+  const reloaded = await db
+    .selectFrom('live_games')
+    .selectAll()
+    .where('id', '=', gameId)
+    .executeTakeFirst()
+
+  return reloaded ?? row
 }
 
 function mapLiveGameEvent(row: LiveGameEventSelectable): LiveGameEventFeedItem {
@@ -963,10 +1121,11 @@ interface ClosestBucket {
 
 function scoreForQuestion(
   question: BonusQuestion,
+  defaultPoints: number,
   keyAnswer: string,
   playerAnswer: string,
 ): { score: number; isClosestCandidate: boolean; distance?: number } {
-  const points = question.points ?? 0
+  const points = question.points ?? defaultPoints
   if (!keyAnswer.trim() || !playerAnswer.trim() || points <= 0) {
     return { score: 0, isClosestCandidate: false }
   }
@@ -1076,7 +1235,7 @@ function computeLeaderboard(
       for (const question of match.bonusQuestions) {
         const keyAnswer = keyMatchResult.bonusAnswers.find((answer) => answer.questionId === question.id)?.answer ?? ''
         const playerAnswer = pickBonusAnswer(playerMatchPick?.bonusAnswers ?? [], question.id)
-        const result = scoreForQuestion(question, keyAnswer, playerAnswer)
+        const result = scoreForQuestion(question, card.defaultPoints, keyAnswer, playerAnswer)
 
         if (result.score > 0) {
           score.score += result.score
@@ -1110,7 +1269,7 @@ function computeLeaderboard(
       if (!score) continue
 
       const playerAnswer = pickBonusAnswer(player.picks.eventBonusAnswers, question.id)
-      const result = scoreForQuestion(question, keyAnswer, playerAnswer)
+      const result = scoreForQuestion(question, card.defaultPoints, keyAnswer, playerAnswer)
 
       if (result.score > 0) {
         score.score += result.score
@@ -1220,6 +1379,81 @@ function parseMatchTimerId(timerId: string): string | null {
   return matchId.length > 0 ? matchId : null
 }
 
+function hasNonEmptyValue(value: string | null | undefined): boolean {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function mergeKeyAnswers(previous: LiveKeyAnswer[], incoming: LiveKeyAnswer[]): LiveKeyAnswer[] {
+  const incomingByQuestionId = new Map(incoming.map((answer) => [answer.questionId, answer]))
+  const merged: LiveKeyAnswer[] = []
+  const seen = new Set<string>()
+
+  for (const previousAnswer of previous) {
+    const nextAnswer = incomingByQuestionId.get(previousAnswer.questionId)
+    merged.push(nextAnswer ?? previousAnswer)
+    seen.add(previousAnswer.questionId)
+  }
+
+  for (const incomingAnswer of incoming) {
+    if (seen.has(incomingAnswer.questionId)) continue
+    merged.push(incomingAnswer)
+  }
+
+  return merged
+}
+
+function mergeKeyTimers(previous: LiveKeyTimer[], incoming: LiveKeyTimer[]): LiveKeyTimer[] {
+  const incomingById = new Map(incoming.map((timer) => [timer.id, timer]))
+  const merged: LiveKeyTimer[] = []
+  const seen = new Set<string>()
+
+  for (const previousTimer of previous) {
+    const nextTimer = incomingById.get(previousTimer.id)
+    merged.push(nextTimer ?? previousTimer)
+    seen.add(previousTimer.id)
+  }
+
+  for (const incomingTimer of incoming) {
+    if (seen.has(incomingTimer.id)) continue
+    merged.push(incomingTimer)
+  }
+
+  return merged
+}
+
+function mergeKeyMatchResults(previous: LiveKeyMatchResult[], incoming: LiveKeyMatchResult[]): LiveKeyMatchResult[] {
+  const previousByMatchId = new Map(previous.map((result) => [result.matchId, result]))
+  const merged: LiveKeyMatchResult[] = []
+  const seen = new Set<string>()
+
+  for (const incomingResult of incoming) {
+    const previousResult = previousByMatchId.get(incomingResult.matchId)
+    merged.push({
+      ...incomingResult,
+      bonusAnswers: mergeKeyAnswers(previousResult?.bonusAnswers ?? [], incomingResult.bonusAnswers),
+    })
+    seen.add(incomingResult.matchId)
+  }
+
+  for (const previousResult of previous) {
+    if (seen.has(previousResult.matchId)) continue
+    merged.push(previousResult)
+  }
+
+  return merged
+}
+
+function mergeLiveKeyPayload(previous: LiveGameKeyPayload, incoming: LiveGameKeyPayload): LiveGameKeyPayload {
+  return normalizeLiveKeyPayload({
+    timers: mergeKeyTimers(previous.timers, incoming.timers),
+    matchResults: mergeKeyMatchResults(previous.matchResults, incoming.matchResults),
+    eventBonusAnswers: mergeKeyAnswers(previous.eventBonusAnswers, incoming.eventBonusAnswers),
+    tiebreakerAnswer: incoming.tiebreakerAnswer,
+    tiebreakerRecordedAt: incoming.tiebreakerRecordedAt,
+    tiebreakerTimerId: incoming.tiebreakerTimerId,
+  })
+}
+
 function autoApplyTimerLocks(
   previousPayload: LiveGameKeyPayload,
   nextPayload: LiveGameKeyPayload,
@@ -1241,6 +1475,49 @@ function autoApplyTimerLocks(
         locked: true,
         source: 'timer',
       }
+    }
+  }
+
+  return nextLockState
+}
+
+function autoApplyValueLocks(
+  previousPayload: LiveGameKeyPayload,
+  nextPayload: LiveGameKeyPayload,
+  lockState: LiveGameLockState,
+): LiveGameLockState {
+  const nextLockState = normalizeLiveGameLockState(lockState)
+  const previousMatchResults = new Map(previousPayload.matchResults.map((result) => [result.matchId, result]))
+  const previousEventAnswers = new Map(previousPayload.eventBonusAnswers.map((answer) => [answer.questionId, answer.answer]))
+
+  for (const result of nextPayload.matchResults) {
+    const previousResult = previousMatchResults.get(result.matchId)
+    if (!hasNonEmptyValue(previousResult?.winnerName) && hasNonEmptyValue(result.winnerName)) {
+      nextLockState.matchLocks[result.matchId] = {
+        locked: true,
+        source: 'host',
+      }
+    }
+
+    const previousBonusAnswers = new Map((previousResult?.bonusAnswers ?? []).map((answer) => [answer.questionId, answer.answer]))
+    for (const answer of result.bonusAnswers) {
+      if (hasNonEmptyValue(previousBonusAnswers.get(answer.questionId))) continue
+      if (!hasNonEmptyValue(answer.answer)) continue
+
+      nextLockState.matchBonusLocks[toMatchBonusKey(result.matchId, answer.questionId)] = {
+        locked: true,
+        source: 'host',
+      }
+    }
+  }
+
+  for (const answer of nextPayload.eventBonusAnswers) {
+    if (hasNonEmptyValue(previousEventAnswers.get(answer.questionId))) continue
+    if (!hasNonEmptyValue(answer.answer)) continue
+
+    nextLockState.eventBonusLocks[answer.questionId] = {
+      locked: true,
+      source: 'host',
     }
   }
 
@@ -1269,6 +1546,7 @@ export async function createLiveGame(cardId: string, hostUserId: string): Promis
     host_user_id: hostUserId,
     mode: 'room',
     join_code: joinCode,
+    allow_late_joins: 1,
     status: 'lobby',
     key_payload_json: JSON.stringify(normalizeLiveKeyPayload(null)),
     lock_state_json: JSON.stringify(normalizeLiveGameLockState(null)),
@@ -1316,7 +1594,12 @@ export async function getHostLiveGame(gameId: string, hostUserId: string): Promi
     .executeTakeFirst()
 
   if (!row) return null
-  return mapLiveGame(row)
+
+  const card = await getCardForGame(row.card_id, hostUserId)
+  if (!card) return null
+
+  const hydrated = await autoStartGameForCardEvent(row, card)
+  return mapLiveGame(hydrated)
 }
 
 export async function getLiveGameByJoinCode(joinCode: string): Promise<LiveGame | null> {
@@ -1328,14 +1611,58 @@ export async function getLiveGameByJoinCode(joinCode: string): Promise<LiveGame 
     .executeTakeFirst()
 
   if (!row) return null
-  return mapLiveGame(row)
+
+  const card = await getCardForGame(row.card_id, row.host_user_id)
+  if (!card) return null
+
+  const hydrated = await autoStartGameForCardEvent(row, card)
+  return mapLiveGame(hydrated)
+}
+
+export async function getLiveGameJoinPreview(joinCode: string): Promise<{
+  game: LiveGame
+  eventName: string
+  eventStartAt: string | null
+  isStarted: boolean
+} | null> {
+  const game = await getLiveGameByJoinCode(joinCode)
+  if (!game) return null
+
+  const card = await getCardForGame(game.cardId, game.hostUserId)
+  if (!card) return null
+
+  return {
+    game,
+    eventName: card.eventName || 'Untitled Event',
+    eventStartAt: card.eventDate.trim() ? card.eventDate : null,
+    isStarted: isGameStartedByCardEvent(game, card),
+  }
 }
 
 export async function updateLiveGameStatus(
   gameId: string,
   hostUserId: string,
-  status: LiveGameStatus,
+  next: {
+    status?: LiveGameStatus
+    allowLateJoins?: boolean
+  },
 ): Promise<LiveGame | null> {
+  if (typeof next.status === 'undefined' && typeof next.allowLateJoins === 'undefined') {
+    return null
+  }
+
+  const row = await db
+    .selectFrom('live_games')
+    .selectAll()
+    .where('id', '=', gameId)
+    .where('host_user_id', '=', hostUserId)
+    .executeTakeFirst()
+
+  if (!row) return null
+
+  const current = mapLiveGame(row)
+  const status = next.status ?? current.status
+  const allowLateJoins = typeof next.allowLateJoins === 'boolean' ? next.allowLateJoins : current.allowLateJoins
   const now = nowIso()
   const nextExpiresAt = new Date(Date.now() + LIVE_GAME_DURATION_MS).toISOString()
 
@@ -1343,6 +1670,7 @@ export async function updateLiveGameStatus(
     .updateTable('live_games')
     .set({
       status,
+      allow_late_joins: allowLateJoins ? 1 : 0,
       expires_at: status === 'ended' ? undefined : nextExpiresAt,
       ended_at: status === 'ended' ? now : null,
       updated_at: now,
@@ -1354,7 +1682,36 @@ export async function updateLiveGameStatus(
 
   if (!updated) return null
 
-  await insertLiveGameEvent(gameId, 'game.status', `Room status changed to ${status}`)
+  if (current.status !== status) {
+    await insertLiveGameEvent(gameId, 'game.status', `Room status changed to ${status}`)
+  }
+  if (current.allowLateJoins !== allowLateJoins) {
+    await insertLiveGameEvent(
+      gameId,
+      'game.entries',
+      allowLateJoins ? 'Mid-game entries enabled' : 'Mid-game entries disabled',
+    )
+  }
+
+  await sendLiveGamePushToSubscribers(gameId, {
+    title: 'Live Game Update',
+    body: current.status !== status
+      ? `Room status changed to ${status}.`
+      : current.allowLateJoins !== allowLateJoins
+        ? allowLateJoins
+          ? 'Mid-game entries enabled.'
+          : 'Mid-game entries disabled.'
+        : 'Room settings updated.',
+    url: `/games/${gameId}/play?code=${encodeURIComponent(updated.join_code)}`,
+    tag: `live-game-status:${gameId}`,
+  })
+
+  if (status === 'ended') {
+    await db
+      .deleteFrom('live_game_push_subscriptions')
+      .where('game_id', '=', gameId)
+      .execute()
+  }
 
   return mapLiveGame(updated)
 }
@@ -1396,6 +1753,12 @@ export async function updateLiveGameLocks(
   const lockEvents = buildLockMutationEvents(card, previousGame.lockState, normalizedLockState)
   if (lockEvents.length > 0) {
     await insertLiveGameEvents(gameId, lockEvents)
+    await sendLiveGamePushToSubscribers(gameId, {
+      title: 'Live Game Update',
+      body: lockEvents[0]?.message ?? 'Pick locks were updated.',
+      url: `/games/${gameId}/play?code=${encodeURIComponent(updated.join_code)}`,
+      tag: `live-game-locks:${gameId}`,
+    })
   }
 
   return mapLiveGame(updated)
@@ -1418,7 +1781,8 @@ export async function updateLiveGameKeyForHost(
   gameId: string,
   hostUserId: string,
   payload: LiveGameKeyPayload,
-): Promise<LiveGame | null> {
+  expectedUpdatedAt?: string,
+): Promise<LiveGame | 'conflict' | null> {
   const row = await db
     .selectFrom('live_games')
     .selectAll()
@@ -1431,15 +1795,20 @@ export async function updateLiveGameKeyForHost(
   const previousGame = mapLiveGame(row)
   const card = await getCardForGame(previousGame.cardId, hostUserId)
   if (!card) return null
+  if (expectedUpdatedAt && row.updated_at !== expectedUpdatedAt) {
+    return 'conflict'
+  }
 
   const normalizedPayload = normalizeLiveKeyPayload(payload)
-  const nextLockState = autoApplyTimerLocks(previousGame.keyPayload, normalizedPayload, previousGame.lockState)
+  const mergedPayload = mergeLiveKeyPayload(previousGame.keyPayload, normalizedPayload)
+  const valueLockedState = autoApplyValueLocks(previousGame.keyPayload, mergedPayload, previousGame.lockState)
+  const nextLockState = autoApplyTimerLocks(previousGame.keyPayload, mergedPayload, valueLockedState)
   const now = nowIso()
 
   const updated = await db
     .updateTable('live_games')
     .set({
-      key_payload_json: JSON.stringify(normalizedPayload),
+      key_payload_json: JSON.stringify(mergedPayload),
       lock_state_json: JSON.stringify(nextLockState),
       updated_at: now,
     })
@@ -1451,12 +1820,18 @@ export async function updateLiveGameKeyForHost(
   if (!updated) return null
 
   const events = [
-    ...buildKeyMutationEvents(card, previousGame.keyPayload, normalizedPayload),
+    ...buildKeyMutationEvents(card, previousGame.keyPayload, mergedPayload),
     ...buildLockMutationEvents(card, previousGame.lockState, nextLockState),
   ]
 
   if (events.length > 0) {
     await insertLiveGameEvents(gameId, events)
+    await sendLiveGamePushToSubscribers(gameId, {
+      title: 'Live Game Update',
+      body: events[0]?.message ?? 'New scoring updates are available.',
+      url: `/games/${gameId}/play?code=${encodeURIComponent(updated.join_code)}`,
+      tag: `live-game-score:${gameId}`,
+    })
   }
 
   return mapLiveGame(updated)
@@ -1481,9 +1856,10 @@ export async function joinLiveGameWithNickname(
   joinCode: string,
   nickname: string,
   sessionTokenHash: string | null,
+  options?: JoinLiveGameOptions,
 ): Promise<
   | { ok: true; game: LiveGame; player: LiveGamePlayer; isNew: boolean }
-  | { ok: false; reason: 'not-found' | 'expired' | 'ended' | 'nickname-taken' }
+  | { ok: false; reason: 'not-found' | 'expired' | 'ended' | 'entry-closed' | 'nickname-taken' | 'session-mismatch' }
 > {
   const game = await getLiveGameByJoinCode(joinCode)
   if (!game) {
@@ -1498,15 +1874,103 @@ export async function joinLiveGameWithNickname(
     return { ok: false, reason: 'expired' }
   }
 
-  if (sessionTokenHash) {
-    const existingBySession = await findLiveGamePlayerBySession(game.id, sessionTokenHash)
-    if (existingBySession) {
-      const now = nowIso()
+  const cleanedNickname = normalizeNickname(nickname)
+  const nicknameKey = normalizeNicknameKey(cleanedNickname)
+  const now = nowIso()
+  const deviceInfo = parseJoinDeviceInfo(options?.deviceInfo)
+  const normalizedClerkUserId = normalizeOptionalText(options?.clerkUserId)
+
+  if (normalizedClerkUserId) {
+    const existingByClerkUser = await db
+      .selectFrom('live_game_players')
+      .selectAll()
+      .where('game_id', '=', game.id)
+      .where('clerk_user_id', '=', normalizedClerkUserId)
+      .executeTakeFirst()
+
+    if (existingByClerkUser) {
+      const nicknameChanged = normalizeNicknameKey(existingByClerkUser.nickname) !== nicknameKey
+
+      if (nicknameChanged) {
+        const nicknameTakenByOther = await db
+          .selectFrom('live_game_players')
+          .select('id')
+          .where('game_id', '=', game.id)
+          .where('normalized_nickname', '=', nicknameKey)
+          .where('id', '!=', String(existingByClerkUser.id))
+          .executeTakeFirst()
+
+        if (nicknameTakenByOther) {
+          return { ok: false, reason: 'nickname-taken' }
+        }
+      }
+
       await db
         .updateTable('live_game_players')
         .set({
+          nickname: nicknameChanged ? cleanedNickname : existingByClerkUser.nickname,
+          normalized_nickname: nicknameChanged ? nicknameKey : normalizeNicknameKey(existingByClerkUser.nickname),
+          auth_method: 'clerk',
+          session_token_hash: sessionTokenHash ?? existingByClerkUser.session_token_hash,
           last_seen_at: now,
           updated_at: now,
+          user_agent: deviceInfo.userAgent,
+          user_agent_data_json: deviceInfo.userAgentDataJson,
+          browser_name: deviceInfo.browserName,
+          browser_version: deviceInfo.browserVersion,
+          os_name: deviceInfo.osName,
+          os_version: deviceInfo.osVersion,
+          device_type: deviceInfo.deviceType,
+          device_vendor: deviceInfo.deviceVendor,
+          device_model: deviceInfo.deviceModel,
+          platform: deviceInfo.platform,
+          platform_version: deviceInfo.platformVersion,
+          architecture: deviceInfo.architecture,
+        })
+        .where('id', '=', String(existingByClerkUser.id))
+        .execute()
+
+      const refreshed = await db
+        .selectFrom('live_game_players')
+        .selectAll()
+        .where('id', '=', String(existingByClerkUser.id))
+        .executeTakeFirstOrThrow()
+
+      return {
+        ok: true,
+        game,
+        player: mapLiveGamePlayer(refreshed),
+        isNew: false,
+      }
+    }
+  }
+
+  if (sessionTokenHash) {
+    const existingBySession = await findLiveGamePlayerBySession(game.id, sessionTokenHash)
+    if (existingBySession) {
+      if (normalizeNicknameKey(existingBySession.nickname) !== nicknameKey) {
+        return { ok: false, reason: 'session-mismatch' }
+      }
+
+      await db
+        .updateTable('live_game_players')
+        .set({
+          auth_method: normalizedClerkUserId ? 'clerk' : existingBySession.authMethod,
+          clerk_user_id: normalizedClerkUserId ?? existingBySession.clerkUserId,
+          last_seen_at: now,
+          updated_at: now,
+          user_agent: deviceInfo.userAgent,
+          user_agent_data_json: deviceInfo.userAgentDataJson,
+          browser_name: deviceInfo.browserName,
+          browser_version: deviceInfo.browserVersion,
+          os_name: deviceInfo.osName,
+          os_version: deviceInfo.osVersion,
+          device_type: deviceInfo.deviceType,
+          device_vendor: deviceInfo.deviceVendor,
+          device_model: deviceInfo.deviceModel,
+          platform: deviceInfo.platform,
+          platform_version: deviceInfo.platformVersion,
+          architecture: deviceInfo.architecture,
         })
         .where('id', '=', existingBySession.id)
         .execute()
@@ -1516,16 +1980,29 @@ export async function joinLiveGameWithNickname(
         game,
         player: {
           ...existingBySession,
+          authMethod: normalizedClerkUserId ? 'clerk' : existingBySession.authMethod,
+          clerkUserId: normalizedClerkUserId ?? existingBySession.clerkUserId,
           lastSeenAt: now,
           updatedAt: now,
+          browserName: deviceInfo.browserName,
+          browserVersion: deviceInfo.browserVersion,
+          osName: deviceInfo.osName,
+          osVersion: deviceInfo.osVersion,
+          deviceType: deviceInfo.deviceType,
+          deviceVendor: deviceInfo.deviceVendor,
+          deviceModel: deviceInfo.deviceModel,
+          platform: deviceInfo.platform,
+          platformVersion: deviceInfo.platformVersion,
+          architecture: deviceInfo.architecture,
         },
         isNew: false,
       }
     }
   }
 
-  const cleanedNickname = normalizeNickname(nickname)
-  const nicknameKey = normalizeNicknameKey(cleanedNickname)
+  if (game.status === 'live' && !game.allowLateJoins) {
+    return { ok: false, reason: 'entry-closed' }
+  }
 
   const existingByNickname = await db
     .selectFrom('live_game_players')
@@ -1538,7 +2015,6 @@ export async function joinLiveGameWithNickname(
     return { ok: false, reason: 'nickname-taken' }
   }
 
-  const now = nowIso()
   const playerId = randomUUID()
 
   await db
@@ -1548,6 +2024,8 @@ export async function joinLiveGameWithNickname(
       game_id: game.id,
       nickname: cleanedNickname,
       normalized_nickname: nicknameKey,
+      auth_method: normalizedClerkUserId ? 'clerk' : 'guest',
+      clerk_user_id: normalizedClerkUserId,
       session_token_hash: sessionTokenHash ?? hashLiveGameSessionToken(createLiveGameSessionToken()),
       picks_json: JSON.stringify(normalizeLivePlayerPicks(null)),
       is_submitted: 0,
@@ -1555,6 +2033,18 @@ export async function joinLiveGameWithNickname(
       joined_at: now,
       last_seen_at: now,
       updated_at: now,
+      user_agent: deviceInfo.userAgent,
+      user_agent_data_json: deviceInfo.userAgentDataJson,
+      browser_name: deviceInfo.browserName,
+      browser_version: deviceInfo.browserVersion,
+      os_name: deviceInfo.osName,
+      os_version: deviceInfo.osVersion,
+      device_type: deviceInfo.deviceType,
+      device_vendor: deviceInfo.deviceVendor,
+      device_model: deviceInfo.deviceModel,
+      platform: deviceInfo.platform,
+      platform_version: deviceInfo.platformVersion,
+      architecture: deviceInfo.architecture,
     })
     .execute()
 
@@ -1753,9 +2243,10 @@ export async function getLiveGameViewerAccess(
 
   if (!gameRow) return null
 
-  const game = mapLiveGame(gameRow)
-  const card = await getCardForGame(game.cardId, game.hostUserId)
+  const card = await getCardForGame(gameRow.card_id, gameRow.host_user_id)
   if (!card) return null
+  const hydratedGameRow = await autoStartGameForCardEvent(gameRow, card)
+  const game = mapLiveGame(hydratedGameRow)
 
   if (options.hostUserId && options.hostUserId === game.hostUserId) {
     return {
@@ -1784,7 +2275,6 @@ export async function getLiveGameViewerAccess(
       .updateTable('live_game_players')
       .set({
         last_seen_at: now,
-        updated_at: now,
       })
       .where('id', '=', player.id)
       .execute()
@@ -1795,7 +2285,6 @@ export async function getLiveGameViewerAccess(
       player: {
         ...player,
         lastSeenAt: now,
-        updatedAt: now,
       },
       isHost: false,
     }
@@ -1837,6 +2326,19 @@ export async function getLiveGameState(
   return {
     game: access.game,
     card: access.card,
+    joinedPlayers: players.map((player) => ({
+      id: player.id,
+      nickname: player.nickname,
+      joinedAt: player.joinedAt,
+      lastSeenAt: player.lastSeenAt,
+      isSubmitted: player.isSubmitted,
+      authMethod: player.authMethod,
+      browserName: player.browserName,
+      osName: player.osName,
+      deviceType: player.deviceType,
+      platform: player.platform,
+      model: player.deviceModel,
+    })),
     leaderboard,
     events: eventRows.map((row) => mapLiveGameEvent(row)),
     playerCount: players.length,
@@ -1870,16 +2372,83 @@ export async function getLiveGameMe(
   }
 }
 
+export async function upsertLiveGamePushSubscriptionForPlayer(
+  gameId: string,
+  sessionTokenHash: string,
+  subscription: LiveGamePushSubscriptionInput,
+): Promise<'ok' | 'unauthorized' | 'inactive'> {
+  const access = await getLiveGameViewerAccess(gameId, {
+    sessionTokenHash,
+  })
+
+  if (!access?.player) return 'unauthorized'
+  if (access.game.status === 'ended') return 'inactive'
+  if (new Date(access.game.expiresAt).getTime() <= Date.now()) return 'inactive'
+
+  const now = nowIso()
+  const playerId = access.player.id
+
+  await db
+    .insertInto('live_game_push_subscriptions')
+    .values({
+      id: randomUUID(),
+      game_id: gameId,
+      player_id: playerId,
+      endpoint: subscription.endpoint,
+      p256dh: subscription.keys.p256dh,
+      auth: subscription.keys.auth,
+      expiration_time: subscription.expirationTime,
+      created_at: now,
+      updated_at: now,
+    })
+    .onConflict((oc) => oc
+      .columns(['game_id', 'endpoint'])
+      .doUpdateSet({
+        player_id: playerId,
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+        expiration_time: subscription.expirationTime,
+        updated_at: now,
+      }))
+    .execute()
+
+  return 'ok'
+}
+
+export async function removeLiveGamePushSubscriptionForPlayer(
+  gameId: string,
+  sessionTokenHash: string,
+  endpoint: string,
+): Promise<boolean> {
+  const access = await getLiveGameViewerAccess(gameId, {
+    sessionTokenHash,
+  })
+
+  if (!access?.player) return false
+
+  await db
+    .deleteFrom('live_game_push_subscriptions')
+    .where('game_id', '=', gameId)
+    .where('endpoint', '=', endpoint)
+    .execute()
+
+  return true
+}
+
 export async function saveLiveGamePlayerPicks(
   gameId: string,
   sessionTokenHash: string,
   incoming: LivePlayerPicksPayload,
-): Promise<{ player: LiveGamePlayer; ignoredLocks: string[] } | null> {
+  expectedUpdatedAt?: string,
+): Promise<{ player: LiveGamePlayer; ignoredLocks: string[] } | 'conflict' | null> {
   const access = await getLiveGameViewerAccess(gameId, {
     sessionTokenHash,
   })
 
   if (!access?.player) return null
+  if (expectedUpdatedAt && access.player.updatedAt !== expectedUpdatedAt) {
+    return 'conflict'
+  }
 
   const merged = mergePicksWithLocks(
     access.card,

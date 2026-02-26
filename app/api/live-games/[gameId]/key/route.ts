@@ -41,11 +41,16 @@ const liveKeyPayloadSchema = z.object({
   tiebreakerTimerId: z.string().trim().min(1).max(200).nullable(),
 })
 
+const liveKeyPutEnvelopeSchema = z.object({
+  payload: liveKeyPayloadSchema,
+  expectedUpdatedAt: z.string().datetime().optional(),
+})
+
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ gameId: string }> },
 ) {
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -76,26 +81,46 @@ export async function PUT(
     return csrfError
   }
 
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const body = await request.json().catch(() => null)
-  const parsed = liveKeyPayloadSchema.safeParse(body)
-
-  if (!parsed.success) {
+  const parsedEnvelope = liveKeyPutEnvelopeSchema.safeParse(body)
+  const parsedPayload = liveKeyPayloadSchema.safeParse(body)
+  if (!parsedEnvelope.success && !parsedPayload.success) {
     return NextResponse.json(
       {
         error: 'Invalid request body',
-        issues: parsed.error.issues,
+        issues: parsedEnvelope.error.issues,
       },
       { status: 400 },
     )
   }
 
+  const payload = parsedEnvelope.success
+    ? parsedEnvelope.data.payload
+    : parsedPayload.success
+      ? parsedPayload.data
+      : null
+  const expectedUpdatedAt = parsedEnvelope.success ? parsedEnvelope.data.expectedUpdatedAt : undefined
+  if (!payload) {
+    return NextResponse.json(
+      {
+        error: 'Invalid request body',
+      },
+      { status: 400 },
+    )
+  }
   const { gameId } = await context.params
-  const updated = await updateLiveGameKeyForHost(gameId, userId, normalizeLiveKeyPayload(parsed.data))
+  const updated = await updateLiveGameKeyForHost(gameId, userId, normalizeLiveKeyPayload(payload), expectedUpdatedAt)
+  if (updated === 'conflict') {
+    return NextResponse.json(
+      { error: 'Game key changed in another session. Refresh and retry.' },
+      { status: 409 },
+    )
+  }
 
   if (!updated) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })

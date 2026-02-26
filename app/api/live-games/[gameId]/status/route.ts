@@ -6,8 +6,14 @@ import { enforceSameOrigin } from '@/lib/server/csrf'
 import { updateLiveGameStatus } from '@/lib/server/repositories/live-games'
 
 const updateStatusSchema = z.object({
-  status: z.enum(['lobby', 'live', 'ended']),
-})
+  status: z.enum(['lobby', 'live', 'ended']).optional(),
+  allowLateJoins: z.boolean().optional(),
+}).refine(
+  (value) => typeof value.status !== 'undefined' || typeof value.allowLateJoins !== 'undefined',
+  {
+    message: 'At least one setting is required',
+  },
+)
 
 export async function PATCH(
   request: Request,
@@ -18,7 +24,7 @@ export async function PATCH(
     return csrfError
   }
 
-  const userId = await getRequestUserId()
+  const userId = await getRequestUserId(request)
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -31,7 +37,10 @@ export async function PATCH(
   }
 
   const { gameId } = await context.params
-  const updated = await updateLiveGameStatus(gameId, userId, parsed.data.status)
+  const updated = await updateLiveGameStatus(gameId, userId, {
+    status: parsed.data.status,
+    allowLateJoins: parsed.data.allowLateJoins,
+  })
 
   if (!updated) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })

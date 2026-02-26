@@ -24,6 +24,19 @@ export interface CreateLiveGameResponse {
 export interface LiveGameStateResponse {
   game: LiveGame
   card: ResolvedCard
+  joinedPlayers: Array<{
+    id: string
+    nickname: string
+    joinedAt: string
+    lastSeenAt: string
+    isSubmitted: boolean
+    authMethod: 'guest' | 'clerk'
+    browserName: string | null
+    osName: string | null
+    deviceType: string | null
+    platform: string | null
+    model: string | null
+  }>
   leaderboard: Array<{
     rank: number
     nickname: string
@@ -45,6 +58,29 @@ export interface LiveGameStateResponse {
   }>
   playerCount: number
   submittedCount: number
+}
+
+export interface JoinDeviceInfoPayload {
+  userAgent?: string | null
+  userAgentData?: {
+    brands?: Array<{ brand: string; version: string }>
+    mobile?: boolean
+    platform?: string
+    architecture?: string
+    model?: string
+    platformVersion?: string
+    fullVersionList?: Array<{ brand: string; version: string }>
+  } | null
+}
+
+export interface LiveGameJoinPreviewResponse {
+  gameId: string
+  joinCode: string
+  eventName: string
+  status: LiveGame['status']
+  eventStartAt: string | null
+  isStarted: boolean
+  allowLateJoins: boolean
 }
 
 export interface LiveGameMeResponse {
@@ -111,13 +147,22 @@ export function getLiveGameState(gameId: string, joinCode?: string): Promise<Liv
   return requestJson<LiveGameStateResponse>(`/api/live-games/${gameId}/state${suffix}`)
 }
 
-export function updateLiveGameStatus(gameId: string, status: LiveGame['status']): Promise<LiveGame> {
+export function updateLiveGameStatus(
+  gameId: string,
+  status: LiveGame['status'],
+  options?: {
+    allowLateJoins?: boolean
+  },
+): Promise<LiveGame> {
   return requestJson<LiveGame>(`/api/live-games/${gameId}/status`, {
     method: 'PATCH',
     headers: {
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({
+      status,
+      allowLateJoins: options?.allowLateJoins,
+    }),
   })
 }
 
@@ -140,17 +185,24 @@ export function getLiveGameKey(gameId: string): Promise<{
   return requestJson(`/api/live-games/${gameId}/key`)
 }
 
-export function saveLiveGameKey(gameId: string, payload: LiveGameKeyPayload): Promise<LiveGame> {
+export function saveLiveGameKey(
+  gameId: string,
+  payload: LiveGameKeyPayload,
+  options?: { expectedUpdatedAt?: string },
+): Promise<LiveGame> {
   return requestJson<LiveGame>(`/api/live-games/${gameId}/key`, {
     method: 'PUT',
     headers: {
       'content-type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      payload,
+      expectedUpdatedAt: options?.expectedUpdatedAt,
+    }),
   })
 }
 
-export function joinLiveGame(joinCode: string, nickname: string): Promise<{
+export function joinLiveGame(joinCode: string, nickname: string, deviceInfo?: JoinDeviceInfoPayload): Promise<{
   gameId: string
   joinCode: string
   player: LiveGameMeResponse['player']
@@ -161,7 +213,7 @@ export function joinLiveGame(joinCode: string, nickname: string): Promise<{
     headers: {
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ joinCode, nickname }),
+    body: JSON.stringify({ joinCode, nickname, deviceInfo }),
   })
 }
 
@@ -169,16 +221,26 @@ export function getLiveGameMe(gameId: string): Promise<LiveGameMeResponse> {
   return requestJson<LiveGameMeResponse>(`/api/live-games/${gameId}/me`)
 }
 
+export function getLiveGameJoinPreview(joinCode: string): Promise<LiveGameJoinPreviewResponse> {
+  return requestJson<LiveGameJoinPreviewResponse>(
+    `/api/live-games/join-preview?code=${encodeURIComponent(joinCode)}`,
+  )
+}
+
 export function saveMyLiveGamePicks(
   gameId: string,
   picks: LivePlayerPicksPayload,
+  options?: { expectedUpdatedAt?: string },
 ): Promise<{ player: LiveGameMeResponse['player']; ignoredLocks: string[] }> {
   return requestJson(`/api/live-games/${gameId}/me/picks`, {
     method: 'PUT',
     headers: {
       'content-type': 'application/json',
     },
-    body: JSON.stringify(picks),
+    body: JSON.stringify({
+      picks,
+      expectedUpdatedAt: options?.expectedUpdatedAt,
+    }),
   })
 }
 

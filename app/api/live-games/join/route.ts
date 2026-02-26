@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { getRequestUserId } from '@/lib/server/auth'
 import { enforceSameOrigin } from '@/lib/server/csrf'
 import { readLiveGameSessionTokenFromRequest, writeLiveGameSessionToken } from '@/lib/server/live-game-session'
 import { checkRateLimit } from '@/lib/server/rate-limit'
@@ -13,6 +14,10 @@ import {
 const joinSchema = z.object({
   joinCode: z.string().trim().min(4).max(24),
   nickname: z.string().trim().min(1).max(60),
+  deviceInfo: z.object({
+    userAgent: z.string().trim().max(1024).optional(),
+    userAgentData: z.record(z.unknown()).optional(),
+  }).optional(),
 })
 
 function requestKey(request: Request): string {
@@ -48,14 +53,29 @@ export async function POST(request: Request) {
   }
 
   const existingToken = readLiveGameSessionTokenFromRequest(request)
-  const token = existingToken ?? createLiveGameSessionToken()
-  const sessionHash = hashLiveGameSessionToken(token)
-
-  const joined = await joinLiveGameWithNickname(
+  let token = existingToken ?? createLiveGameSessionToken()
+  const clerkUserId = await getRequestUserId(request)
+  let joined = await joinLiveGameWithNickname(
     parsed.data.joinCode,
     parsed.data.nickname,
-    sessionHash,
+    hashLiveGameSessionToken(token),
+    {
+      clerkUserId,
+      deviceInfo: parsed.data.deviceInfo,
+    },
   )
+  if (!joined.ok && joined.reason === 'session-mismatch') {
+    token = createLiveGameSessionToken()
+    joined = await joinLiveGameWithNickname(
+      parsed.data.joinCode,
+      parsed.data.nickname,
+      hashLiveGameSessionToken(token),
+      {
+        clerkUserId,
+        deviceInfo: parsed.data.deviceInfo,
+      },
+    )
+  }
 
   if (!joined.ok) {
     if (joined.reason === 'not-found') {
@@ -64,6 +84,9 @@ export async function POST(request: Request) {
 
     if (joined.reason === 'ended') {
       return badRequest('This game has ended', 409)
+    }
+    if (joined.reason === 'entry-closed') {
+      return badRequest('This room is not accepting new players right now', 409)
     }
 
     if (joined.reason === 'expired') {

@@ -27,6 +27,11 @@ const picksSchema = z.object({
   tiebreakerAnswer: z.string().trim().max(200),
 })
 
+const picksEnvelopeSchema = z.object({
+  picks: picksSchema,
+  expectedUpdatedAt: z.string().datetime().optional(),
+})
+
 function requestKey(request: Request, sessionToken: string): string {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
   return `${ip && ip.length > 0 ? ip : 'anon'}:${sessionToken.slice(0, 12)}`
@@ -58,18 +63,35 @@ export async function PUT(
   }
 
   const body = await request.json().catch(() => null)
-  const parsed = picksSchema.safeParse(body)
+  const parsedEnvelope = picksEnvelopeSchema.safeParse(body)
+  const parsedPicks = picksSchema.safeParse(body)
+  if (!parsedEnvelope.success && !parsedPicks.success) {
+    return NextResponse.json({ error: 'Invalid request body', issues: parsedEnvelope.error.issues }, { status: 400 })
+  }
 
-  if (!parsed.success) {
-    return NextResponse.json({ error: 'Invalid request body', issues: parsed.error.issues }, { status: 400 })
+  const picks = parsedEnvelope.success
+    ? parsedEnvelope.data.picks
+    : parsedPicks.success
+      ? parsedPicks.data
+      : null
+  const expectedUpdatedAt = parsedEnvelope.success ? parsedEnvelope.data.expectedUpdatedAt : undefined
+  if (!picks) {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
   const { gameId } = await context.params
   const saved = await saveLiveGamePlayerPicks(
     gameId,
     hashLiveGameSessionToken(sessionToken),
-    parsed.data,
+    picks,
+    expectedUpdatedAt,
   )
+  if (saved === 'conflict') {
+    return NextResponse.json(
+      { error: 'Your picks changed in another session. Refresh and retry.' },
+      { status: 409 },
+    )
+  }
 
   if (!saved) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
