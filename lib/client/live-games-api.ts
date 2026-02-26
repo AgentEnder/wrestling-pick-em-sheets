@@ -37,6 +37,21 @@ export interface LiveGameStateResponse {
     platform: string | null
     model: string | null
   }>
+  pendingJoinRequests: Array<{
+    id: string
+    nickname: string
+    joinedAt: string
+    authMethod: 'guest' | 'clerk'
+    browserName: string | null
+    osName: string | null
+    deviceType: string | null
+    platform: string | null
+    model: string | null
+    joinRequestIp: string | null
+    joinRequestCity: string | null
+    joinRequestCountry: string | null
+    joinRequestDistanceKm: number | null
+  }>
   leaderboard: Array<{
     rank: number
     nickname: string
@@ -58,6 +73,17 @@ export interface LiveGameStateResponse {
   }>
   playerCount: number
   submittedCount: number
+  playerAnswerSummaries: Array<{
+    nickname: string
+    normalizedNickname: string
+    matchPicks: Array<{
+      matchId: string
+      winnerName: string
+      battleRoyalEntrants: string[]
+      bonusAnswers: Array<{ questionId: string; answer: string }>
+    }>
+    eventBonusAnswers: Array<{ questionId: string; answer: string }>
+  }>
 }
 
 export interface JoinDeviceInfoPayload {
@@ -202,18 +228,43 @@ export function saveLiveGameKey(
   })
 }
 
-export function joinLiveGame(joinCode: string, nickname: string, deviceInfo?: JoinDeviceInfoPayload): Promise<{
-  gameId: string
-  joinCode: string
-  player: LiveGameMeResponse['player']
-  isNew: boolean
-}> {
+export function joinLiveGame(
+  joinCode: string,
+  nickname: string,
+  deviceInfo?: JoinDeviceInfoPayload,
+  bypassSecret?: string | null,
+): Promise<
+  | {
+    status: 'joined'
+    gameId: string
+    joinCode: string
+    player: LiveGameMeResponse['player']
+    isNew: boolean
+  }
+  | {
+    status: 'pending'
+  }
+> {
   return requestJson('/api/live-games/join', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ joinCode, nickname, deviceInfo }),
+    body: JSON.stringify({ joinCode, nickname, deviceInfo, bypassSecret }),
+  })
+}
+
+export function reviewLiveGameJoinRequest(
+  gameId: string,
+  playerId: string,
+  action: 'approve' | 'deny',
+): Promise<{ ok: true }> {
+  return requestJson(`/api/live-games/${gameId}/join-requests`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ playerId, action }),
   })
 }
 

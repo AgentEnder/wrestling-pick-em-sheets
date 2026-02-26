@@ -102,6 +102,12 @@ export interface LiveGameComputedState {
   events: LiveGameEventFeedItem[]
   playerCount: number
   submittedCount: number
+  playerAnswerSummaries: Array<{
+    nickname: string
+    normalizedNickname: string
+    matchPicks: LivePlayerMatchPick[]
+    eventBonusAnswers: LivePlayerAnswer[]
+  }>
 }
 
 export interface LiveGameViewerAccess {
@@ -2697,6 +2703,16 @@ export async function getLiveGameState(
     events: eventRows.map((row) => mapLiveGameEvent(row)),
     playerCount: approvedPlayers.length,
     submittedCount: approvedPlayers.filter((player) => player.isSubmitted).length,
+    playerAnswerSummaries: access.isHost
+      ? approvedPlayers
+          .filter((p) => p.isSubmitted)
+          .map((player) => ({
+            nickname: player.nickname,
+            normalizedNickname: normalizeText(player.nickname),
+            matchPicks: player.picks.matchPicks,
+            eventBonusAnswers: player.picks.eventBonusAnswers,
+          }))
+      : [],
   }
 }
 
