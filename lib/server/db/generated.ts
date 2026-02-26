@@ -5,9 +5,10 @@
 
 import type { ColumnType } from "kysely";
 
-export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
-  ? ColumnType<S, I | undefined, U>
-  : ColumnType<T, T | undefined, T>;
+export type Generated<T> =
+  T extends ColumnType<infer S, infer I, infer U>
+    ? ColumnType<S, I | undefined, U>
+    : ColumnType<T, T | undefined, T>;
 
 export interface BonusQuestionPools {
   created_at: Generated<string>;
@@ -162,6 +163,7 @@ export interface LiveGameEvents {
 }
 
 export interface LiveGamePlayers {
+  approved_at: string | null;
   architecture: string | null;
   auth_method: Generated<string>;
   browser_name: string | null;
@@ -172,6 +174,13 @@ export interface LiveGamePlayers {
   device_vendor: string | null;
   game_id: string;
   id: string | null;
+  join_request_city: string | null;
+  join_request_country: string | null;
+  join_request_distance_km: number | null;
+  join_request_ip: string | null;
+  join_request_latitude: number | null;
+  join_request_longitude: number | null;
+  join_status: Generated<string>;
   is_submitted: Generated<number>;
   joined_at: Generated<string>;
   last_seen_at: Generated<string>;
@@ -207,12 +216,19 @@ export interface LiveGames {
   created_at: Generated<string>;
   ended_at: string | null;
   expires_at: string;
+  geo_radius_km: Generated<number>;
+  host_geo_city: string | null;
+  host_geo_country: string | null;
+  host_geo_latitude: number | null;
+  host_geo_longitude: number | null;
+  host_join_ip: string | null;
   host_user_id: string;
   id: string | null;
   join_code: string;
   key_payload_json: Generated<string>;
   lock_state_json: Generated<string>;
   mode: Generated<string>;
+  qr_join_secret: string | null;
   status: Generated<string>;
   updated_at: Generated<string>;
 }

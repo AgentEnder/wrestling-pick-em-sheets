@@ -1,17 +1,13 @@
 "use client";
 
-import type {
-  BonusQuestion,
-  Match,
-  PickEmSheet,
-} from "@/lib/types";
+import type { BonusQuestion, Match, PickEmSheet } from "@/lib/types";
 import type { CSSProperties } from "react";
 
 interface PrintSheetProps {
   sheet: PickEmSheet;
 }
 
-const BATTLE_ROYAL_CHECKBOX_THRESHOLD = 10
+const BATTLE_ROYAL_CHECKBOX_THRESHOLD = 10;
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return "";
@@ -41,23 +37,28 @@ function formatDate(dateStr: string): string {
 }
 
 function formatPointsLabel(points: number): string {
-  return `${points} pt${points === 1 ? "" : "s"}`
+  return `${points} pt${points === 1 ? "" : "s"}`;
 }
 
 function shouldRenderCompactBattleRoyal(match: Match): boolean {
-  if (!match.isBattleRoyal) return false
+  if (!match.isBattleRoyal) return false;
 
-  const totalCompetitors = match.participants.length + match.surpriseSlots
-  return totalCompetitors > 0 && totalCompetitors <= BATTLE_ROYAL_CHECKBOX_THRESHOLD
+  const totalCompetitors = match.participants.length + match.surpriseSlots;
+  return (
+    totalCompetitors > 0 && totalCompetitors <= BATTLE_ROYAL_CHECKBOX_THRESHOLD
+  );
 }
 
 function getMatchTotalPoints(match: Match, defaultPoints: number): number {
-  const primaryPoints = match.points ?? defaultPoints
-  const bonusPoints = match.bonusQuestions.reduce((sum, q) => sum + (q.points ?? defaultPoints), 0)
+  const primaryPoints = match.points ?? defaultPoints;
+  const bonusPoints = match.bonusQuestions.reduce(
+    (sum, q) => sum + (q.points ?? defaultPoints),
+    0,
+  );
   const surprisePoints = match.isBattleRoyal
     ? match.surpriseSlots * (match.surpriseEntrantPoints ?? defaultPoints)
-    : 0
-  return primaryPoints + bonusPoints + surprisePoints
+    : 0;
+  return primaryPoints + bonusPoints + surprisePoints;
 }
 
 function BonusQuestionsBlock({
@@ -88,11 +89,24 @@ function BonusQuestionsBlock({
                       </span>
                     ))}
                   </span>
+                ) : q.answerType === "threshold" ? (
+                  <span className="print-mc-options">
+                    {(q.thresholdLabels ?? ["Over", "Under"]).map(
+                      (label, li) => (
+                        <span key={li} className="print-mc-option">
+                          <span className="print-checkbox" />
+                          <span>{label}</span>
+                        </span>
+                      ),
+                    )}
+                  </span>
                 ) : (
                   <span className="print-write-line-inline" />
                 )}
               </div>
-              <span className="print-question-points">{formatPointsLabel(qPts)}</span>
+              <span className="print-question-points">
+                {formatPointsLabel(qPts)}
+              </span>
             </div>
           </div>
         );
@@ -110,7 +124,10 @@ function EventBonusSection({
 }) {
   if (questions.length === 0) return null;
 
-  const totalPts = questions.reduce((sum, question) => sum + (question.points ?? defaultPoints), 0);
+  const totalPts = questions.reduce(
+    (sum, question) => sum + (question.points ?? defaultPoints),
+    0,
+  );
 
   return (
     <div className="print-match-block">
@@ -120,9 +137,12 @@ function EventBonusSection({
         </div>
         <span className="print-score-field">__/{totalPts}</span>
       </div>
-      <BonusQuestionsBlock questions={questions} defaultPoints={defaultPoints} />
+      <BonusQuestionsBlock
+        questions={questions}
+        defaultPoints={defaultPoints}
+      />
     </div>
-  )
+  );
 }
 
 function StandardMatchBlock({
@@ -134,8 +154,8 @@ function StandardMatchBlock({
   matchNumber: number;
   defaultPoints: number;
 }) {
-  const winnerPts = match.points ?? defaultPoints
-  const totalPts = getMatchTotalPoints(match, defaultPoints)
+  const winnerPts = match.points ?? defaultPoints;
+  const totalPts = getMatchTotalPoints(match, defaultPoints);
   return (
     <div className="print-match-block">
       <div className="print-match-grid-row print-match-header-row">
@@ -162,7 +182,9 @@ function StandardMatchBlock({
             ))}
           </div>
         </div>
-        <span className="print-question-points">{formatPointsLabel(winnerPts)}</span>
+        <span className="print-question-points">
+          {formatPointsLabel(winnerPts)}
+        </span>
       </div>
       <BonusQuestionsBlock
         questions={match.bonusQuestions}
@@ -181,10 +203,10 @@ function BattleRoyalBlock({
   matchNumber: number;
   defaultPoints: number;
 }) {
-  const winnerPts = match.points ?? defaultPoints
-  const surpriseEntrantPoints = match.surpriseEntrantPoints ?? defaultPoints
-  const totalPts = getMatchTotalPoints(match, defaultPoints)
-  const useCompactBattleRoyal = shouldRenderCompactBattleRoyal(match)
+  const winnerPts = match.points ?? defaultPoints;
+  const surpriseEntrantPoints = match.surpriseEntrantPoints ?? defaultPoints;
+  const totalPts = getMatchTotalPoints(match, defaultPoints);
+  const useCompactBattleRoyal = shouldRenderCompactBattleRoyal(match);
   return (
     <div className="print-match-block print-battle-royal">
       <div className="print-match-grid-row print-match-header-row">
@@ -208,20 +230,28 @@ function BattleRoyalBlock({
                 <span className="print-label-inline">Winner:</span>
                 <div className="print-participants-grid">
                   {match.participants.map((participant, participantIndex) => (
-                    <label key={`announced:${participantIndex}`} className="print-participant">
+                    <label
+                      key={`announced:${participantIndex}`}
+                      className="print-participant"
+                    >
                       <span className="print-checkbox" />
                       <span>{participant}</span>
                     </label>
                   ))}
-                  {Array.from({ length: match.surpriseSlots }).map((_, surpriseIndex) => (
-                    <label key={`surprise:${surpriseIndex}`} className="print-participant print-br-surprise-option">
-                      <span className="print-checkbox" />
-                      <span className="print-br-surprise-option-label">
-                        Surprise {surpriseIndex + 1}:
-                      </span>
-                      <span className="print-write-line-inline print-br-surprise-option-line" />
-                    </label>
-                  ))}
+                  {Array.from({ length: match.surpriseSlots }).map(
+                    (_, surpriseIndex) => (
+                      <label
+                        key={`surprise:${surpriseIndex}`}
+                        className="print-participant print-br-surprise-option"
+                      >
+                        <span className="print-checkbox" />
+                        <span className="print-br-surprise-option-label">
+                          Surprise {surpriseIndex + 1}:
+                        </span>
+                        <span className="print-write-line-inline print-br-surprise-option-line" />
+                      </label>
+                    ),
+                  )}
                 </div>
               </div>
             ) : (
@@ -246,7 +276,8 @@ function BattleRoyalBlock({
             {match.surpriseSlots > 0 && (
               <div className="print-br-surprises">
                 <span className="print-label-inline">
-                  Surprise guesses ({formatPointsLabel(surpriseEntrantPoints)} each):
+                  Surprise guesses ({formatPointsLabel(surpriseEntrantPoints)}{" "}
+                  each):
                 </span>
                 <div className="print-surprise-grid">
                   {Array.from({ length: match.surpriseSlots }).map((_, i) => (
@@ -260,7 +291,9 @@ function BattleRoyalBlock({
             )}
           </div>
         </div>
-        <span className="print-question-points">{formatPointsLabel(winnerPts)}</span>
+        <span className="print-question-points">
+          {formatPointsLabel(winnerPts)}
+        </span>
       </div>
       <BonusQuestionsBlock
         questions={match.bonusQuestions}
@@ -318,12 +351,15 @@ function getMatchComplexity(match: Match): number {
   );
 
   if (match.isBattleRoyal) {
-    const useCompactBattleRoyal = shouldRenderCompactBattleRoyal(match)
+    const useCompactBattleRoyal = shouldRenderCompactBattleRoyal(match);
 
     if (useCompactBattleRoyal) {
-      const winnerOptionsCost = (match.participants.length + match.surpriseSlots) * 0.9
-      const surpriseCost = match.surpriseSlots * 0.85
-      return base + descriptionCost + bonusCost + winnerOptionsCost + surpriseCost
+      const winnerOptionsCost =
+        (match.participants.length + match.surpriseSlots) * 0.9;
+      const surpriseCost = match.surpriseSlots * 0.85;
+      return (
+        base + descriptionCost + bonusCost + winnerOptionsCost + surpriseCost
+      );
     }
 
     const announcedCost = match.participants.length * 0.35;
@@ -345,7 +381,7 @@ function getPrintDensity(sheet: PickEmSheet): PrintDensity {
   const eventBonusScore = sheet.eventBonusQuestions.reduce(
     (sum, question) => sum + getQuestionComplexity(question),
     0,
-  )
+  );
   const footerCost = (sheet.tiebreakerLabel ?? "").trim() ? 1.5 : 0;
   const taglineCost = (sheet.eventTagline ?? "").trim() ? 0.4 : 0;
   const totalScore = score + eventBonusScore + footerCost + taglineCost;
@@ -366,15 +402,17 @@ function getMatchLineUnits(match: Match): number {
   }, 0);
 
   if (match.isBattleRoyal) {
-    const useCompactBattleRoyal = shouldRenderCompactBattleRoyal(match)
+    const useCompactBattleRoyal = shouldRenderCompactBattleRoyal(match);
     if (useCompactBattleRoyal) {
       const winnerOptionsUnits = Math.max(
         1,
         Math.ceil((match.participants.length + match.surpriseSlots) / 4.5),
-      )
+      );
       const surpriseUnits =
         match.surpriseSlots > 0 ? Math.ceil(match.surpriseSlots / 3) : 0;
-      return 1.5 + descriptionUnits + winnerOptionsUnits + surpriseUnits + bonusUnits;
+      return (
+        1.5 + descriptionUnits + winnerOptionsUnits + surpriseUnits + bonusUnits
+      );
     }
 
     const announcedUnits =
@@ -396,18 +434,18 @@ function getMatchLineUnits(match: Match): number {
 }
 
 function getEventBonusLineUnits(sheet: PickEmSheet): number {
-  if (sheet.eventBonusQuestions.length === 0) return 0
+  if (sheet.eventBonusQuestions.length === 0) return 0;
 
-  const baseUnits = 1.2
+  const baseUnits = 1.2;
   const questionUnits = sheet.eventBonusQuestions.reduce((sum, question) => {
     const mcUnits =
       question.answerType === "multiple-choice"
         ? Math.max(1, Math.ceil(question.options.length / 3.5))
         : 1;
-    return sum + mcUnits
-  }, 0)
+    return sum + mcUnits;
+  }, 0);
 
-  return baseUnits + questionUnits
+  return baseUnits + questionUnits;
 }
 
 function getSparseExpansionVars(sheet: PickEmSheet): CSSProperties {
@@ -417,11 +455,12 @@ function getSparseExpansionVars(sheet: PickEmSheet): CSSProperties {
     (sum, match) => sum + getMatchLineUnits(match),
     0,
   );
-  const eventBonusUnits = getEventBonusLineUnits(sheet)
+  const eventBonusUnits = getEventBonusLineUnits(sheet);
   const headerUnits = (sheet.eventTagline ?? "").trim() ? 6.8 : 5.7;
   const footerUnits = (sheet.tiebreakerLabel ?? "").trim() ? 2.7 : 0.8;
   const estimatedUsedPx =
-    (lineUnits + eventBonusUnits + headerUnits + footerUnits) * 11.8 + matchCount * 8;
+    (lineUnits + eventBonusUnits + headerUnits + footerUnits) * 11.8 +
+    matchCount * 8;
   const leftoverPx = Math.max(
     0,
     Math.min(420, sheetHeightPx - estimatedUsedPx),
@@ -458,11 +497,13 @@ export function PrintSheet({ sheet }: PrintSheetProps) {
   const density = getPrintDensity(sheet);
   const printSheetStyle =
     density === "sparse" ? getSparseExpansionVars(sheet) : undefined;
-  const totalPoints = sheet.matches.reduce((sum, m) => {
-    return sum + getMatchTotalPoints(m, sheet.defaultPoints);
-  }, 0) + sheet.eventBonusQuestions.reduce((sum, question) => {
-    return sum + (question.points ?? sheet.defaultPoints)
-  }, 0)
+  const totalPoints =
+    sheet.matches.reduce((sum, m) => {
+      return sum + getMatchTotalPoints(m, sheet.defaultPoints);
+    }, 0) +
+    sheet.eventBonusQuestions.reduce((sum, question) => {
+      return sum + (question.points ?? sheet.defaultPoints);
+    }, 0);
 
   return (
     <div

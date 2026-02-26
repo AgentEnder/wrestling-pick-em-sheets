@@ -11,7 +11,11 @@ import {
 } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import type { PickEmSheet } from "@/lib/types";
 import { Check, ChevronsUpDown } from "lucide-react";
@@ -65,7 +69,10 @@ function formatOffset(offsetMinutes: number): string {
   return `${sign}${hours}:${minutes}`;
 }
 
-function getOffsetForTimeZoneAtInstant(instant: Date, timeZone: string): number {
+function getOffsetForTimeZoneAtInstant(
+  instant: Date,
+  timeZone: string,
+): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     timeZoneName: "shortOffset",
@@ -73,14 +80,15 @@ function getOffsetForTimeZoneAtInstant(instant: Date, timeZone: string): number 
     minute: "2-digit",
     hour12: false,
   }).formatToParts(instant);
-  const zoneName = parts.find((part) => part.type === "timeZoneName")?.value ?? "GMT+00:00";
+  const zoneName =
+    parts.find((part) => part.type === "timeZoneName")?.value ?? "GMT+00:00";
   const normalized = zoneName.replace("UTC", "GMT");
   const match = /^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/.exec(normalized);
   if (!match) return 0;
   const sign = match[1] === "-" ? -1 : 1;
   const hours = Number.parseInt(match[2] ?? "0", 10);
   const minutes = Number.parseInt(match[3] ?? "0", 10);
-  return sign * ((hours * 60) + minutes);
+  return sign * (hours * 60 + minutes);
 }
 
 function zonedLocalInputToIso(value: string, timeZone: string): string {
@@ -92,14 +100,20 @@ function zonedLocalInputToIso(value: string, timeZone: string): string {
 
   const guessDate = new Date(localAsUtcMs);
   const guessOffsetMinutes = getOffsetForTimeZoneAtInstant(guessDate, timeZone);
-  const instantMs = localAsUtcMs - (guessOffsetMinutes * 60_000);
+  const instantMs = localAsUtcMs - guessOffsetMinutes * 60_000;
   const resolvedDate = new Date(instantMs);
-  const resolvedOffsetMinutes = getOffsetForTimeZoneAtInstant(resolvedDate, timeZone);
+  const resolvedOffsetMinutes = getOffsetForTimeZoneAtInstant(
+    resolvedDate,
+    timeZone,
+  );
 
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00${formatOffset(resolvedOffsetMinutes)}`;
 }
 
-function formatInstantForTimeZoneInput(instant: Date, timeZone: string): string {
+function formatInstantForTimeZoneInput(
+  instant: Date,
+  timeZone: string,
+): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -165,7 +179,9 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
   }, []);
 
   useEffect(() => {
-    setEventStartInput(eventDateToInputValue(sheet.eventDate, selectedTimeZone));
+    setEventStartInput(
+      eventDateToInputValue(sheet.eventDate, selectedTimeZone),
+    );
   }, [sheet.eventDate]);
 
   return (
@@ -204,6 +220,9 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
               type="datetime-local"
               className="pr-28"
               value={eventStartInput}
+              onClick={(e) => {
+                e.currentTarget.showPicker?.();
+              }}
               onChange={(e) => {
                 const nextInput = e.target.value;
                 setEventStartInput(nextInput);
@@ -239,7 +258,10 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
                             setSelectedTimeZone(timeZone);
                             onChange({
                               ...sheet,
-                              eventDate: zonedLocalInputToIso(eventStartInput, timeZone),
+                              eventDate: zonedLocalInputToIso(
+                                eventStartInput,
+                                timeZone,
+                              ),
                             });
                             setIsTimezoneOpen(false);
                           }}

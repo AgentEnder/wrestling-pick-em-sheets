@@ -1,25 +1,25 @@
-import { createHash, randomBytes, randomUUID } from 'crypto'
+import { createHash, randomBytes, randomUUID } from "crypto";
 
-import type { Insertable, Selectable } from 'kysely'
-import { UAParser } from 'ua-parser-js'
+import type { Insertable, Selectable } from "kysely";
+import { UAParser } from "ua-parser-js";
 
-import type { ResolvedCard } from '@/lib/server/repositories/cards'
-import { findResolvedReadableCardById } from '@/lib/server/repositories/cards'
-import { db } from '@/lib/server/db/client'
+import type { ResolvedCard } from "@/lib/server/repositories/cards";
+import { findResolvedReadableCardById } from "@/lib/server/repositories/cards";
+import { db } from "@/lib/server/db/client";
 import type {
   LiveGameEvents,
   LiveGamePlayers,
   LiveGames,
-} from '@/lib/server/db/generated'
-import { isCardOwner } from '@/lib/server/db/permissions'
-import { sendLiveGamePushToSubscribers } from '@/lib/server/live-game-push'
-import { normalizeLiveKeyPayload } from '@/lib/server/repositories/live-keys'
+} from "@/lib/server/db/generated";
+import { isCardOwner } from "@/lib/server/db/permissions";
+import { sendLiveGamePushToSubscribers } from "@/lib/server/live-game-push";
+import { normalizeLiveKeyPayload } from "@/lib/server/repositories/live-keys";
 import {
   answerEquals,
   normalizeText,
   parseValueByType,
   scoreForQuestion,
-} from '@/lib/server/scoring'
+} from "@/lib/server/scoring";
 import type {
   BonusQuestion,
   LiveGame,
@@ -36,421 +36,459 @@ import type {
   LivePlayerMatchPick,
   LivePlayerPicksPayload,
   Match,
-} from '@/lib/types'
+} from "@/lib/types";
 
-type LiveGameSelectable = Selectable<LiveGames>
-type LiveGamePlayerSelectable = Selectable<LiveGamePlayers>
-type LiveGameEventSelectable = Selectable<LiveGameEvents>
+type LiveGameSelectable = Selectable<LiveGames>;
+type LiveGamePlayerSelectable = Selectable<LiveGamePlayers>;
+type LiveGameEventSelectable = Selectable<LiveGameEvents>;
 
-const JOIN_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-const JOIN_CODE_LENGTH = 6
-const LIVE_GAME_DURATION_MS = 1000 * 60 * 60 * 12
-const MAX_DETAILED_EVENTS_PER_MUTATION = 30
+const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const JOIN_CODE_LENGTH = 6;
+const LIVE_GAME_DURATION_MS = 1000 * 60 * 60 * 12;
+const MAX_DETAILED_EVENTS_PER_MUTATION = 30;
 
 const EMPTY_PICKS: LivePlayerPicksPayload = {
   matchPicks: [],
   eventBonusAnswers: [],
-  tiebreakerAnswer: '',
-}
+  tiebreakerAnswer: "",
+};
 
 const EMPTY_LOCK_STATE: LiveGameLockState = {
   globalLocked: false,
   matchLocks: {},
   matchBonusLocks: {},
   eventBonusLocks: {},
-}
+};
 
 export interface LiveGameEventFeedItem {
-  id: string
-  type: string
-  message: string
-  createdAt: string
+  id: string;
+  type: string;
+  message: string;
+  createdAt: string;
 }
 
 export interface LiveGameComputedState {
-  game: LiveGame
-  card: ResolvedCard
+  game: LiveGame;
+  card: ResolvedCard;
   joinedPlayers: Array<{
-    id: string
-    nickname: string
-    joinedAt: string
-    lastSeenAt: string
-    isSubmitted: boolean
-    authMethod: 'guest' | 'clerk'
-    browserName: string | null
-    osName: string | null
-    deviceType: string | null
-    platform: string | null
-    model: string | null
-  }>
-  leaderboard: LiveGameLeaderboardEntry[]
+    id: string;
+    nickname: string;
+    joinedAt: string;
+    lastSeenAt: string;
+    isSubmitted: boolean;
+    authMethod: "guest" | "clerk";
+    browserName: string | null;
+    osName: string | null;
+    deviceType: string | null;
+    platform: string | null;
+    model: string | null;
+  }>;
+  leaderboard: LiveGameLeaderboardEntry[];
   pendingJoinRequests: Array<{
-    id: string
-    nickname: string
-    joinedAt: string
-    authMethod: 'guest' | 'clerk'
-    browserName: string | null
-    osName: string | null
-    deviceType: string | null
-    platform: string | null
-    model: string | null
-    joinRequestIp: string | null
-    joinRequestCity: string | null
-    joinRequestCountry: string | null
-    joinRequestDistanceKm: number | null
-  }>
-  events: LiveGameEventFeedItem[]
-  playerCount: number
-  submittedCount: number
+    id: string;
+    nickname: string;
+    joinedAt: string;
+    authMethod: "guest" | "clerk";
+    browserName: string | null;
+    osName: string | null;
+    deviceType: string | null;
+    platform: string | null;
+    model: string | null;
+    joinRequestIp: string | null;
+    joinRequestCity: string | null;
+    joinRequestCountry: string | null;
+    joinRequestDistanceKm: number | null;
+  }>;
+  events: LiveGameEventFeedItem[];
+  playerCount: number;
+  submittedCount: number;
   playerAnswerSummaries: Array<{
-    nickname: string
-    normalizedNickname: string
-    matchPicks: LivePlayerMatchPick[]
-    eventBonusAnswers: LivePlayerAnswer[]
-  }>
+    nickname: string;
+    normalizedNickname: string;
+    matchPicks: LivePlayerMatchPick[];
+    eventBonusAnswers: LivePlayerAnswer[];
+  }>;
 }
 
 export interface LiveGameViewerAccess {
-  game: LiveGame
-  card: ResolvedCard
-  player: LiveGamePlayer | null
-  isHost: boolean
+  game: LiveGame;
+  card: ResolvedCard;
+  player: LiveGamePlayer | null;
+  isHost: boolean;
 }
 
 interface PendingLiveGameEvent {
-  type: string
-  message: string
+  type: string;
+  message: string;
 }
 
 interface LiveGamePushSubscriptionInput {
-  endpoint: string
-  expirationTime: number | null
+  endpoint: string;
+  expirationTime: number | null;
   keys: {
-    p256dh: string
-    auth: string
-  }
+    p256dh: string;
+    auth: string;
+  };
 }
 
 interface JoinDeviceInfoInput {
-  userAgent?: string | null
-  userAgentData?: Record<string, unknown>
+  userAgent?: string | null;
+  userAgentData?: Record<string, unknown>;
 }
 
 interface ParsedJoinDeviceInfo {
-  userAgent: string | null
-  userAgentDataJson: string | null
-  browserName: string | null
-  browserVersion: string | null
-  osName: string | null
-  osVersion: string | null
-  deviceType: string | null
-  deviceVendor: string | null
-  deviceModel: string | null
-  platform: string | null
-  platformVersion: string | null
-  architecture: string | null
+  userAgent: string | null;
+  userAgentDataJson: string | null;
+  browserName: string | null;
+  browserVersion: string | null;
+  osName: string | null;
+  osVersion: string | null;
+  deviceType: string | null;
+  deviceVendor: string | null;
+  deviceModel: string | null;
+  platform: string | null;
+  platformVersion: string | null;
+  architecture: string | null;
 }
 
 interface JoinLiveGameOptions {
-  clerkUserId?: string | null
-  deviceInfo?: JoinDeviceInfoInput
-  requestIp?: string | null
-  requestCity?: string | null
-  requestCountry?: string | null
-  requestLatitude?: number | null
-  requestLongitude?: number | null
-  bypassSecret?: string | null
+  clerkUserId?: string | null;
+  deviceInfo?: JoinDeviceInfoInput;
+  requestIp?: string | null;
+  requestCity?: string | null;
+  requestCountry?: string | null;
+  requestLatitude?: number | null;
+  requestLongitude?: number | null;
+  bypassSecret?: string | null;
 }
 
 type JoinDecision = {
-  status: 'pending' | 'approved'
-  approvedAt: string | null
-  distanceKm: number | null
-}
+  status: "pending" | "approved";
+  approvedAt: string | null;
+  distanceKm: number | null;
+};
 
-const DEFAULT_GEO_RADIUS_KM = 50
+const DEFAULT_GEO_RADIUS_KM = 50;
 
 function normalizeNickname(value: string): string {
-  return value.trim().replace(/\s+/g, ' ')
+  return value.trim().replace(/\s+/g, " ");
 }
 
 function normalizeNicknameKey(value: string): string {
-  return normalizeNickname(value).toLowerCase()
+  return normalizeNickname(value).toLowerCase();
 }
 
 function normalizeOptionalText(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function normalizeOptionalNumber(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null
-  return value
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value;
 }
 
 function normalizeIpForComparison(value: string | null): string | null {
-  if (!value) return null
-  let normalized = value.trim().toLowerCase()
-  if (!normalized) return null
+  if (!value) return null;
+  let normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
 
-  if (normalized.startsWith('::ffff:')) {
-    normalized = normalized.slice(7)
+  if (normalized.startsWith("::ffff:")) {
+    normalized = normalized.slice(7);
   }
 
-  const bracketMatch = normalized.match(/^\[([^[\]]+)\](?::\d+)?$/)
+  const bracketMatch = normalized.match(/^\[([^[\]]+)\](?::\d+)?$/);
   if (bracketMatch?.[1]) {
-    normalized = bracketMatch[1]
+    normalized = bracketMatch[1];
   } else {
-    const ipv4PortMatch = normalized.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/)
+    const ipv4PortMatch = normalized.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
     if (ipv4PortMatch?.[1]) {
-      normalized = ipv4PortMatch[1]
+      normalized = ipv4PortMatch[1];
     }
   }
 
-  return normalized
+  return normalized;
 }
 
-function parseIpv4(value: string | null): [number, number, number, number] | null {
-  if (!value) return null
-  const parts = value.split('.')
-  if (parts.length !== 4) return null
-  const parsed = parts.map((part) => Number.parseInt(part, 10))
-  if (parsed.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null
-  return [parsed[0], parsed[1], parsed[2], parsed[3]]
+function parseIpv4(
+  value: string | null,
+): [number, number, number, number] | null {
+  if (!value) return null;
+  const parts = value.split(".");
+  if (parts.length !== 4) return null;
+  const parsed = parts.map((part) => Number.parseInt(part, 10));
+  if (parsed.some((part) => !Number.isInteger(part) || part < 0 || part > 255))
+    return null;
+  return [parsed[0], parsed[1], parsed[2], parsed[3]];
 }
 
 function isPrivateIpv4(value: string | null): boolean {
-  const parsed = parseIpv4(value)
-  if (!parsed) return false
-  const [a, b] = parsed
-  if (a === 10) return true
-  if (a === 192 && b === 168) return true
-  if (a === 172 && b >= 16 && b <= 31) return true
-  return false
+  const parsed = parseIpv4(value);
+  if (!parsed) return false;
+  const [a, b] = parsed;
+  if (a === 10) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  return false;
 }
 
-function isSameLanSubnet(requestIp: string | null, hostIp: string | null): boolean {
-  if (!isPrivateIpv4(requestIp) || !isPrivateIpv4(hostIp)) return false
-  const request = parseIpv4(requestIp)
-  const host = parseIpv4(hostIp)
-  if (!request || !host) return false
+function isSameLanSubnet(
+  requestIp: string | null,
+  hostIp: string | null,
+): boolean {
+  if (!isPrivateIpv4(requestIp) || !isPrivateIpv4(hostIp)) return false;
+  const request = parseIpv4(requestIp);
+  const host = parseIpv4(hostIp);
+  if (!request || !host) return false;
   // Conservative LAN heuristic: same /24 private subnet.
-  return request[0] === host[0] && request[1] === host[1] && request[2] === host[2]
+  return (
+    request[0] === host[0] && request[1] === host[1] && request[2] === host[2]
+  );
 }
 
 function shouldLogLobbyDebug(): boolean {
-  return process.env.NODE_ENV !== 'test'
+  return process.env.NODE_ENV !== "test";
 }
 
 function lobbyDebugLog(event: string, payload: Record<string, unknown>): void {
-  if (!shouldLogLobbyDebug()) return
-  console.info(`[live-games:lobby] ${event}`, payload)
+  if (!shouldLogLobbyDebug()) return;
+  console.info(`[live-games:lobby] ${event}`, payload);
 }
 
 function degreesToRadians(value: number): number {
-  return value * (Math.PI / 180)
+  return value * (Math.PI / 180);
 }
 
 function haversineKm(
   a: { latitude: number; longitude: number },
   b: { latitude: number; longitude: number },
 ): number {
-  const earthRadiusKm = 6371
-  const dLat = degreesToRadians(b.latitude - a.latitude)
-  const dLon = degreesToRadians(b.longitude - a.longitude)
-  const lat1 = degreesToRadians(a.latitude)
-  const lat2 = degreesToRadians(b.latitude)
+  const earthRadiusKm = 6371;
+  const dLat = degreesToRadians(b.latitude - a.latitude);
+  const dLon = degreesToRadians(b.longitude - a.longitude);
+  const lat1 = degreesToRadians(a.latitude);
+  const lat2 = degreesToRadians(b.latitude);
 
   const term =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2)
-    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
 
-  return 2 * earthRadiusKm * Math.asin(Math.sqrt(term))
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(term));
 }
 
-function parseJoinDeviceInfo(deviceInfo?: JoinDeviceInfoInput): ParsedJoinDeviceInfo {
-  const userAgent = normalizeOptionalText(deviceInfo?.userAgent) ?? null
-  const uaData = deviceInfo?.userAgentData ?? null
-  const parser = new UAParser(userAgent ?? undefined)
-  const parsed = parser.getResult()
-  const fallbackPlatform = normalizeOptionalText(uaData?.platform)
-  const fallbackPlatformVersion = normalizeOptionalText(uaData?.platformVersion)
-  const fallbackArchitecture = normalizeOptionalText(uaData?.architecture)
-  const fallbackModel = normalizeOptionalText(uaData?.model)
+function parseJoinDeviceInfo(
+  deviceInfo?: JoinDeviceInfoInput,
+): ParsedJoinDeviceInfo {
+  const userAgent = normalizeOptionalText(deviceInfo?.userAgent) ?? null;
+  const uaData = deviceInfo?.userAgentData ?? null;
+  const parser = new UAParser(userAgent ?? undefined);
+  const parsed = parser.getResult();
+  const fallbackPlatform = normalizeOptionalText(uaData?.platform);
+  const fallbackPlatformVersion = normalizeOptionalText(
+    uaData?.platformVersion,
+  );
+  const fallbackArchitecture = normalizeOptionalText(uaData?.architecture);
+  const fallbackModel = normalizeOptionalText(uaData?.model);
   const fallbackBrowserName =
     Array.isArray(uaData?.fullVersionList) && uaData.fullVersionList.length > 0
       ? normalizeOptionalText(uaData.fullVersionList[0]?.brand)
-      : null
+      : null;
   const fallbackBrowserVersion =
     Array.isArray(uaData?.fullVersionList) && uaData.fullVersionList.length > 0
       ? normalizeOptionalText(uaData.fullVersionList[0]?.version)
-      : null
+      : null;
 
   return {
     userAgent,
     userAgentDataJson: uaData ? JSON.stringify(uaData) : null,
-    browserName: normalizeOptionalText(parsed.browser.name) ?? fallbackBrowserName,
-    browserVersion: normalizeOptionalText(parsed.browser.version) ?? fallbackBrowserVersion,
+    browserName:
+      normalizeOptionalText(parsed.browser.name) ?? fallbackBrowserName,
+    browserVersion:
+      normalizeOptionalText(parsed.browser.version) ?? fallbackBrowserVersion,
     osName: normalizeOptionalText(parsed.os.name) ?? fallbackPlatform,
-    osVersion: normalizeOptionalText(parsed.os.version) ?? fallbackPlatformVersion,
+    osVersion:
+      normalizeOptionalText(parsed.os.version) ?? fallbackPlatformVersion,
     deviceType: normalizeOptionalText(parsed.device.type),
     deviceVendor: normalizeOptionalText(parsed.device.vendor),
     deviceModel: normalizeOptionalText(parsed.device.model) ?? fallbackModel,
     platform: fallbackPlatform ?? normalizeOptionalText(parsed.os.name),
-    platformVersion: fallbackPlatformVersion ?? normalizeOptionalText(parsed.os.version),
-    architecture: normalizeOptionalText(parsed.cpu.architecture) ?? fallbackArchitecture,
-  }
+    platformVersion:
+      fallbackPlatformVersion ?? normalizeOptionalText(parsed.os.version),
+    architecture:
+      normalizeOptionalText(parsed.cpu.architecture) ?? fallbackArchitecture,
+  };
 }
 
 function normalizeAnswer(value: unknown): LivePlayerAnswer | null {
-  if (!value || typeof value !== 'object') return null
+  if (!value || typeof value !== "object") return null;
 
-  const raw = value as Partial<LivePlayerAnswer>
-  if (typeof raw.questionId !== 'string') return null
+  const raw = value as Partial<LivePlayerAnswer>;
+  if (typeof raw.questionId !== "string") return null;
 
   return {
     questionId: raw.questionId,
-    answer: typeof raw.answer === 'string' ? raw.answer : '',
-  }
+    answer: typeof raw.answer === "string" ? raw.answer : "",
+  };
 }
 
 function normalizeMatchPick(value: unknown): LivePlayerMatchPick | null {
-  if (!value || typeof value !== 'object') return null
+  if (!value || typeof value !== "object") return null;
 
-  const raw = value as Partial<LivePlayerMatchPick>
-  if (typeof raw.matchId !== 'string') return null
+  const raw = value as Partial<LivePlayerMatchPick>;
+  if (typeof raw.matchId !== "string") return null;
 
   return {
     matchId: raw.matchId,
-    winnerName: typeof raw.winnerName === 'string' ? raw.winnerName : '',
+    winnerName: typeof raw.winnerName === "string" ? raw.winnerName : "",
     battleRoyalEntrants: Array.isArray(raw.battleRoyalEntrants)
       ? raw.battleRoyalEntrants
-        .filter((entrant): entrant is string => typeof entrant === 'string')
-        .map((entrant) => entrant.trim())
-        .filter((entrant) => entrant.length > 0)
+          .filter((entrant): entrant is string => typeof entrant === "string")
+          .map((entrant) => entrant.trim())
+          .filter((entrant) => entrant.length > 0)
       : [],
     bonusAnswers: Array.isArray(raw.bonusAnswers)
       ? raw.bonusAnswers
-        .map((answer) => normalizeAnswer(answer))
-        .filter((answer): answer is LivePlayerAnswer => answer !== null)
+          .map((answer) => normalizeAnswer(answer))
+          .filter((answer): answer is LivePlayerAnswer => answer !== null)
       : [],
-  }
+  };
 }
 
-export function normalizeLivePlayerPicks(value: unknown): LivePlayerPicksPayload {
-  if (!value || typeof value !== 'object') {
-    return { ...EMPTY_PICKS }
+export function normalizeLivePlayerPicks(
+  value: unknown,
+): LivePlayerPicksPayload {
+  if (!value || typeof value !== "object") {
+    return { ...EMPTY_PICKS };
   }
 
-  const raw = value as Partial<LivePlayerPicksPayload>
+  const raw = value as Partial<LivePlayerPicksPayload>;
 
   return {
     matchPicks: Array.isArray(raw.matchPicks)
       ? raw.matchPicks
-        .map((pick) => normalizeMatchPick(pick))
-        .filter((pick): pick is LivePlayerMatchPick => pick !== null)
+          .map((pick) => normalizeMatchPick(pick))
+          .filter((pick): pick is LivePlayerMatchPick => pick !== null)
       : [],
     eventBonusAnswers: Array.isArray(raw.eventBonusAnswers)
       ? raw.eventBonusAnswers
-        .map((answer) => normalizeAnswer(answer))
-        .filter((answer): answer is LivePlayerAnswer => answer !== null)
+          .map((answer) => normalizeAnswer(answer))
+          .filter((answer): answer is LivePlayerAnswer => answer !== null)
       : [],
-    tiebreakerAnswer: typeof raw.tiebreakerAnswer === 'string' ? raw.tiebreakerAnswer : '',
-  }
+    tiebreakerAnswer:
+      typeof raw.tiebreakerAnswer === "string" ? raw.tiebreakerAnswer : "",
+  };
 }
 
 export function normalizeLiveGameLockState(value: unknown): LiveGameLockState {
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== "object") {
     return {
       ...EMPTY_LOCK_STATE,
       matchLocks: {},
       matchBonusLocks: {},
       eventBonusLocks: {},
-    }
+    };
   }
 
-  const raw = value as Partial<LiveGameLockState>
-  const matchLocks = typeof raw.matchLocks === 'object' && raw.matchLocks
-    ? Object.fromEntries(
-      Object.entries(raw.matchLocks)
-        .filter(([key]) => typeof key === 'string' && key.trim().length > 0)
-        .map(([key, item]) => {
-          const lock = item as { locked?: boolean; source?: 'host' | 'timer' } | null
-          const source: 'host' | 'timer' = lock?.source === 'timer' ? 'timer' : 'host'
-          return [
-            key,
-            {
-              locked: lock?.locked === true,
-              source,
-            },
-          ]
-        }),
-    )
-    : {}
+  const raw = value as Partial<LiveGameLockState>;
+  const matchLocks =
+    typeof raw.matchLocks === "object" && raw.matchLocks
+      ? Object.fromEntries(
+          Object.entries(raw.matchLocks)
+            .filter(([key]) => typeof key === "string" && key.trim().length > 0)
+            .map(([key, item]) => {
+              const lock = item as {
+                locked?: boolean;
+                source?: "host" | "timer";
+              } | null;
+              const source: "host" | "timer" =
+                lock?.source === "timer" ? "timer" : "host";
+              return [
+                key,
+                {
+                  locked: lock?.locked === true,
+                  source,
+                },
+              ];
+            }),
+        )
+      : {};
 
-  const matchBonusLocks = typeof raw.matchBonusLocks === 'object' && raw.matchBonusLocks
-    ? Object.fromEntries(
-      Object.entries(raw.matchBonusLocks)
-        .filter(([key]) => typeof key === 'string' && key.trim().length > 0)
-        .map(([key, item]) => {
-          const lock = item as { locked?: boolean; source?: 'host' | 'timer' } | null
-          const source: 'host' | 'timer' = lock?.source === 'timer' ? 'timer' : 'host'
-          return [
-            key,
-            {
-              locked: lock?.locked === true,
-              source,
-            },
-          ]
-        }),
-    )
-    : {}
+  const matchBonusLocks =
+    typeof raw.matchBonusLocks === "object" && raw.matchBonusLocks
+      ? Object.fromEntries(
+          Object.entries(raw.matchBonusLocks)
+            .filter(([key]) => typeof key === "string" && key.trim().length > 0)
+            .map(([key, item]) => {
+              const lock = item as {
+                locked?: boolean;
+                source?: "host" | "timer";
+              } | null;
+              const source: "host" | "timer" =
+                lock?.source === "timer" ? "timer" : "host";
+              return [
+                key,
+                {
+                  locked: lock?.locked === true,
+                  source,
+                },
+              ];
+            }),
+        )
+      : {};
 
-  const eventBonusLocks = typeof raw.eventBonusLocks === 'object' && raw.eventBonusLocks
-    ? Object.fromEntries(
-      Object.entries(raw.eventBonusLocks)
-        .filter(([key]) => typeof key === 'string' && key.trim().length > 0)
-        .map(([key, item]) => {
-          const lock = item as { locked?: boolean; source?: 'host' | 'timer' } | null
-          const source: 'host' | 'timer' = lock?.source === 'timer' ? 'timer' : 'host'
-          return [
-            key,
-            {
-              locked: lock?.locked === true,
-              source,
-            },
-          ]
-        }),
-    )
-    : {}
+  const eventBonusLocks =
+    typeof raw.eventBonusLocks === "object" && raw.eventBonusLocks
+      ? Object.fromEntries(
+          Object.entries(raw.eventBonusLocks)
+            .filter(([key]) => typeof key === "string" && key.trim().length > 0)
+            .map(([key, item]) => {
+              const lock = item as {
+                locked?: boolean;
+                source?: "host" | "timer";
+              } | null;
+              const source: "host" | "timer" =
+                lock?.source === "timer" ? "timer" : "host";
+              return [
+                key,
+                {
+                  locked: lock?.locked === true,
+                  source,
+                },
+              ];
+            }),
+        )
+      : {};
 
   return {
     globalLocked: raw.globalLocked === true,
     matchLocks,
     matchBonusLocks,
     eventBonusLocks,
-  }
+  };
 }
 
 function parseJson<T>(value: string, fallback: T): T {
   try {
-    return JSON.parse(value) as T
+    return JSON.parse(value) as T;
   } catch {
-    return fallback
+    return fallback;
   }
 }
 
-function hasReachedEventStartTime(eventDate: string | null | undefined): boolean {
-  if (!eventDate) return false
-  const parsed = new Date(eventDate).getTime()
-  if (!Number.isFinite(parsed)) return false
-  return parsed <= Date.now()
+function hasReachedEventStartTime(
+  eventDate: string | null | undefined,
+): boolean {
+  if (!eventDate) return false;
+  const parsed = new Date(eventDate).getTime();
+  if (!Number.isFinite(parsed)) return false;
+  return parsed <= Date.now();
 }
 
 function mapLiveGame(row: LiveGameSelectable): LiveGame {
-  const status: LiveGameStatus = row.status === 'live' || row.status === 'ended' ? row.status : 'lobby'
-  const mode: LiveGameMode = row.mode === 'solo' ? 'solo' : 'room'
+  const status: LiveGameStatus =
+    row.status === "live" || row.status === "ended" ? row.status : "lobby";
+  const mode: LiveGameMode = row.mode === "solo" ? "solo" : "room";
 
   return {
     id: String(row.id),
@@ -466,29 +504,40 @@ function mapLiveGame(row: LiveGameSelectable): LiveGame {
     hostGeoCountry: row.host_geo_country,
     hostGeoLatitude: normalizeOptionalNumber(row.host_geo_latitude),
     hostGeoLongitude: normalizeOptionalNumber(row.host_geo_longitude),
-    geoRadiusKm: Number.isFinite(Number(row.geo_radius_km)) ? Number(row.geo_radius_km) : DEFAULT_GEO_RADIUS_KM,
+    geoRadiusKm: Number.isFinite(Number(row.geo_radius_km))
+      ? Number(row.geo_radius_km)
+      : DEFAULT_GEO_RADIUS_KM,
     expiresAt: row.expires_at,
     endedAt: row.ended_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    keyPayload: normalizeLiveKeyPayload(parseJson<unknown>(row.key_payload_json, {})),
-    lockState: normalizeLiveGameLockState(parseJson<unknown>(row.lock_state_json, {})),
-  }
+    keyPayload: normalizeLiveKeyPayload(
+      parseJson<unknown>(row.key_payload_json, {}),
+    ),
+    lockState: normalizeLiveGameLockState(
+      parseJson<unknown>(row.lock_state_json, {}),
+    ),
+  };
 }
 
 function mapLiveGamePlayer(row: LiveGamePlayerSelectable): LiveGamePlayer {
   return {
     id: String(row.id),
     gameId: row.game_id,
-    joinStatus: row.join_status === 'pending' || row.join_status === 'rejected' ? row.join_status : 'approved',
+    joinStatus:
+      row.join_status === "pending" || row.join_status === "rejected"
+        ? row.join_status
+        : "approved",
     approvedAt: row.approved_at,
     joinRequestIp: row.join_request_ip,
     joinRequestCity: row.join_request_city,
     joinRequestCountry: row.join_request_country,
     joinRequestLatitude: normalizeOptionalNumber(row.join_request_latitude),
     joinRequestLongitude: normalizeOptionalNumber(row.join_request_longitude),
-    joinRequestDistanceKm: normalizeOptionalNumber(row.join_request_distance_km),
-    authMethod: row.auth_method === 'clerk' ? 'clerk' : 'guest',
+    joinRequestDistanceKm: normalizeOptionalNumber(
+      row.join_request_distance_km,
+    ),
+    authMethod: row.auth_method === "clerk" ? "clerk" : "guest",
     clerkUserId: row.clerk_user_id,
     nickname: row.nickname,
     picks: normalizeLivePlayerPicks(parseJson<unknown>(row.picks_json, {})),
@@ -507,162 +556,184 @@ function mapLiveGamePlayer(row: LiveGamePlayerSelectable): LiveGamePlayer {
     platform: row.platform,
     platformVersion: row.platform_version,
     architecture: row.architecture,
-  }
+  };
 }
 
 function isGameStartedByCardEvent(game: LiveGame, card: ResolvedCard): boolean {
-  if (game.status === 'live' || game.status === 'ended') return true
-  return hasReachedEventStartTime(card.eventDate)
+  if (game.status === "live" || game.status === "ended") return true;
+  return hasReachedEventStartTime(card.eventDate);
 }
 
-async function autoStartGameForCardEvent(row: LiveGameSelectable, card: ResolvedCard): Promise<LiveGameSelectable> {
-  const status: LiveGameStatus = row.status === 'live' || row.status === 'ended' ? row.status : 'lobby'
-  if (status !== 'lobby') return row
-  if (!hasReachedEventStartTime(card.eventDate)) return row
+async function autoStartGameForCardEvent(
+  row: LiveGameSelectable,
+  card: ResolvedCard,
+): Promise<LiveGameSelectable> {
+  const status: LiveGameStatus =
+    row.status === "live" || row.status === "ended" ? row.status : "lobby";
+  if (status !== "lobby") return row;
+  if (!hasReachedEventStartTime(card.eventDate)) return row;
 
-  const gameId = String(row.id)
-  const now = nowIso()
+  const gameId = String(row.id);
+  const now = nowIso();
   const updated = await db
-    .updateTable('live_games')
+    .updateTable("live_games")
     .set({
-      status: 'live',
+      status: "live",
       updated_at: now,
     })
-    .where('id', '=', gameId)
-    .where('status', '=', 'lobby')
+    .where("id", "=", gameId)
+    .where("status", "=", "lobby")
     .returningAll()
-    .executeTakeFirst()
+    .executeTakeFirst();
 
   if (updated) {
-    await insertLiveGameEvent(gameId, 'game.status', 'Room auto-started at event start time')
+    await insertLiveGameEvent(
+      gameId,
+      "game.status",
+      "Room auto-started at event start time",
+    );
     await sendLiveGamePushToSubscribers(gameId, {
-      title: 'Live Game Update',
-      body: 'Room auto-started.',
+      title: "Live Game Update",
+      body: "Room auto-started.",
       url: `/games/${gameId}/play?code=${encodeURIComponent(updated.join_code)}`,
       tag: `live-game-status:${gameId}`,
-    })
-    return updated
+    });
+    return updated;
   }
 
   const reloaded = await db
-    .selectFrom('live_games')
+    .selectFrom("live_games")
     .selectAll()
-    .where('id', '=', gameId)
-    .executeTakeFirst()
+    .where("id", "=", gameId)
+    .executeTakeFirst();
 
-  return reloaded ?? row
+  return reloaded ?? row;
 }
 
 function mapLiveGameEvent(row: LiveGameEventSelectable): LiveGameEventFeedItem {
-  const payload = parseJson<Record<string, unknown>>(row.event_payload_json, {})
-  const message = typeof payload.message === 'string' ? payload.message : row.event_type
+  const payload = parseJson<Record<string, unknown>>(
+    row.event_payload_json,
+    {},
+  );
+  const message =
+    typeof payload.message === "string" ? payload.message : row.event_type;
 
   return {
     id: String(row.id),
     type: row.event_type,
     message,
     createdAt: row.created_at,
-  }
+  };
 }
 
 function nowIso(): string {
-  return new Date().toISOString()
+  return new Date().toISOString();
 }
 
 function buildJoinCode(): string {
-  let code = ''
+  let code = "";
   for (let i = 0; i < JOIN_CODE_LENGTH; i += 1) {
-    const index = Math.floor(Math.random() * JOIN_CODE_ALPHABET.length)
-    code += JOIN_CODE_ALPHABET[index]
+    const index = Math.floor(Math.random() * JOIN_CODE_ALPHABET.length);
+    code += JOIN_CODE_ALPHABET[index];
   }
-  return code
+  return code;
 }
 
 function buildJoinBypassSecret(): string {
-  return randomBytes(32).toString('base64url')
+  return randomBytes(32).toString("base64url");
 }
 
 async function createUniqueJoinCode(): Promise<string> {
   for (let i = 0; i < 20; i += 1) {
-    const code = buildJoinCode()
+    const code = buildJoinCode();
     const existing = await db
-      .selectFrom('live_games')
-      .select('id')
-      .where('join_code', '=', code)
-      .executeTakeFirst()
+      .selectFrom("live_games")
+      .select("id")
+      .where("join_code", "=", code)
+      .executeTakeFirst();
 
     if (!existing) {
-      return code
+      return code;
     }
   }
 
-  throw new Error('Failed to allocate a unique join code')
+  throw new Error("Failed to allocate a unique join code");
 }
 
 function toMatchBonusKey(matchId: string, questionId: string): string {
-  return `${matchId}:${questionId}`
+  return `${matchId}:${questionId}`;
 }
 
 function isMatchLocked(lockState: LiveGameLockState, matchId: string): boolean {
-  if (lockState.globalLocked) return true
-  return lockState.matchLocks[matchId]?.locked === true
+  if (lockState.globalLocked) return true;
+  return lockState.matchLocks[matchId]?.locked === true;
 }
 
-function isMatchBonusLocked(lockState: LiveGameLockState, matchId: string, questionId: string): boolean {
-  if (isMatchLocked(lockState, matchId)) return true
-  return lockState.matchBonusLocks[toMatchBonusKey(matchId, questionId)]?.locked === true
+function isMatchBonusLocked(
+  lockState: LiveGameLockState,
+  matchId: string,
+  questionId: string,
+): boolean {
+  if (isMatchLocked(lockState, matchId)) return true;
+  return (
+    lockState.matchBonusLocks[toMatchBonusKey(matchId, questionId)]?.locked ===
+    true
+  );
 }
 
-function isEventBonusLocked(lockState: LiveGameLockState, questionId: string): boolean {
-  if (lockState.globalLocked) return true
-  return lockState.eventBonusLocks[questionId]?.locked === true
+function isEventBonusLocked(
+  lockState: LiveGameLockState,
+  questionId: string,
+): boolean {
+  if (lockState.globalLocked) return true;
+  return lockState.eventBonusLocks[questionId]?.locked === true;
 }
 
 interface CardLookup {
-  matchesById: Map<string, Match>
-  matchIndexById: Map<string, number>
-  matchBonusByKey: Map<string, BonusQuestion>
-  eventBonusById: Map<string, BonusQuestion>
+  matchesById: Map<string, Match>;
+  matchIndexById: Map<string, number>;
+  matchBonusByKey: Map<string, BonusQuestion>;
+  eventBonusById: Map<string, BonusQuestion>;
 }
 
 function abbreviateLabel(value: string, maxLength = 72): string {
-  const normalized = value.trim().replace(/\s+/g, ' ')
-  if (!normalized) return ''
-  if (normalized.length <= maxLength) return normalized
-  return `${normalized.slice(0, Math.max(1, maxLength - 3))}...`
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (!normalized) return "";
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(1, maxLength - 3))}...`;
 }
 
 function formatDurationFromMs(ms: number): string {
-  const totalSeconds = Math.floor(Math.max(0, ms) / 1000)
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
+  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
 
   if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   }
 
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function buildCardLookup(card: ResolvedCard): CardLookup {
-  const matchesById = new Map<string, Match>()
-  const matchIndexById = new Map<string, number>()
-  const matchBonusByKey = new Map<string, BonusQuestion>()
-  const eventBonusById = new Map<string, BonusQuestion>()
+  const matchesById = new Map<string, Match>();
+  const matchIndexById = new Map<string, number>();
+  const matchBonusByKey = new Map<string, BonusQuestion>();
+  const eventBonusById = new Map<string, BonusQuestion>();
 
   for (let matchIndex = 0; matchIndex < card.matches.length; matchIndex += 1) {
-    const match = card.matches[matchIndex]
-    matchesById.set(match.id, match)
-    matchIndexById.set(match.id, matchIndex)
+    const match = card.matches[matchIndex];
+    matchesById.set(match.id, match);
+    matchIndexById.set(match.id, matchIndex);
 
     for (const question of match.bonusQuestions) {
-      matchBonusByKey.set(toMatchBonusKey(match.id, question.id), question)
+      matchBonusByKey.set(toMatchBonusKey(match.id, question.id), question);
     }
   }
 
   for (const question of card.eventBonusQuestions) {
-    eventBonusById.set(question.id, question)
+    eventBonusById.set(question.id, question);
   }
 
   return {
@@ -670,102 +741,115 @@ function buildCardLookup(card: ResolvedCard): CardLookup {
     matchIndexById,
     matchBonusByKey,
     eventBonusById,
-  }
+  };
 }
 
 function getMatchLabel(lookup: CardLookup, matchId: string): string {
-  const match = lookup.matchesById.get(matchId)
-  const matchIndex = lookup.matchIndexById.get(matchId)
-  const baseLabel = typeof matchIndex === 'number' ? `Match ${matchIndex + 1}` : `Match ${matchId.slice(0, 8)}`
-  const title = match ? abbreviateLabel(match.title, 48) : ''
+  const match = lookup.matchesById.get(matchId);
+  const matchIndex = lookup.matchIndexById.get(matchId);
+  const baseLabel =
+    typeof matchIndex === "number"
+      ? `Match ${matchIndex + 1}`
+      : `Match ${matchId.slice(0, 8)}`;
+  const title = match ? abbreviateLabel(match.title, 48) : "";
 
   if (title) {
-    return `${baseLabel} (${title})`
+    return `${baseLabel} (${title})`;
   }
 
-  return baseLabel
+  return baseLabel;
 }
 
-function getQuestionLabel(question: BonusQuestion | undefined, fallbackLabel: string): string {
-  const label = question ? abbreviateLabel(question.question, 64) : ''
-  return label || fallbackLabel
+function getQuestionLabel(
+  question: BonusQuestion | undefined,
+  fallbackLabel: string,
+): string {
+  const label = question ? abbreviateLabel(question.question, 64) : "";
+  return label || fallbackLabel;
 }
 
-function parseMatchBonusLockKey(key: string): { matchId: string; questionId: string } | null {
-  const delimiterIndex = key.indexOf(':')
+function parseMatchBonusLockKey(
+  key: string,
+): { matchId: string; questionId: string } | null {
+  const delimiterIndex = key.indexOf(":");
   if (delimiterIndex <= 0 || delimiterIndex >= key.length - 1) {
-    return null
+    return null;
   }
 
   return {
     matchId: key.slice(0, delimiterIndex),
     questionId: key.slice(delimiterIndex + 1),
-  }
+  };
 }
 
 function valuesEqualByType(
-  valueType: BonusQuestion['valueType'] | 'string',
+  valueType: BonusQuestion["valueType"] | "string",
   previousValue: string,
   nextValue: string,
 ): boolean {
-  const previousTrimmed = previousValue.trim()
-  const nextTrimmed = nextValue.trim()
-  if (!previousTrimmed && !nextTrimmed) return true
+  const previousTrimmed = previousValue.trim();
+  const nextTrimmed = nextValue.trim();
+  if (!previousTrimmed && !nextTrimmed) return true;
 
-  if (valueType === 'numerical' || valueType === 'time') {
-    const previousParsed = parseValueByType(previousValue, valueType)
-    const nextParsed = parseValueByType(nextValue, valueType)
+  if (valueType === "numerical" || valueType === "time") {
+    const previousParsed = parseValueByType(previousValue, valueType);
+    const nextParsed = parseValueByType(nextValue, valueType);
     if (previousParsed !== null && nextParsed !== null) {
-      return Math.abs(previousParsed - nextParsed) < 0.0001
+      return Math.abs(previousParsed - nextParsed) < 0.0001;
     }
   }
 
-  return normalizeText(previousValue) === normalizeText(nextValue)
+  return normalizeText(previousValue) === normalizeText(nextValue);
 }
 
 function normalizeNameList(values: string[]): string[] {
   return values
     .map((value) => value.trim())
-    .filter((value) => value.length > 0)
+    .filter((value) => value.length > 0);
 }
 
 function equalNameListWithOrder(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false
+  if (a.length !== b.length) return false;
 
   for (let i = 0; i < a.length; i += 1) {
     if (normalizeText(a[i]) !== normalizeText(b[i])) {
-      return false
+      return false;
     }
   }
 
-  return true
+  return true;
 }
 
-function getTimerLabelForEvent(lookup: CardLookup, timer: LiveKeyTimer): string {
-  const matchId = parseMatchTimerId(timer.id)
+function getTimerLabelForEvent(
+  lookup: CardLookup,
+  timer: LiveKeyTimer,
+): string {
+  const matchId = parseMatchTimerId(timer.id);
   if (matchId) {
-    return `${getMatchLabel(lookup, matchId)} timer`
+    return `${getMatchLabel(lookup, matchId)} timer`;
   }
 
-  const label = abbreviateLabel(timer.label, 40)
+  const label = abbreviateLabel(timer.label, 40);
   if (label) {
-    return `Timer "${label}"`
+    return `Timer "${label}"`;
   }
 
-  return 'Timer'
+  return "Timer";
 }
 
-function trimDetailedEvents(events: PendingLiveGameEvent[]): PendingLiveGameEvent[] {
+function trimDetailedEvents(
+  events: PendingLiveGameEvent[],
+): PendingLiveGameEvent[] {
   if (events.length <= MAX_DETAILED_EVENTS_PER_MUTATION) {
-    return events
+    return events;
   }
 
-  const kept = events.slice(0, MAX_DETAILED_EVENTS_PER_MUTATION)
+  const kept = events.slice(0, MAX_DETAILED_EVENTS_PER_MUTATION);
   kept.push({
-    type: 'game.changes',
+    type: "game.changes",
     message: `${events.length - MAX_DETAILED_EVENTS_PER_MUTATION} additional changes applied`,
-  })
-  return kept
+  });
+  return kept;
 }
 
 function buildKeyMutationEvents(
@@ -773,282 +857,323 @@ function buildKeyMutationEvents(
   previousPayload: LiveGameKeyPayload,
   nextPayload: LiveGameKeyPayload,
 ): PendingLiveGameEvent[] {
-  const lookup = buildCardLookup(card)
-  const events: PendingLiveGameEvent[] = []
+  const lookup = buildCardLookup(card);
+  const events: PendingLiveGameEvent[] = [];
 
-  const previousResultsByMatchId = new Map(previousPayload.matchResults.map((result) => [result.matchId, result]))
-  const nextResultsByMatchId = new Map(nextPayload.matchResults.map((result) => [result.matchId, result]))
+  const previousResultsByMatchId = new Map(
+    previousPayload.matchResults.map((result) => [result.matchId, result]),
+  );
+  const nextResultsByMatchId = new Map(
+    nextPayload.matchResults.map((result) => [result.matchId, result]),
+  );
 
   for (const match of card.matches) {
-    const matchLabel = getMatchLabel(lookup, match.id)
-    const previousResult = previousResultsByMatchId.get(match.id)
-    const nextResult = nextResultsByMatchId.get(match.id)
+    const matchLabel = getMatchLabel(lookup, match.id);
+    const previousResult = previousResultsByMatchId.get(match.id);
+    const nextResult = nextResultsByMatchId.get(match.id);
 
-    const previousWinner = previousResult?.winnerName ?? ''
-    const nextWinner = nextResult?.winnerName ?? ''
+    const previousWinner = previousResult?.winnerName ?? "";
+    const nextWinner = nextResult?.winnerName ?? "";
 
-    if (!valuesEqualByType('string', previousWinner, nextWinner)) {
-      const previousWinnerTrimmed = abbreviateLabel(previousWinner, 56)
-      const nextWinnerTrimmed = abbreviateLabel(nextWinner, 56)
+    if (!valuesEqualByType("string", previousWinner, nextWinner)) {
+      const previousWinnerTrimmed = abbreviateLabel(previousWinner, 56);
+      const nextWinnerTrimmed = abbreviateLabel(nextWinner, 56);
 
       if (!nextWinnerTrimmed) {
         events.push({
-          type: 'key.winner',
+          type: "key.winner",
           message: `${matchLabel} winner cleared`,
-        })
+        });
       } else if (!previousWinnerTrimmed) {
         events.push({
-          type: 'key.winner',
+          type: "key.winner",
           message: `${matchLabel} winner set to ${nextWinnerTrimmed}`,
-        })
+        });
       } else {
         events.push({
-          type: 'key.winner',
+          type: "key.winner",
           message: `${matchLabel} winner changed: ${previousWinnerTrimmed} -> ${nextWinnerTrimmed}`,
-        })
+        });
       }
     }
 
-    const previousEntryOrder = normalizeNameList(previousResult?.battleRoyalEntryOrder ?? [])
-    const nextEntryOrder = normalizeNameList(nextResult?.battleRoyalEntryOrder ?? [])
+    const previousEntryOrder = normalizeNameList(
+      previousResult?.battleRoyalEntryOrder ?? [],
+    );
+    const nextEntryOrder = normalizeNameList(
+      nextResult?.battleRoyalEntryOrder ?? [],
+    );
     if (!equalNameListWithOrder(previousEntryOrder, nextEntryOrder)) {
       if (nextEntryOrder.length === 0) {
         events.push({
-          type: 'key.entryOrder',
+          type: "key.entryOrder",
           message: `${matchLabel} entrant order cleared`,
-        })
+        });
       } else if (previousEntryOrder.length === 0) {
         events.push({
-          type: 'key.entryOrder',
+          type: "key.entryOrder",
           message: `${matchLabel} entrant order started (${nextEntryOrder.length} recorded)`,
-        })
+        });
       } else if (
         nextEntryOrder.length > previousEntryOrder.length &&
-        equalNameListWithOrder(previousEntryOrder, nextEntryOrder.slice(0, previousEntryOrder.length))
+        equalNameListWithOrder(
+          previousEntryOrder,
+          nextEntryOrder.slice(0, previousEntryOrder.length),
+        )
       ) {
-        const entrant = abbreviateLabel(nextEntryOrder[nextEntryOrder.length - 1], 56)
+        const entrant = abbreviateLabel(
+          nextEntryOrder[nextEntryOrder.length - 1],
+          56,
+        );
         events.push({
-          type: 'key.entryOrder',
-          message: `${matchLabel} entrant #${nextEntryOrder.length} recorded: ${entrant || 'Unknown'}`,
-        })
+          type: "key.entryOrder",
+          message: `${matchLabel} entrant #${nextEntryOrder.length} recorded: ${entrant || "Unknown"}`,
+        });
       } else {
         events.push({
-          type: 'key.entryOrder',
+          type: "key.entryOrder",
           message: `${matchLabel} entrant order updated (${nextEntryOrder.length} recorded)`,
-        })
+        });
       }
     }
 
     for (const question of match.bonusQuestions) {
-      const previousAnswer = previousResult?.bonusAnswers.find((answer) => answer.questionId === question.id)?.answer ?? ''
-      const nextAnswer = nextResult?.bonusAnswers.find((answer) => answer.questionId === question.id)?.answer ?? ''
+      const previousAnswer =
+        previousResult?.bonusAnswers.find(
+          (answer) => answer.questionId === question.id,
+        )?.answer ?? "";
+      const nextAnswer =
+        nextResult?.bonusAnswers.find(
+          (answer) => answer.questionId === question.id,
+        )?.answer ?? "";
       if (valuesEqualByType(question.valueType, previousAnswer, nextAnswer)) {
-        continue
+        continue;
       }
 
-      const questionLabel = getQuestionLabel(question, 'Bonus question')
-      const previousTrimmed = previousAnswer.trim()
-      const nextTrimmed = nextAnswer.trim()
+      const questionLabel = getQuestionLabel(question, "Bonus question");
+      const previousTrimmed = previousAnswer.trim();
+      const nextTrimmed = nextAnswer.trim();
 
-      if (question.valueType === 'time') {
+      if (question.valueType === "time") {
         if (!nextTrimmed) {
           events.push({
-            type: 'key.time',
+            type: "key.time",
             message: `${matchLabel} cleared recorded time for "${questionLabel}"`,
-          })
+          });
         } else if (!previousTrimmed) {
           events.push({
-            type: 'key.time',
+            type: "key.time",
             message: `${matchLabel} recorded time for "${questionLabel}": ${abbreviateLabel(nextTrimmed, 24)}`,
-          })
+          });
         } else {
           events.push({
-            type: 'key.time',
+            type: "key.time",
             message: `${matchLabel} updated time for "${questionLabel}": ${abbreviateLabel(previousTrimmed, 24)} -> ${abbreviateLabel(nextTrimmed, 24)}`,
-          })
+          });
         }
-        continue
+        continue;
       }
 
-      if (question.valueType === 'numerical') {
+      if (question.valueType === "numerical") {
         if (!nextTrimmed) {
           events.push({
-            type: 'key.count',
+            type: "key.count",
             message: `${matchLabel} cleared count for "${questionLabel}"`,
-          })
+          });
         } else if (!previousTrimmed) {
           events.push({
-            type: 'key.count',
+            type: "key.count",
             message: `${matchLabel} set count for "${questionLabel}": ${abbreviateLabel(nextTrimmed, 24)}`,
-          })
+          });
         } else {
           events.push({
-            type: 'key.count',
+            type: "key.count",
             message: `${matchLabel} changed count for "${questionLabel}": ${abbreviateLabel(previousTrimmed, 24)} -> ${abbreviateLabel(nextTrimmed, 24)}`,
-          })
+          });
         }
-        continue
+        continue;
       }
 
       if (!previousTrimmed && nextTrimmed) {
         events.push({
-          type: 'key.answer',
+          type: "key.answer",
           message: `${matchLabel} set answer for "${questionLabel}"`,
-        })
+        });
       } else if (previousTrimmed && !nextTrimmed) {
         events.push({
-          type: 'key.answer',
+          type: "key.answer",
           message: `${matchLabel} cleared answer for "${questionLabel}"`,
-        })
+        });
       }
     }
   }
 
-  const previousEventAnswersByQuestion = new Map(previousPayload.eventBonusAnswers.map((answer) => [answer.questionId, answer.answer]))
-  const nextEventAnswersByQuestion = new Map(nextPayload.eventBonusAnswers.map((answer) => [answer.questionId, answer.answer]))
+  const previousEventAnswersByQuestion = new Map(
+    previousPayload.eventBonusAnswers.map((answer) => [
+      answer.questionId,
+      answer.answer,
+    ]),
+  );
+  const nextEventAnswersByQuestion = new Map(
+    nextPayload.eventBonusAnswers.map((answer) => [
+      answer.questionId,
+      answer.answer,
+    ]),
+  );
 
   for (const question of card.eventBonusQuestions) {
-    const previousAnswer = previousEventAnswersByQuestion.get(question.id) ?? ''
-    const nextAnswer = nextEventAnswersByQuestion.get(question.id) ?? ''
+    const previousAnswer =
+      previousEventAnswersByQuestion.get(question.id) ?? "";
+    const nextAnswer = nextEventAnswersByQuestion.get(question.id) ?? "";
 
     if (valuesEqualByType(question.valueType, previousAnswer, nextAnswer)) {
-      continue
+      continue;
     }
 
-    const questionLabel = getQuestionLabel(question, 'Event bonus')
-    const previousTrimmed = previousAnswer.trim()
-    const nextTrimmed = nextAnswer.trim()
+    const questionLabel = getQuestionLabel(question, "Event bonus");
+    const previousTrimmed = previousAnswer.trim();
+    const nextTrimmed = nextAnswer.trim();
 
-    if (question.valueType === 'time') {
+    if (question.valueType === "time") {
       if (!nextTrimmed) {
         events.push({
-          type: 'key.time',
+          type: "key.time",
           message: `Event bonus cleared recorded time for "${questionLabel}"`,
-        })
+        });
       } else if (!previousTrimmed) {
         events.push({
-          type: 'key.time',
+          type: "key.time",
           message: `Event bonus recorded time for "${questionLabel}": ${abbreviateLabel(nextTrimmed, 24)}`,
-        })
+        });
       } else {
         events.push({
-          type: 'key.time',
+          type: "key.time",
           message: `Event bonus updated time for "${questionLabel}": ${abbreviateLabel(previousTrimmed, 24)} -> ${abbreviateLabel(nextTrimmed, 24)}`,
-        })
+        });
       }
-      continue
+      continue;
     }
 
-    if (question.valueType === 'numerical') {
+    if (question.valueType === "numerical") {
       if (!nextTrimmed) {
         events.push({
-          type: 'key.count',
+          type: "key.count",
           message: `Event bonus cleared count for "${questionLabel}"`,
-        })
+        });
       } else if (!previousTrimmed) {
         events.push({
-          type: 'key.count',
+          type: "key.count",
           message: `Event bonus set count for "${questionLabel}": ${abbreviateLabel(nextTrimmed, 24)}`,
-        })
+        });
       } else {
         events.push({
-          type: 'key.count',
+          type: "key.count",
           message: `Event bonus changed count for "${questionLabel}": ${abbreviateLabel(previousTrimmed, 24)} -> ${abbreviateLabel(nextTrimmed, 24)}`,
-        })
+        });
       }
-      continue
+      continue;
     }
 
     if (!previousTrimmed && nextTrimmed) {
       events.push({
-        type: 'key.answer',
+        type: "key.answer",
         message: `Event bonus set answer for "${questionLabel}"`,
-      })
+      });
     } else if (previousTrimmed && !nextTrimmed) {
       events.push({
-        type: 'key.answer',
+        type: "key.answer",
         message: `Event bonus cleared answer for "${questionLabel}"`,
-      })
+      });
     }
   }
 
-  const tiebreakerValueType: BonusQuestion['valueType'] = card.tiebreakerIsTimeBased ? 'time' : 'string'
-  const previousTiebreaker = previousPayload.tiebreakerAnswer ?? ''
-  const nextTiebreaker = nextPayload.tiebreakerAnswer ?? ''
-  if (!valuesEqualByType(tiebreakerValueType, previousTiebreaker, nextTiebreaker)) {
-    const label = abbreviateLabel(card.tiebreakerLabel, 48) || 'Tiebreaker'
-    const previousTrimmed = previousTiebreaker.trim()
-    const nextTrimmed = nextTiebreaker.trim()
+  const tiebreakerValueType: BonusQuestion["valueType"] =
+    card.tiebreakerIsTimeBased ? "time" : "string";
+  const previousTiebreaker = previousPayload.tiebreakerAnswer ?? "";
+  const nextTiebreaker = nextPayload.tiebreakerAnswer ?? "";
+  if (
+    !valuesEqualByType(tiebreakerValueType, previousTiebreaker, nextTiebreaker)
+  ) {
+    const label = abbreviateLabel(card.tiebreakerLabel, 48) || "Tiebreaker";
+    const previousTrimmed = previousTiebreaker.trim();
+    const nextTrimmed = nextTiebreaker.trim();
 
     if (card.tiebreakerIsTimeBased) {
       if (!nextTrimmed) {
         events.push({
-          type: 'key.time',
+          type: "key.time",
           message: `${label} time cleared`,
-        })
+        });
       } else if (!previousTrimmed) {
         events.push({
-          type: 'key.time',
+          type: "key.time",
           message: `${label} time recorded: ${abbreviateLabel(nextTrimmed, 24)}`,
-        })
+        });
       } else {
         events.push({
-          type: 'key.time',
+          type: "key.time",
           message: `${label} time updated: ${abbreviateLabel(previousTrimmed, 24)} -> ${abbreviateLabel(nextTrimmed, 24)}`,
-        })
+        });
       }
     } else if (!nextTrimmed) {
       events.push({
-        type: 'key.tiebreaker',
+        type: "key.tiebreaker",
         message: `${label} cleared`,
-      })
+      });
     } else if (!previousTrimmed) {
       events.push({
-        type: 'key.tiebreaker',
+        type: "key.tiebreaker",
         message: `${label} set`,
-      })
+      });
     } else {
       events.push({
-        type: 'key.tiebreaker',
+        type: "key.tiebreaker",
         message: `${label} updated`,
-      })
+      });
     }
   }
 
-  const previousTimersById = new Map(previousPayload.timers.map((timer) => [timer.id, timer]))
+  const previousTimersById = new Map(
+    previousPayload.timers.map((timer) => [timer.id, timer]),
+  );
   for (const nextTimer of nextPayload.timers) {
-    const previousTimer = previousTimersById.get(nextTimer.id)
-    if (!previousTimer) continue
+    const previousTimer = previousTimersById.get(nextTimer.id);
+    if (!previousTimer) continue;
 
-    const timerLabel = getTimerLabelForEvent(lookup, nextTimer)
-    const wasRunning = previousTimer.isRunning === true
-    const isRunning = nextTimer.isRunning === true
+    const timerLabel = getTimerLabelForEvent(lookup, nextTimer);
+    const wasRunning = previousTimer.isRunning === true;
+    const isRunning = nextTimer.isRunning === true;
 
     if (!wasRunning && isRunning) {
       events.push({
-        type: 'timer.started',
+        type: "timer.started",
         message: `${timerLabel} started`,
-      })
-      continue
+      });
+      continue;
     }
 
     if (wasRunning && !isRunning) {
       events.push({
-        type: 'timer.stopped',
+        type: "timer.stopped",
         message: `${timerLabel} stopped at ${formatDurationFromMs(nextTimer.elapsedMs)}`,
-      })
-      continue
+      });
+      continue;
     }
 
-    if (!wasRunning && !isRunning && previousTimer.elapsedMs > 0 && nextTimer.elapsedMs === 0) {
+    if (
+      !wasRunning &&
+      !isRunning &&
+      previousTimer.elapsedMs > 0 &&
+      nextTimer.elapsedMs === 0
+    ) {
       events.push({
-        type: 'timer.reset',
+        type: "timer.reset",
         message: `${timerLabel} reset`,
-      })
+      });
     }
   }
 
-  return trimDetailedEvents(events)
+  return trimDetailedEvents(events);
 }
 
 function buildLockMutationEvents(
@@ -1056,79 +1181,83 @@ function buildLockMutationEvents(
   previousLockState: LiveGameLockState,
   nextLockState: LiveGameLockState,
 ): PendingLiveGameEvent[] {
-  const lookup = buildCardLookup(card)
-  const previous = normalizeLiveGameLockState(previousLockState)
-  const next = normalizeLiveGameLockState(nextLockState)
-  const events: PendingLiveGameEvent[] = []
+  const lookup = buildCardLookup(card);
+  const previous = normalizeLiveGameLockState(previousLockState);
+  const next = normalizeLiveGameLockState(nextLockState);
+  const events: PendingLiveGameEvent[] = [];
 
   if (previous.globalLocked !== next.globalLocked) {
     events.push({
-      type: 'lock.global',
-      message: next.globalLocked ? 'Global lock enabled' : 'Global lock disabled',
-    })
+      type: "lock.global",
+      message: next.globalLocked
+        ? "Global lock enabled"
+        : "Global lock disabled",
+    });
   }
 
   const matchKeys = new Set<string>([
     ...Object.keys(previous.matchLocks),
     ...Object.keys(next.matchLocks),
     ...card.matches.map((match) => match.id),
-  ])
+  ]);
 
   for (const matchId of matchKeys) {
-    const previousLocked = previous.matchLocks[matchId]?.locked === true
-    const nextLocked = next.matchLocks[matchId]?.locked === true
-    if (previousLocked === nextLocked) continue
+    const previousLocked = previous.matchLocks[matchId]?.locked === true;
+    const nextLocked = next.matchLocks[matchId]?.locked === true;
+    if (previousLocked === nextLocked) continue;
 
-    const source = next.matchLocks[matchId]?.source ?? 'host'
-    const matchLabel = getMatchLabel(lookup, matchId)
+    const source = next.matchLocks[matchId]?.source ?? "host";
+    const matchLabel = getMatchLabel(lookup, matchId);
 
     if (nextLocked) {
       events.push({
-        type: 'lock.match',
-        message: source === 'timer'
-          ? `${matchLabel} auto-locked when timer started`
-          : `${matchLabel} locked`,
-      })
+        type: "lock.match",
+        message:
+          source === "timer"
+            ? `${matchLabel} auto-locked when timer started`
+            : `${matchLabel} locked`,
+      });
     } else {
       events.push({
-        type: 'lock.match',
+        type: "lock.match",
         message: `${matchLabel} unlocked`,
-      })
+      });
     }
   }
 
   const matchBonusKeys = new Set<string>([
     ...Object.keys(previous.matchBonusLocks),
     ...Object.keys(next.matchBonusLocks),
-  ])
+  ]);
 
   for (const key of matchBonusKeys) {
-    const previousLocked = previous.matchBonusLocks[key]?.locked === true
-    const nextLocked = next.matchBonusLocks[key]?.locked === true
-    if (previousLocked === nextLocked) continue
+    const previousLocked = previous.matchBonusLocks[key]?.locked === true;
+    const nextLocked = next.matchBonusLocks[key]?.locked === true;
+    if (previousLocked === nextLocked) continue;
 
-    const parsedKey = parseMatchBonusLockKey(key)
-    const source = next.matchBonusLocks[key]?.source ?? 'host'
+    const parsedKey = parseMatchBonusLockKey(key);
+    const source = next.matchBonusLocks[key]?.source ?? "host";
 
-    let contextLabel = `Match bonus ${key}`
+    let contextLabel = `Match bonus ${key}`;
     if (parsedKey) {
-      const question = lookup.matchBonusByKey.get(key)
-      const questionLabel = getQuestionLabel(question, 'Bonus question')
-      contextLabel = `${getMatchLabel(lookup, parsedKey.matchId)} bonus "${questionLabel}"`
+      const question = lookup.matchBonusByKey.get(key);
+      const questionLabel = getQuestionLabel(question, "Bonus question");
+      contextLabel = `${getMatchLabel(lookup, parsedKey.matchId)} bonus "${questionLabel}"`;
     }
 
     if (nextLocked) {
       events.push({
-        type: 'lock.matchBonus',
-        message: source === 'timer'
-          ? `${contextLabel} auto-locked`
-          : `${contextLabel} locked`,
-      })
+        type: "lock.matchBonus",
+        message:
+          source === "timer"
+            ? `${contextLabel} auto-locked`
+            : `${contextLabel} locked`,
+      });
     } else {
       events.push({
-        type: 'lock.matchBonus',
+        type: "lock.matchBonus",
         message: `${contextLabel} unlocked`,
-      })
+      });
     }
   }
 
@@ -1136,62 +1265,70 @@ function buildLockMutationEvents(
     ...Object.keys(previous.eventBonusLocks),
     ...Object.keys(next.eventBonusLocks),
     ...card.eventBonusQuestions.map((question) => question.id),
-  ])
+  ]);
 
   for (const questionId of eventBonusKeys) {
-    const previousLocked = previous.eventBonusLocks[questionId]?.locked === true
-    const nextLocked = next.eventBonusLocks[questionId]?.locked === true
-    if (previousLocked === nextLocked) continue
+    const previousLocked =
+      previous.eventBonusLocks[questionId]?.locked === true;
+    const nextLocked = next.eventBonusLocks[questionId]?.locked === true;
+    if (previousLocked === nextLocked) continue;
 
-    const source = next.eventBonusLocks[questionId]?.source ?? 'host'
-    const question = lookup.eventBonusById.get(questionId)
-    const questionLabel = getQuestionLabel(question, questionId.slice(0, 8))
-    const contextLabel = `Event bonus "${questionLabel}"`
+    const source = next.eventBonusLocks[questionId]?.source ?? "host";
+    const question = lookup.eventBonusById.get(questionId);
+    const questionLabel = getQuestionLabel(question, questionId.slice(0, 8));
+    const contextLabel = `Event bonus "${questionLabel}"`;
 
     if (nextLocked) {
       events.push({
-        type: 'lock.eventBonus',
-        message: source === 'timer'
-          ? `${contextLabel} auto-locked`
-          : `${contextLabel} locked`,
-      })
+        type: "lock.eventBonus",
+        message:
+          source === "timer"
+            ? `${contextLabel} auto-locked`
+            : `${contextLabel} locked`,
+      });
     } else {
       events.push({
-        type: 'lock.eventBonus',
+        type: "lock.eventBonus",
         message: `${contextLabel} unlocked`,
-      })
+      });
     }
   }
 
-  return trimDetailedEvents(events)
+  return trimDetailedEvents(events);
 }
 
-function pickBonusAnswer(answers: LivePlayerAnswer[], questionId: string): string {
-  const found = answers.find((answer) => answer.questionId === questionId)
-  return found?.answer ?? ''
+function pickBonusAnswer(
+  answers: LivePlayerAnswer[],
+  questionId: string,
+): string {
+  const found = answers.find((answer) => answer.questionId === questionId);
+  return found?.answer ?? "";
 }
 
-function pickMatchPick(matchPicks: LivePlayerMatchPick[], matchId: string): LivePlayerMatchPick | null {
-  const found = matchPicks.find((pick) => pick.matchId === matchId)
-  return found ?? null
+function pickMatchPick(
+  matchPicks: LivePlayerMatchPick[],
+  matchId: string,
+): LivePlayerMatchPick | null {
+  const found = matchPicks.find((pick) => pick.matchId === matchId);
+  return found ?? null;
 }
 
 interface ScoreAccumulator {
-  playerId: string
-  nickname: string
-  score: number
-  winnerPoints: number
-  bonusPoints: number
-  surprisePoints: number
-  isSubmitted: boolean
-  updatedAt: string
-  lastSeenAt: string
+  playerId: string;
+  nickname: string;
+  score: number;
+  winnerPoints: number;
+  bonusPoints: number;
+  surprisePoints: number;
+  isSubmitted: boolean;
+  updatedAt: string;
+  lastSeenAt: string;
 }
 
 interface ClosestBucket {
-  key: string
-  points: number
-  entries: Array<{ playerId: string; distance: number }>
+  key: string;
+  points: number;
+  entries: Array<{ playerId: string; distance: number }>;
 }
 
 function computeLeaderboard(
@@ -1199,9 +1336,9 @@ function computeLeaderboard(
   keyPayload: LiveGameKeyPayload,
   players: LiveGamePlayer[],
 ): LiveGameLeaderboardEntry[] {
-  const submittedPlayers = players.filter((player) => player.isSubmitted)
-  const accumulators = new Map<string, ScoreAccumulator>()
-  const closestBuckets = new Map<string, ClosestBucket>()
+  const submittedPlayers = players.filter((player) => player.isSubmitted);
+  const accumulators = new Map<string, ScoreAccumulator>();
+  const closestBuckets = new Map<string, ClosestBucket>();
 
   for (const player of submittedPlayers) {
     accumulators.set(player.id, {
@@ -1214,80 +1351,119 @@ function computeLeaderboard(
       isSubmitted: player.isSubmitted,
       updatedAt: player.updatedAt,
       lastSeenAt: player.lastSeenAt,
-    })
+    });
   }
 
   for (const match of card.matches) {
-    const keyMatchResult = keyPayload.matchResults.find((result) => result.matchId === match.id)
-    if (!keyMatchResult) continue
+    const keyMatchResult = keyPayload.matchResults.find(
+      (result) => result.matchId === match.id,
+    );
+    if (!keyMatchResult) continue;
 
-    const winnerPoints = match.points ?? card.defaultPoints
-    const surprisePoints = match.surpriseEntrantPoints ?? card.defaultPoints
+    const winnerPoints = match.points ?? card.defaultPoints;
+    const surprisePoints = match.surpriseEntrantPoints ?? card.defaultPoints;
 
     for (const player of submittedPlayers) {
-      const score = accumulators.get(player.id)
-      if (!score) continue
+      const score = accumulators.get(player.id);
+      if (!score) continue;
 
-      const playerMatchPick = pickMatchPick(player.picks.matchPicks, match.id)
+      const playerMatchPick = pickMatchPick(player.picks.matchPicks, match.id);
 
       const winnerOverride = keyPayload.winnerOverrides.find(
-        (o) => o.matchId === match.id && normalizeText(o.playerNickname) === normalizeText(player.nickname),
-      )
+        (o) =>
+          o.matchId === match.id &&
+          normalizeText(o.playerNickname) === normalizeText(player.nickname),
+      );
 
       if (winnerOverride) {
         if (winnerOverride.accepted) {
-          score.score += winnerPoints
-          score.winnerPoints += winnerPoints
+          score.score += winnerPoints;
+          score.winnerPoints += winnerPoints;
         }
-      } else if (keyMatchResult.winnerName.trim() && playerMatchPick?.winnerName && answerEquals(keyMatchResult.winnerName, playerMatchPick.winnerName)) {
-        score.score += winnerPoints
-        score.winnerPoints += winnerPoints
+      } else if (
+        keyMatchResult.winnerName.trim() &&
+        playerMatchPick?.winnerName &&
+        answerEquals(keyMatchResult.winnerName, playerMatchPick.winnerName)
+      ) {
+        score.score += winnerPoints;
+        score.winnerPoints += winnerPoints;
       }
 
-      if (match.isBattleRoyal && keyMatchResult.battleRoyalEntryOrder.length > 0) {
-        const keyedEntrants = new Set(keyMatchResult.battleRoyalEntryOrder.map((entrant) => normalizeText(entrant)))
-        const playerSet = new Set((playerMatchPick?.battleRoyalEntrants ?? []).map((entrant) => normalizeText(entrant)))
-        let matchesCount = 0
+      if (
+        match.isBattleRoyal &&
+        keyMatchResult.battleRoyalEntryOrder.length > 0
+      ) {
+        const keyedEntrants = new Set(
+          keyMatchResult.battleRoyalEntryOrder.map((entrant) =>
+            normalizeText(entrant),
+          ),
+        );
+        const playerSet = new Set(
+          (playerMatchPick?.battleRoyalEntrants ?? []).map((entrant) =>
+            normalizeText(entrant),
+          ),
+        );
+        let matchesCount = 0;
         for (const entrant of playerSet) {
           if (keyedEntrants.has(entrant)) {
-            matchesCount += 1
+            matchesCount += 1;
           }
         }
 
-        const cappedMatches = Math.min(matchesCount, Math.max(0, match.surpriseSlots))
-        const points = cappedMatches * surprisePoints
+        const cappedMatches = Math.min(
+          matchesCount,
+          Math.max(0, match.surpriseSlots),
+        );
+        const points = cappedMatches * surprisePoints;
         if (points > 0) {
-          score.score += points
-          score.surprisePoints += points
+          score.score += points;
+          score.surprisePoints += points;
         }
       }
 
       for (const question of match.bonusQuestions) {
-        const keyAnswer = keyMatchResult.bonusAnswers.find((answer) => answer.questionId === question.id)?.answer ?? ''
-        const playerAnswer = pickBonusAnswer(playerMatchPick?.bonusAnswers ?? [], question.id)
+        const keyAnswer =
+          keyMatchResult.bonusAnswers.find(
+            (answer) => answer.questionId === question.id,
+          )?.answer ?? "";
+        const playerAnswer = pickBonusAnswer(
+          playerMatchPick?.bonusAnswers ?? [],
+          question.id,
+        );
         const override = keyPayload.scoreOverrides.find(
-          (o) => o.questionId === question.id && normalizeText(o.playerNickname) === normalizeText(player.nickname),
-        )
-        const result = scoreForQuestion(question, card.defaultPoints, keyAnswer, playerAnswer, override)
+          (o) =>
+            o.questionId === question.id &&
+            normalizeText(o.playerNickname) === normalizeText(player.nickname),
+        );
+        const result = scoreForQuestion(
+          question,
+          card.defaultPoints,
+          keyAnswer,
+          playerAnswer,
+          override,
+        );
 
         if (result.score > 0) {
-          score.score += result.score
-          score.bonusPoints += result.score
-          continue
+          score.score += result.score;
+          score.bonusPoints += result.score;
+          continue;
         }
 
-        if (result.isClosestCandidate && typeof result.distance === 'number') {
-          const key = `match:${match.id}:${question.id}`
-          const points = question.points ?? card.defaultPoints
-          const existing = closestBuckets.get(key)
+        if (result.isClosestCandidate && typeof result.distance === "number") {
+          const key = `match:${match.id}:${question.id}`;
+          const points = question.points ?? card.defaultPoints;
+          const existing = closestBuckets.get(key);
           if (existing) {
-            existing.entries.push({ playerId: player.id, distance: result.distance })
+            existing.entries.push({
+              playerId: player.id,
+              distance: result.distance,
+            });
           } else {
             closestBuckets.set(key, {
               key,
               points,
               entries: [{ playerId: player.id, distance: result.distance }],
-            })
+            });
           }
         }
       }
@@ -1295,68 +1471,86 @@ function computeLeaderboard(
   }
 
   for (const question of card.eventBonusQuestions) {
-    const keyAnswer = keyPayload.eventBonusAnswers.find((answer) => answer.questionId === question.id)?.answer ?? ''
+    const keyAnswer =
+      keyPayload.eventBonusAnswers.find(
+        (answer) => answer.questionId === question.id,
+      )?.answer ?? "";
 
     for (const player of submittedPlayers) {
-      const score = accumulators.get(player.id)
-      if (!score) continue
+      const score = accumulators.get(player.id);
+      if (!score) continue;
 
-      const playerAnswer = pickBonusAnswer(player.picks.eventBonusAnswers, question.id)
+      const playerAnswer = pickBonusAnswer(
+        player.picks.eventBonusAnswers,
+        question.id,
+      );
       const override = keyPayload.scoreOverrides.find(
-        (o) => o.questionId === question.id && normalizeText(o.playerNickname) === normalizeText(player.nickname),
-      )
-      const result = scoreForQuestion(question, card.defaultPoints, keyAnswer, playerAnswer, override)
+        (o) =>
+          o.questionId === question.id &&
+          normalizeText(o.playerNickname) === normalizeText(player.nickname),
+      );
+      const result = scoreForQuestion(
+        question,
+        card.defaultPoints,
+        keyAnswer,
+        playerAnswer,
+        override,
+      );
 
       if (result.score > 0) {
-        score.score += result.score
-        score.bonusPoints += result.score
-        continue
+        score.score += result.score;
+        score.bonusPoints += result.score;
+        continue;
       }
 
-      if (result.isClosestCandidate && typeof result.distance === 'number') {
-        const key = `event:${question.id}`
-        const points = question.points ?? card.defaultPoints
-        const existing = closestBuckets.get(key)
+      if (result.isClosestCandidate && typeof result.distance === "number") {
+        const key = `event:${question.id}`;
+        const points = question.points ?? card.defaultPoints;
+        const existing = closestBuckets.get(key);
         if (existing) {
-          existing.entries.push({ playerId: player.id, distance: result.distance })
+          existing.entries.push({
+            playerId: player.id,
+            distance: result.distance,
+          });
         } else {
           closestBuckets.set(key, {
             key,
             points,
             entries: [{ playerId: player.id, distance: result.distance }],
-          })
+          });
         }
       }
     }
   }
 
   for (const bucket of closestBuckets.values()) {
-    if (bucket.entries.length === 0 || bucket.points <= 0) continue
+    if (bucket.entries.length === 0 || bucket.points <= 0) continue;
 
-    const minDistance = Math.min(...bucket.entries.map((entry) => entry.distance))
+    const minDistance = Math.min(
+      ...bucket.entries.map((entry) => entry.distance),
+    );
     for (const entry of bucket.entries) {
-      if (Math.abs(entry.distance - minDistance) > 0.0001) continue
+      if (Math.abs(entry.distance - minDistance) > 0.0001) continue;
 
-      const score = accumulators.get(entry.playerId)
-      if (!score) continue
-      score.score += bucket.points
-      score.bonusPoints += bucket.points
+      const score = accumulators.get(entry.playerId);
+      if (!score) continue;
+      score.score += bucket.points;
+      score.bonusPoints += bucket.points;
     }
   }
 
-  const ranked = Array.from(accumulators.values())
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score
-      return a.nickname.localeCompare(b.nickname)
-    })
+  const ranked = Array.from(accumulators.values()).sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.nickname.localeCompare(b.nickname);
+  });
 
-  let currentRank = 0
-  let previousScore: number | null = null
+  let currentRank = 0;
+  let previousScore: number | null = null;
 
   return ranked.map((entry, index) => {
     if (previousScore === null || entry.score < previousScore) {
-      currentRank = index + 1
-      previousScore = entry.score
+      currentRank = index + 1;
+      previousScore = entry.score;
     }
 
     return {
@@ -1371,13 +1565,17 @@ function computeLeaderboard(
       isSubmitted: entry.isSubmitted,
       lastUpdatedAt: entry.updatedAt,
       lastSeenAt: entry.lastSeenAt,
-    }
-  })
+    };
+  });
 }
 
-async function insertLiveGameEvent(gameId: string, eventType: string, message: string): Promise<void> {
+async function insertLiveGameEvent(
+  gameId: string,
+  eventType: string,
+  message: string,
+): Promise<void> {
   await db
-    .insertInto('live_game_events')
+    .insertInto("live_game_events")
     .values({
       id: randomUUID(),
       game_id: gameId,
@@ -1385,111 +1583,145 @@ async function insertLiveGameEvent(gameId: string, eventType: string, message: s
       event_payload_json: JSON.stringify({ message }),
       created_at: nowIso(),
     })
-    .execute()
+    .execute();
 }
 
-async function insertLiveGameEvents(gameId: string, events: PendingLiveGameEvent[]): Promise<void> {
+async function insertLiveGameEvents(
+  gameId: string,
+  events: PendingLiveGameEvent[],
+): Promise<void> {
   for (const event of events) {
-    await insertLiveGameEvent(gameId, event.type, event.message)
+    await insertLiveGameEvent(gameId, event.type, event.message);
   }
 }
 
-async function getCardForGame(cardId: string, hostUserId: string): Promise<ResolvedCard | null> {
-  return findResolvedReadableCardById(cardId, hostUserId)
+async function getCardForGame(
+  cardId: string,
+  hostUserId: string,
+): Promise<ResolvedCard | null> {
+  return findResolvedReadableCardById(cardId, hostUserId);
 }
 
-async function getHostOwnedCard(cardId: string, hostUserId: string): Promise<boolean> {
+async function getHostOwnedCard(
+  cardId: string,
+  hostUserId: string,
+): Promise<boolean> {
   const row = await db
-    .selectFrom('cards')
-    .select('id')
-    .where('id', '=', cardId)
+    .selectFrom("cards")
+    .select("id")
+    .where("id", "=", cardId)
     .where((eb) => isCardOwner(eb, hostUserId))
-    .executeTakeFirst()
+    .executeTakeFirst();
 
-  return Boolean(row)
+  return Boolean(row);
 }
 
 function parseMatchTimerId(timerId: string): string | null {
-  if (!timerId.startsWith('match:')) return null
-  const matchId = timerId.slice('match:'.length).trim()
-  return matchId.length > 0 ? matchId : null
+  if (!timerId.startsWith("match:")) return null;
+  const matchId = timerId.slice("match:".length).trim();
+  return matchId.length > 0 ? matchId : null;
 }
 
 function hasNonEmptyValue(value: string | null | undefined): boolean {
-  return typeof value === 'string' && value.trim().length > 0
+  return typeof value === "string" && value.trim().length > 0;
 }
 
-function mergeKeyAnswers(previous: LiveKeyAnswer[], incoming: LiveKeyAnswer[]): LiveKeyAnswer[] {
-  const incomingByQuestionId = new Map(incoming.map((answer) => [answer.questionId, answer]))
-  const merged: LiveKeyAnswer[] = []
-  const seen = new Set<string>()
+function mergeKeyAnswers(
+  previous: LiveKeyAnswer[],
+  incoming: LiveKeyAnswer[],
+): LiveKeyAnswer[] {
+  const incomingByQuestionId = new Map(
+    incoming.map((answer) => [answer.questionId, answer]),
+  );
+  const merged: LiveKeyAnswer[] = [];
+  const seen = new Set<string>();
 
   for (const previousAnswer of previous) {
-    const nextAnswer = incomingByQuestionId.get(previousAnswer.questionId)
-    merged.push(nextAnswer ?? previousAnswer)
-    seen.add(previousAnswer.questionId)
+    const nextAnswer = incomingByQuestionId.get(previousAnswer.questionId);
+    merged.push(nextAnswer ?? previousAnswer);
+    seen.add(previousAnswer.questionId);
   }
 
   for (const incomingAnswer of incoming) {
-    if (seen.has(incomingAnswer.questionId)) continue
-    merged.push(incomingAnswer)
+    if (seen.has(incomingAnswer.questionId)) continue;
+    merged.push(incomingAnswer);
   }
 
-  return merged
+  return merged;
 }
 
-function mergeKeyTimers(previous: LiveKeyTimer[], incoming: LiveKeyTimer[]): LiveKeyTimer[] {
-  const incomingById = new Map(incoming.map((timer) => [timer.id, timer]))
-  const merged: LiveKeyTimer[] = []
-  const seen = new Set<string>()
+function mergeKeyTimers(
+  previous: LiveKeyTimer[],
+  incoming: LiveKeyTimer[],
+): LiveKeyTimer[] {
+  const incomingById = new Map(incoming.map((timer) => [timer.id, timer]));
+  const merged: LiveKeyTimer[] = [];
+  const seen = new Set<string>();
 
   for (const previousTimer of previous) {
-    const nextTimer = incomingById.get(previousTimer.id)
-    merged.push(nextTimer ?? previousTimer)
-    seen.add(previousTimer.id)
+    const nextTimer = incomingById.get(previousTimer.id);
+    merged.push(nextTimer ?? previousTimer);
+    seen.add(previousTimer.id);
   }
 
   for (const incomingTimer of incoming) {
-    if (seen.has(incomingTimer.id)) continue
-    merged.push(incomingTimer)
+    if (seen.has(incomingTimer.id)) continue;
+    merged.push(incomingTimer);
   }
 
-  return merged
+  return merged;
 }
 
-function mergeKeyMatchResults(previous: LiveKeyMatchResult[], incoming: LiveKeyMatchResult[]): LiveKeyMatchResult[] {
-  const previousByMatchId = new Map(previous.map((result) => [result.matchId, result]))
-  const merged: LiveKeyMatchResult[] = []
-  const seen = new Set<string>()
+function mergeKeyMatchResults(
+  previous: LiveKeyMatchResult[],
+  incoming: LiveKeyMatchResult[],
+): LiveKeyMatchResult[] {
+  const previousByMatchId = new Map(
+    previous.map((result) => [result.matchId, result]),
+  );
+  const merged: LiveKeyMatchResult[] = [];
+  const seen = new Set<string>();
 
   for (const incomingResult of incoming) {
-    const previousResult = previousByMatchId.get(incomingResult.matchId)
+    const previousResult = previousByMatchId.get(incomingResult.matchId);
     merged.push({
       ...incomingResult,
-      bonusAnswers: mergeKeyAnswers(previousResult?.bonusAnswers ?? [], incomingResult.bonusAnswers),
-    })
-    seen.add(incomingResult.matchId)
+      bonusAnswers: mergeKeyAnswers(
+        previousResult?.bonusAnswers ?? [],
+        incomingResult.bonusAnswers,
+      ),
+    });
+    seen.add(incomingResult.matchId);
   }
 
   for (const previousResult of previous) {
-    if (seen.has(previousResult.matchId)) continue
-    merged.push(previousResult)
+    if (seen.has(previousResult.matchId)) continue;
+    merged.push(previousResult);
   }
 
-  return merged
+  return merged;
 }
 
-function mergeLiveKeyPayload(previous: LiveGameKeyPayload, incoming: LiveGameKeyPayload): LiveGameKeyPayload {
+function mergeLiveKeyPayload(
+  previous: LiveGameKeyPayload,
+  incoming: LiveGameKeyPayload,
+): LiveGameKeyPayload {
   return normalizeLiveKeyPayload({
     timers: mergeKeyTimers(previous.timers, incoming.timers),
-    matchResults: mergeKeyMatchResults(previous.matchResults, incoming.matchResults),
-    eventBonusAnswers: mergeKeyAnswers(previous.eventBonusAnswers, incoming.eventBonusAnswers),
+    matchResults: mergeKeyMatchResults(
+      previous.matchResults,
+      incoming.matchResults,
+    ),
+    eventBonusAnswers: mergeKeyAnswers(
+      previous.eventBonusAnswers,
+      incoming.eventBonusAnswers,
+    ),
     tiebreakerAnswer: incoming.tiebreakerAnswer,
     tiebreakerRecordedAt: incoming.tiebreakerRecordedAt,
     tiebreakerTimerId: incoming.tiebreakerTimerId,
     scoreOverrides: incoming.scoreOverrides,
     winnerOverrides: incoming.winnerOverrides,
-  })
+  });
 }
 
 function autoApplyTimerLocks(
@@ -1497,26 +1729,28 @@ function autoApplyTimerLocks(
   nextPayload: LiveGameKeyPayload,
   lockState: LiveGameLockState,
 ): LiveGameLockState {
-  const nextLockState = normalizeLiveGameLockState(lockState)
-  const previousTimers = new Map(previousPayload.timers.map((timer) => [timer.id, timer]))
+  const nextLockState = normalizeLiveGameLockState(lockState);
+  const previousTimers = new Map(
+    previousPayload.timers.map((timer) => [timer.id, timer]),
+  );
 
   for (const timer of nextPayload.timers) {
-    const matchId = parseMatchTimerId(timer.id)
-    if (!matchId) continue
+    const matchId = parseMatchTimerId(timer.id);
+    if (!matchId) continue;
 
-    const previousTimer = previousTimers.get(timer.id)
-    const wasRunning = previousTimer?.isRunning === true
-    const isRunning = timer.isRunning === true
+    const previousTimer = previousTimers.get(timer.id);
+    const wasRunning = previousTimer?.isRunning === true;
+    const isRunning = timer.isRunning === true;
 
     if (!wasRunning && isRunning) {
       nextLockState.matchLocks[matchId] = {
         locked: true,
-        source: 'timer',
-      }
+        source: "timer",
+      };
     }
   }
 
-  return nextLockState
+  return nextLockState;
 }
 
 function autoApplyValueLocks(
@@ -1524,79 +1758,97 @@ function autoApplyValueLocks(
   nextPayload: LiveGameKeyPayload,
   lockState: LiveGameLockState,
 ): LiveGameLockState {
-  const nextLockState = normalizeLiveGameLockState(lockState)
-  const previousMatchResults = new Map(previousPayload.matchResults.map((result) => [result.matchId, result]))
-  const previousEventAnswers = new Map(previousPayload.eventBonusAnswers.map((answer) => [answer.questionId, answer.answer]))
+  const nextLockState = normalizeLiveGameLockState(lockState);
+  const previousMatchResults = new Map(
+    previousPayload.matchResults.map((result) => [result.matchId, result]),
+  );
+  const previousEventAnswers = new Map(
+    previousPayload.eventBonusAnswers.map((answer) => [
+      answer.questionId,
+      answer.answer,
+    ]),
+  );
 
   for (const result of nextPayload.matchResults) {
-    const previousResult = previousMatchResults.get(result.matchId)
-    if (!hasNonEmptyValue(previousResult?.winnerName) && hasNonEmptyValue(result.winnerName)) {
+    const previousResult = previousMatchResults.get(result.matchId);
+    if (
+      !hasNonEmptyValue(previousResult?.winnerName) &&
+      hasNonEmptyValue(result.winnerName)
+    ) {
       nextLockState.matchLocks[result.matchId] = {
         locked: true,
-        source: 'host',
-      }
+        source: "host",
+      };
     }
 
-    const previousBonusAnswers = new Map((previousResult?.bonusAnswers ?? []).map((answer) => [answer.questionId, answer.answer]))
+    const previousBonusAnswers = new Map(
+      (previousResult?.bonusAnswers ?? []).map((answer) => [
+        answer.questionId,
+        answer.answer,
+      ]),
+    );
     for (const answer of result.bonusAnswers) {
-      if (hasNonEmptyValue(previousBonusAnswers.get(answer.questionId))) continue
-      if (!hasNonEmptyValue(answer.answer)) continue
+      if (hasNonEmptyValue(previousBonusAnswers.get(answer.questionId)))
+        continue;
+      if (!hasNonEmptyValue(answer.answer)) continue;
 
-      nextLockState.matchBonusLocks[toMatchBonusKey(result.matchId, answer.questionId)] = {
+      nextLockState.matchBonusLocks[
+        toMatchBonusKey(result.matchId, answer.questionId)
+      ] = {
         locked: true,
-        source: 'host',
-      }
+        source: "host",
+      };
     }
   }
 
   for (const answer of nextPayload.eventBonusAnswers) {
-    if (hasNonEmptyValue(previousEventAnswers.get(answer.questionId))) continue
-    if (!hasNonEmptyValue(answer.answer)) continue
+    if (hasNonEmptyValue(previousEventAnswers.get(answer.questionId))) continue;
+    if (!hasNonEmptyValue(answer.answer)) continue;
 
     nextLockState.eventBonusLocks[answer.questionId] = {
       locked: true,
-      source: 'host',
-    }
+      source: "host",
+    };
   }
 
-  return nextLockState
+  return nextLockState;
 }
 
 export function createLiveGameSessionToken(): string {
-  return randomBytes(24).toString('base64url')
+  return randomBytes(24).toString("base64url");
 }
 
 export function hashLiveGameSessionToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex')
+  return createHash("sha256").update(token).digest("hex");
 }
 
 export async function createLiveGame(
   cardId: string,
   hostUserId: string,
   options?: {
-    hostIp?: string | null
-    hostCity?: string | null
-    hostCountry?: string | null
-    hostLatitude?: number | null
-    hostLongitude?: number | null
+    hostIp?: string | null;
+    hostCity?: string | null;
+    hostCountry?: string | null;
+    hostLatitude?: number | null;
+    hostLongitude?: number | null;
   },
 ): Promise<LiveGame | null> {
-  const ownsCard = await getHostOwnedCard(cardId, hostUserId)
-  if (!ownsCard) return null
+  const ownsCard = await getHostOwnedCard(cardId, hostUserId);
+  if (!ownsCard) return null;
 
-  const now = nowIso()
-  const joinCode = await createUniqueJoinCode()
-  const qrJoinSecret = buildJoinBypassSecret()
-  const id = randomUUID()
+  const now = nowIso();
+  const joinCode = await createUniqueJoinCode();
+  const qrJoinSecret = buildJoinBypassSecret();
+  const id = randomUUID();
 
   const values: Insertable<LiveGames> = {
     id,
     card_id: cardId,
     host_user_id: hostUserId,
-    mode: 'room',
+    mode: "room",
     join_code: joinCode,
     allow_late_joins: 1,
-    status: 'lobby',
+    status: "lobby",
     host_join_ip: normalizeOptionalText(options?.hostIp),
     host_geo_city: normalizeOptionalText(options?.hostCity),
     host_geo_country: normalizeOptionalText(options?.hostCountry),
@@ -1610,9 +1862,9 @@ export async function createLiveGame(
     ended_at: null,
     created_at: now,
     updated_at: now,
-  }
+  };
 
-  lobbyDebugLog('host-room-created', {
+  lobbyDebugLog("host-room-created", {
     gameId: id,
     joinCode,
     hostUserId,
@@ -1623,167 +1875,190 @@ export async function createLiveGame(
     hostGeoLatitude: values.host_geo_latitude ?? null,
     hostGeoLongitude: values.host_geo_longitude ?? null,
     geoRadiusKm: values.geo_radius_km ?? DEFAULT_GEO_RADIUS_KM,
-    hasQrJoinSecret: typeof values.qr_join_secret === 'string' && values.qr_join_secret.length > 0,
-  })
+    hasQrJoinSecret:
+      typeof values.qr_join_secret === "string" &&
+      values.qr_join_secret.length > 0,
+  });
 
-  await db.insertInto('live_games').values(values).execute()
+  await db.insertInto("live_games").values(values).execute();
 
-  await insertLiveGameEvent(id, 'game.created', 'Game room created')
+  await insertLiveGameEvent(id, "game.created", "Game room created");
 
   const created = await db
-    .selectFrom('live_games')
+    .selectFrom("live_games")
     .selectAll()
-    .where('id', '=', id)
-    .executeTakeFirstOrThrow()
+    .where("id", "=", id)
+    .executeTakeFirstOrThrow();
 
-  return mapLiveGame(created)
+  return mapLiveGame(created);
 }
 
-export async function listCardLiveGames(cardId: string, hostUserId: string): Promise<LiveGame[] | null> {
-  const ownsCard = await getHostOwnedCard(cardId, hostUserId)
-  if (!ownsCard) return null
+export async function listCardLiveGames(
+  cardId: string,
+  hostUserId: string,
+): Promise<LiveGame[] | null> {
+  const ownsCard = await getHostOwnedCard(cardId, hostUserId);
+  if (!ownsCard) return null;
 
   const rows = await db
-    .selectFrom('live_games')
+    .selectFrom("live_games")
     .selectAll()
-    .where('card_id', '=', cardId)
-    .where('mode', '=', 'room')
-    .orderBy('created_at', 'desc')
-    .execute()
+    .where("card_id", "=", cardId)
+    .where("mode", "=", "room")
+    .orderBy("created_at", "desc")
+    .execute();
 
-  return rows.map((row) => mapLiveGame(row))
+  return rows.map((row) => mapLiveGame(row));
 }
 
-export async function getHostLiveGame(gameId: string, hostUserId: string): Promise<LiveGame | null> {
+export async function getHostLiveGame(
+  gameId: string,
+  hostUserId: string,
+): Promise<LiveGame | null> {
   const row = await db
-    .selectFrom('live_games')
+    .selectFrom("live_games")
     .selectAll()
-    .where('id', '=', gameId)
-    .where('host_user_id', '=', hostUserId)
-    .where('mode', '=', 'room')
-    .executeTakeFirst()
+    .where("id", "=", gameId)
+    .where("host_user_id", "=", hostUserId)
+    .where("mode", "=", "room")
+    .executeTakeFirst();
 
-  if (!row) return null
+  if (!row) return null;
 
-  const card = await getCardForGame(row.card_id, hostUserId)
-  if (!card) return null
+  const card = await getCardForGame(row.card_id, hostUserId);
+  if (!card) return null;
 
-  const hydrated = await autoStartGameForCardEvent(row, card)
-  return mapLiveGame(hydrated)
+  const hydrated = await autoStartGameForCardEvent(row, card);
+  return mapLiveGame(hydrated);
 }
 
-export async function getLiveGameByJoinCode(joinCode: string): Promise<LiveGame | null> {
+export async function getLiveGameByJoinCode(
+  joinCode: string,
+): Promise<LiveGame | null> {
   const row = await db
-    .selectFrom('live_games')
+    .selectFrom("live_games")
     .selectAll()
-    .where('join_code', '=', joinCode.trim().toUpperCase())
-    .where('mode', '=', 'room')
-    .executeTakeFirst()
+    .where("join_code", "=", joinCode.trim().toUpperCase())
+    .where("mode", "=", "room")
+    .executeTakeFirst();
 
-  if (!row) return null
+  if (!row) return null;
 
-  const card = await getCardForGame(row.card_id, row.host_user_id)
-  if (!card) return null
+  const card = await getCardForGame(row.card_id, row.host_user_id);
+  if (!card) return null;
 
-  const hydrated = await autoStartGameForCardEvent(row, card)
-  return mapLiveGame(hydrated)
+  const hydrated = await autoStartGameForCardEvent(row, card);
+  return mapLiveGame(hydrated);
 }
 
 export async function getLiveGameJoinPreview(joinCode: string): Promise<{
-  game: LiveGame
-  eventName: string
-  eventStartAt: string | null
-  isStarted: boolean
+  game: LiveGame;
+  eventName: string;
+  eventStartAt: string | null;
+  isStarted: boolean;
 } | null> {
-  const game = await getLiveGameByJoinCode(joinCode)
-  if (!game) return null
+  const game = await getLiveGameByJoinCode(joinCode);
+  if (!game) return null;
 
-  const card = await getCardForGame(game.cardId, game.hostUserId)
-  if (!card) return null
+  const card = await getCardForGame(game.cardId, game.hostUserId);
+  if (!card) return null;
 
   return {
     game,
-    eventName: card.eventName || 'Untitled Event',
+    eventName: card.eventName || "Untitled Event",
     eventStartAt: card.eventDate.trim() ? card.eventDate : null,
     isStarted: isGameStartedByCardEvent(game, card),
-  }
+  };
 }
 
 export async function updateLiveGameStatus(
   gameId: string,
   hostUserId: string,
   next: {
-    status?: LiveGameStatus
-    allowLateJoins?: boolean
+    status?: LiveGameStatus;
+    allowLateJoins?: boolean;
   },
 ): Promise<LiveGame | null> {
-  if (typeof next.status === 'undefined' && typeof next.allowLateJoins === 'undefined') {
-    return null
+  if (
+    typeof next.status === "undefined" &&
+    typeof next.allowLateJoins === "undefined"
+  ) {
+    return null;
   }
 
   const row = await db
-    .selectFrom('live_games')
+    .selectFrom("live_games")
     .selectAll()
-    .where('id', '=', gameId)
-    .where('host_user_id', '=', hostUserId)
-    .executeTakeFirst()
+    .where("id", "=", gameId)
+    .where("host_user_id", "=", hostUserId)
+    .executeTakeFirst();
 
-  if (!row) return null
+  if (!row) return null;
 
-  const current = mapLiveGame(row)
-  const status = next.status ?? current.status
-  const allowLateJoins = typeof next.allowLateJoins === 'boolean' ? next.allowLateJoins : current.allowLateJoins
-  const now = nowIso()
-  const nextExpiresAt = new Date(Date.now() + LIVE_GAME_DURATION_MS).toISOString()
+  const current = mapLiveGame(row);
+  const status = next.status ?? current.status;
+  const allowLateJoins =
+    typeof next.allowLateJoins === "boolean"
+      ? next.allowLateJoins
+      : current.allowLateJoins;
+  const now = nowIso();
+  const nextExpiresAt = new Date(
+    Date.now() + LIVE_GAME_DURATION_MS,
+  ).toISOString();
 
   const updated = await db
-    .updateTable('live_games')
+    .updateTable("live_games")
     .set({
       status,
       allow_late_joins: allowLateJoins ? 1 : 0,
-      expires_at: status === 'ended' ? undefined : nextExpiresAt,
-      ended_at: status === 'ended' ? now : null,
+      expires_at: status === "ended" ? undefined : nextExpiresAt,
+      ended_at: status === "ended" ? now : null,
       updated_at: now,
     })
-    .where('id', '=', gameId)
-    .where('host_user_id', '=', hostUserId)
+    .where("id", "=", gameId)
+    .where("host_user_id", "=", hostUserId)
     .returningAll()
-    .executeTakeFirst()
+    .executeTakeFirst();
 
-  if (!updated) return null
+  if (!updated) return null;
 
   if (current.status !== status) {
-    await insertLiveGameEvent(gameId, 'game.status', `Room status changed to ${status}`)
+    await insertLiveGameEvent(
+      gameId,
+      "game.status",
+      `Room status changed to ${status}`,
+    );
   }
   if (current.allowLateJoins !== allowLateJoins) {
     await insertLiveGameEvent(
       gameId,
-      'game.entries',
-      allowLateJoins ? 'Mid-game entries enabled' : 'Mid-game entries disabled',
-    )
+      "game.entries",
+      allowLateJoins ? "Mid-game entries enabled" : "Mid-game entries disabled",
+    );
   }
 
   await sendLiveGamePushToSubscribers(gameId, {
-    title: 'Live Game Update',
-    body: current.status !== status
-      ? `Room status changed to ${status}.`
-      : current.allowLateJoins !== allowLateJoins
-        ? allowLateJoins
-          ? 'Mid-game entries enabled.'
-          : 'Mid-game entries disabled.'
-        : 'Room settings updated.',
+    title: "Live Game Update",
+    body:
+      current.status !== status
+        ? `Room status changed to ${status}.`
+        : current.allowLateJoins !== allowLateJoins
+          ? allowLateJoins
+            ? "Mid-game entries enabled."
+            : "Mid-game entries disabled."
+          : "Room settings updated.",
     url: `/games/${gameId}/play?code=${encodeURIComponent(updated.join_code)}`,
     tag: `live-game-status:${gameId}`,
-  })
+  });
 
-  if (status === 'ended') {
+  if (status === "ended") {
     await db
-      .deleteFrom('live_game_push_subscriptions')
-      .where('game_id', '=', gameId)
-      .execute()
+      .deleteFrom("live_game_push_subscriptions")
+      .where("game_id", "=", gameId)
+      .execute();
   }
 
-  return mapLiveGame(updated)
+  return mapLiveGame(updated);
 }
 
 export async function updateLiveGameLocks(
@@ -1792,59 +2067,63 @@ export async function updateLiveGameLocks(
   lockState: LiveGameLockState,
 ): Promise<LiveGame | null> {
   const row = await db
-    .selectFrom('live_games')
+    .selectFrom("live_games")
     .selectAll()
-    .where('id', '=', gameId)
-    .where('host_user_id', '=', hostUserId)
-    .executeTakeFirst()
+    .where("id", "=", gameId)
+    .where("host_user_id", "=", hostUserId)
+    .executeTakeFirst();
 
-  if (!row) return null
+  if (!row) return null;
 
-  const previousGame = mapLiveGame(row)
-  const card = await getCardForGame(previousGame.cardId, hostUserId)
-  if (!card) return null
+  const previousGame = mapLiveGame(row);
+  const card = await getCardForGame(previousGame.cardId, hostUserId);
+  if (!card) return null;
 
-  const now = nowIso()
-  const normalizedLockState = normalizeLiveGameLockState(lockState)
+  const now = nowIso();
+  const normalizedLockState = normalizeLiveGameLockState(lockState);
 
   const updated = await db
-    .updateTable('live_games')
+    .updateTable("live_games")
     .set({
       lock_state_json: JSON.stringify(normalizedLockState),
       updated_at: now,
     })
-    .where('id', '=', gameId)
-    .where('host_user_id', '=', hostUserId)
+    .where("id", "=", gameId)
+    .where("host_user_id", "=", hostUserId)
     .returningAll()
-    .executeTakeFirst()
+    .executeTakeFirst();
 
-  if (!updated) return null
+  if (!updated) return null;
 
-  const lockEvents = buildLockMutationEvents(card, previousGame.lockState, normalizedLockState)
+  const lockEvents = buildLockMutationEvents(
+    card,
+    previousGame.lockState,
+    normalizedLockState,
+  );
   if (lockEvents.length > 0) {
-    await insertLiveGameEvents(gameId, lockEvents)
+    await insertLiveGameEvents(gameId, lockEvents);
     await sendLiveGamePushToSubscribers(gameId, {
-      title: 'Live Game Update',
-      body: lockEvents[0]?.message ?? 'Pick locks were updated.',
+      title: "Live Game Update",
+      body: lockEvents[0]?.message ?? "Pick locks were updated.",
       url: `/games/${gameId}/play?code=${encodeURIComponent(updated.join_code)}`,
       tag: `live-game-locks:${gameId}`,
-    })
+    });
   }
 
-  return mapLiveGame(updated)
+  return mapLiveGame(updated);
 }
 
 export async function getLiveGameKeyForHost(
   gameId: string,
   hostUserId: string,
 ): Promise<{ game: LiveGame; card: ResolvedCard } | null> {
-  const game = await getHostLiveGame(gameId, hostUserId)
-  if (!game) return null
+  const game = await getHostLiveGame(gameId, hostUserId);
+  if (!game) return null;
 
-  const card = await getCardForGame(game.cardId, hostUserId)
-  if (!card) return null
+  const card = await getCardForGame(game.cardId, hostUserId);
+  if (!card) return null;
 
-  return { game, card }
+  return { game, card };
 }
 
 export async function updateLiveGameKeyForHost(
@@ -1852,59 +2131,70 @@ export async function updateLiveGameKeyForHost(
   hostUserId: string,
   payload: LiveGameKeyPayload,
   expectedUpdatedAt?: string,
-): Promise<LiveGame | 'conflict' | null> {
+): Promise<LiveGame | "conflict" | null> {
   const row = await db
-    .selectFrom('live_games')
+    .selectFrom("live_games")
     .selectAll()
-    .where('id', '=', gameId)
-    .where('host_user_id', '=', hostUserId)
-    .executeTakeFirst()
+    .where("id", "=", gameId)
+    .where("host_user_id", "=", hostUserId)
+    .executeTakeFirst();
 
-  if (!row) return null
+  if (!row) return null;
 
-  const previousGame = mapLiveGame(row)
-  const card = await getCardForGame(previousGame.cardId, hostUserId)
-  if (!card) return null
+  const previousGame = mapLiveGame(row);
+  const card = await getCardForGame(previousGame.cardId, hostUserId);
+  if (!card) return null;
   if (expectedUpdatedAt && row.updated_at !== expectedUpdatedAt) {
-    return 'conflict'
+    return "conflict";
   }
 
-  const normalizedPayload = normalizeLiveKeyPayload(payload)
-  const mergedPayload = mergeLiveKeyPayload(previousGame.keyPayload, normalizedPayload)
-  const valueLockedState = autoApplyValueLocks(previousGame.keyPayload, mergedPayload, previousGame.lockState)
-  const nextLockState = autoApplyTimerLocks(previousGame.keyPayload, mergedPayload, valueLockedState)
-  const now = nowIso()
+  const normalizedPayload = normalizeLiveKeyPayload(payload);
+  const mergedPayload = mergeLiveKeyPayload(
+    previousGame.keyPayload,
+    normalizedPayload,
+  );
+  const valueLockedState = autoApplyValueLocks(
+    previousGame.keyPayload,
+    mergedPayload,
+    previousGame.lockState,
+  );
+  const nextLockState = autoApplyTimerLocks(
+    previousGame.keyPayload,
+    mergedPayload,
+    valueLockedState,
+  );
+  const now = nowIso();
 
   const updated = await db
-    .updateTable('live_games')
+    .updateTable("live_games")
     .set({
       key_payload_json: JSON.stringify(mergedPayload),
       lock_state_json: JSON.stringify(nextLockState),
       updated_at: now,
     })
-    .where('id', '=', gameId)
-    .where('host_user_id', '=', hostUserId)
+    .where("id", "=", gameId)
+    .where("host_user_id", "=", hostUserId)
     .returningAll()
-    .executeTakeFirst()
+    .executeTakeFirst();
 
-  if (!updated) return null
+  if (!updated) return null;
 
   const events = [
     ...buildKeyMutationEvents(card, previousGame.keyPayload, mergedPayload),
     ...buildLockMutationEvents(card, previousGame.lockState, nextLockState),
-  ]
+  ];
 
   if (events.length > 0) {
-    await insertLiveGameEvents(gameId, events)
+    await insertLiveGameEvents(gameId, events);
     await sendLiveGamePushToSubscribers(gameId, {
-      title: 'Live Game Update',
-      body: events[0]?.message ?? 'New scoring updates are available.',
+      title: "Live Game Update",
+      body: events[0]?.message ?? "New scoring updates are available.",
       url: `/games/${gameId}/play?code=${encodeURIComponent(updated.join_code)}`,
       tag: `live-game-score:${gameId}`,
-    })
+    });
   }
 
-  return mapLiveGame(updated)
+  return mapLiveGame(updated);
 }
 
 export async function findLiveGamePlayerBySession(
@@ -1913,138 +2203,147 @@ export async function findLiveGamePlayerBySession(
   options?: { includeNonApproved?: boolean },
 ): Promise<LiveGamePlayer | null> {
   let query = db
-    .selectFrom('live_game_players')
+    .selectFrom("live_game_players")
     .selectAll()
-    .where('game_id', '=', gameId)
-    .where('session_token_hash', '=', sessionTokenHash)
+    .where("game_id", "=", gameId)
+    .where("session_token_hash", "=", sessionTokenHash);
   if (!options?.includeNonApproved) {
-    query = query.where('join_status', '=', 'approved')
+    query = query.where("join_status", "=", "approved");
   }
-  const row = await query.executeTakeFirst()
+  const row = await query.executeTakeFirst();
 
-  if (!row) return null
-  return mapLiveGamePlayer(row)
+  if (!row) return null;
+  return mapLiveGamePlayer(row);
 }
 
-function evaluateJoinDecision(game: LiveGame, options?: JoinLiveGameOptions): JoinDecision {
-  const requestIp = normalizeOptionalText(options?.requestIp)
-  const requestIpNormalized = normalizeIpForComparison(requestIp)
-  const hostIpNormalized = normalizeIpForComparison(game.hostJoinIp)
-  const bypassSecret = normalizeOptionalText(options?.bypassSecret)
-  const requestLatitude = normalizeOptionalNumber(options?.requestLatitude)
-  const requestLongitude = normalizeOptionalNumber(options?.requestLongitude)
-  const hasHostCoordinates = game.hostGeoLatitude !== null && game.hostGeoLongitude !== null
-  const hasGuardrails = Boolean(game.hostJoinIp) || hasHostCoordinates || Boolean(game.qrJoinSecret)
-  const hasBypassSecret = Boolean(bypassSecret)
-  const bypassMatched = Boolean(bypassSecret && game.qrJoinSecret && bypassSecret === game.qrJoinSecret)
+function evaluateJoinDecision(
+  game: LiveGame,
+  options?: JoinLiveGameOptions,
+): JoinDecision {
+  const requestIp = normalizeOptionalText(options?.requestIp);
+  const requestIpNormalized = normalizeIpForComparison(requestIp);
+  const hostIpNormalized = normalizeIpForComparison(game.hostJoinIp);
+  const bypassSecret = normalizeOptionalText(options?.bypassSecret);
+  const requestLatitude = normalizeOptionalNumber(options?.requestLatitude);
+  const requestLongitude = normalizeOptionalNumber(options?.requestLongitude);
+  const hasHostCoordinates =
+    game.hostGeoLatitude !== null && game.hostGeoLongitude !== null;
+  const hasGuardrails =
+    Boolean(game.hostJoinIp) ||
+    hasHostCoordinates ||
+    Boolean(game.qrJoinSecret);
+  const hasBypassSecret = Boolean(bypassSecret);
+  const bypassMatched = Boolean(
+    bypassSecret && game.qrJoinSecret && bypassSecret === game.qrJoinSecret,
+  );
   const sameIpMatched = Boolean(
-    requestIp
-    && game.hostJoinIp
-    && requestIpNormalized
-    && hostIpNormalized
-    && requestIpNormalized === hostIpNormalized,
-  )
-  const sameLanMatched = isSameLanSubnet(requestIpNormalized, hostIpNormalized)
+    requestIp &&
+    game.hostJoinIp &&
+    requestIpNormalized &&
+    hostIpNormalized &&
+    requestIpNormalized === hostIpNormalized,
+  );
+  const sameLanMatched = isSameLanSubnet(requestIpNormalized, hostIpNormalized);
 
   if (!hasGuardrails) {
-    lobbyDebugLog('join-decision', {
+    lobbyDebugLog("join-decision", {
       gameId: game.id,
       joinCode: game.joinCode,
-      reason: 'no-guardrails-configured',
-      decision: 'approved',
+      reason: "no-guardrails-configured",
+      decision: "approved",
       requestIp,
       requestIpNormalized,
       hostIp: game.hostJoinIp,
       hostIpNormalized,
       hasBypassSecret,
       bypassMatched,
-    })
+    });
     return {
-      status: 'approved',
+      status: "approved",
       approvedAt: nowIso(),
       distanceKm: null,
-    }
+    };
   }
 
   if (bypassMatched) {
-    lobbyDebugLog('join-decision', {
+    lobbyDebugLog("join-decision", {
       gameId: game.id,
       joinCode: game.joinCode,
-      reason: 'qr-secret-match',
-      decision: 'approved',
+      reason: "qr-secret-match",
+      decision: "approved",
       requestIp,
       requestIpNormalized,
       hostIp: game.hostJoinIp,
       hostIpNormalized,
       hasBypassSecret,
       bypassMatched,
-    })
+    });
     return {
-      status: 'approved',
+      status: "approved",
       approvedAt: nowIso(),
       distanceKm: null,
-    }
+    };
   }
 
   if (sameIpMatched) {
-    lobbyDebugLog('join-decision', {
+    lobbyDebugLog("join-decision", {
       gameId: game.id,
       joinCode: game.joinCode,
-      reason: 'same-public-ip-match',
-      decision: 'approved',
+      reason: "same-public-ip-match",
+      decision: "approved",
       requestIp,
       requestIpNormalized,
       hostIp: game.hostJoinIp,
       hostIpNormalized,
       hasBypassSecret,
       bypassMatched,
-    })
+    });
     return {
-      status: 'approved',
+      status: "approved",
       approvedAt: nowIso(),
       distanceKm: null,
-    }
+    };
   }
 
   if (sameLanMatched) {
-    lobbyDebugLog('join-decision', {
+    lobbyDebugLog("join-decision", {
       gameId: game.id,
       joinCode: game.joinCode,
-      reason: 'same-lan-subnet-match',
-      decision: 'approved',
+      reason: "same-lan-subnet-match",
+      decision: "approved",
       requestIp,
       requestIpNormalized,
       hostIp: game.hostJoinIp,
       hostIpNormalized,
       hasBypassSecret,
       bypassMatched,
-    })
+    });
     return {
-      status: 'approved',
+      status: "approved",
       approvedAt: nowIso(),
       distanceKm: null,
-    }
+    };
   }
 
   if (
-    hasHostCoordinates
-    && requestLatitude !== null
-    && requestLongitude !== null
-    && game.hostGeoLatitude !== null
-    && game.hostGeoLongitude !== null
+    hasHostCoordinates &&
+    requestLatitude !== null &&
+    requestLongitude !== null &&
+    game.hostGeoLatitude !== null &&
+    game.hostGeoLongitude !== null
   ) {
     const distanceKm = haversineKm(
       { latitude: requestLatitude, longitude: requestLongitude },
       { latitude: game.hostGeoLatitude, longitude: game.hostGeoLongitude },
-    )
-    const radiusKm = Math.max(0, game.geoRadiusKm || DEFAULT_GEO_RADIUS_KM)
+    );
+    const radiusKm = Math.max(0, game.geoRadiusKm || DEFAULT_GEO_RADIUS_KM);
 
     if (distanceKm <= radiusKm) {
-      lobbyDebugLog('join-decision', {
+      lobbyDebugLog("join-decision", {
         gameId: game.id,
         joinCode: game.joinCode,
-        reason: 'geo-within-radius',
-        decision: 'approved',
+        reason: "geo-within-radius",
+        decision: "approved",
         requestIp,
         requestIpNormalized,
         hostIp: game.hostJoinIp,
@@ -2057,19 +2356,19 @@ function evaluateJoinDecision(game: LiveGame, options?: JoinLiveGameOptions): Jo
         radiusKm,
         hasBypassSecret,
         bypassMatched,
-      })
+      });
       return {
-        status: 'approved',
+        status: "approved",
         approvedAt: nowIso(),
         distanceKm,
-      }
+      };
     }
 
-    lobbyDebugLog('join-decision', {
+    lobbyDebugLog("join-decision", {
       gameId: game.id,
       joinCode: game.joinCode,
-      reason: 'geo-outside-radius',
-      decision: 'pending',
+      reason: "geo-outside-radius",
+      decision: "pending",
       requestIp,
       requestIpNormalized,
       hostIp: game.hostJoinIp,
@@ -2082,19 +2381,19 @@ function evaluateJoinDecision(game: LiveGame, options?: JoinLiveGameOptions): Jo
       radiusKm,
       hasBypassSecret,
       bypassMatched,
-    })
+    });
     return {
-      status: 'pending',
+      status: "pending",
       approvedAt: null,
       distanceKm,
-    }
+    };
   }
 
-  lobbyDebugLog('join-decision', {
+  lobbyDebugLog("join-decision", {
     gameId: game.id,
     joinCode: game.joinCode,
-    reason: 'no-auto-approval-signal',
-    decision: 'pending',
+    reason: "no-auto-approval-signal",
+    decision: "pending",
     requestIp,
     requestIpNormalized,
     hostIp: game.hostJoinIp,
@@ -2108,12 +2407,12 @@ function evaluateJoinDecision(game: LiveGame, options?: JoinLiveGameOptions): Jo
     bypassMatched,
     sameIpMatched,
     sameLanMatched,
-  })
+  });
   return {
-    status: 'pending',
+    status: "pending",
     approvedAt: null,
     distanceKm: null,
-  }
+  };
 }
 
 export async function joinLiveGameWithNickname(
@@ -2123,65 +2422,82 @@ export async function joinLiveGameWithNickname(
   options?: JoinLiveGameOptions,
 ): Promise<
   | { ok: true; game: LiveGame; player: LiveGamePlayer; isNew: boolean }
-  | { ok: false; reason: 'not-found' | 'expired' | 'ended' | 'entry-closed' | 'nickname-taken' | 'session-mismatch' | 'pending-approval' | 'rejected' }
+  | {
+      ok: false;
+      reason:
+        | "not-found"
+        | "expired"
+        | "ended"
+        | "entry-closed"
+        | "nickname-taken"
+        | "session-mismatch"
+        | "pending-approval"
+        | "rejected";
+    }
 > {
-  const game = await getLiveGameByJoinCode(joinCode)
+  const game = await getLiveGameByJoinCode(joinCode);
   if (!game) {
-    return { ok: false, reason: 'not-found' }
+    return { ok: false, reason: "not-found" };
   }
 
-  if (game.status === 'ended') {
-    return { ok: false, reason: 'ended' }
+  if (game.status === "ended") {
+    return { ok: false, reason: "ended" };
   }
 
   if (new Date(game.expiresAt).getTime() <= Date.now()) {
-    return { ok: false, reason: 'expired' }
+    return { ok: false, reason: "expired" };
   }
 
-  const cleanedNickname = normalizeNickname(nickname)
-  const nicknameKey = normalizeNicknameKey(cleanedNickname)
-  const now = nowIso()
-  const deviceInfo = parseJoinDeviceInfo(options?.deviceInfo)
-  const normalizedClerkUserId = normalizeOptionalText(options?.clerkUserId)
-  const requestIp = normalizeOptionalText(options?.requestIp)
-  const requestCity = normalizeOptionalText(options?.requestCity)
-  const requestCountry = normalizeOptionalText(options?.requestCountry)
-  const requestLatitude = normalizeOptionalNumber(options?.requestLatitude)
-  const requestLongitude = normalizeOptionalNumber(options?.requestLongitude)
-  const joinDecision = evaluateJoinDecision(game, options)
+  const cleanedNickname = normalizeNickname(nickname);
+  const nicknameKey = normalizeNicknameKey(cleanedNickname);
+  const now = nowIso();
+  const deviceInfo = parseJoinDeviceInfo(options?.deviceInfo);
+  const normalizedClerkUserId = normalizeOptionalText(options?.clerkUserId);
+  const requestIp = normalizeOptionalText(options?.requestIp);
+  const requestCity = normalizeOptionalText(options?.requestCity);
+  const requestCountry = normalizeOptionalText(options?.requestCountry);
+  const requestLatitude = normalizeOptionalNumber(options?.requestLatitude);
+  const requestLongitude = normalizeOptionalNumber(options?.requestLongitude);
+  const joinDecision = evaluateJoinDecision(game, options);
 
   if (normalizedClerkUserId) {
     const existingByClerkUser = await db
-      .selectFrom('live_game_players')
+      .selectFrom("live_game_players")
       .selectAll()
-      .where('game_id', '=', game.id)
-      .where('clerk_user_id', '=', normalizedClerkUserId)
-      .executeTakeFirst()
+      .where("game_id", "=", game.id)
+      .where("clerk_user_id", "=", normalizedClerkUserId)
+      .executeTakeFirst();
 
     if (existingByClerkUser) {
-      const nicknameChanged = normalizeNicknameKey(existingByClerkUser.nickname) !== nicknameKey
+      const nicknameChanged =
+        normalizeNicknameKey(existingByClerkUser.nickname) !== nicknameKey;
 
       if (nicknameChanged) {
         const nicknameTakenByOther = await db
-          .selectFrom('live_game_players')
-          .select('id')
-          .where('game_id', '=', game.id)
-          .where('normalized_nickname', '=', nicknameKey)
-          .where('id', '!=', String(existingByClerkUser.id))
-          .executeTakeFirst()
+          .selectFrom("live_game_players")
+          .select("id")
+          .where("game_id", "=", game.id)
+          .where("normalized_nickname", "=", nicknameKey)
+          .where("id", "!=", String(existingByClerkUser.id))
+          .executeTakeFirst();
 
         if (nicknameTakenByOther) {
-          return { ok: false, reason: 'nickname-taken' }
+          return { ok: false, reason: "nickname-taken" };
         }
       }
 
       await db
-        .updateTable('live_game_players')
+        .updateTable("live_game_players")
         .set({
-          nickname: nicknameChanged ? cleanedNickname : existingByClerkUser.nickname,
-          normalized_nickname: nicknameChanged ? nicknameKey : normalizeNicknameKey(existingByClerkUser.nickname),
-          auth_method: 'clerk',
-          session_token_hash: sessionTokenHash ?? existingByClerkUser.session_token_hash,
+          nickname: nicknameChanged
+            ? cleanedNickname
+            : existingByClerkUser.nickname,
+          normalized_nickname: nicknameChanged
+            ? nicknameKey
+            : normalizeNicknameKey(existingByClerkUser.nickname),
+          auth_method: "clerk",
+          session_token_hash:
+            sessionTokenHash ?? existingByClerkUser.session_token_hash,
           last_seen_at: now,
           updated_at: now,
           user_agent: deviceInfo.userAgent,
@@ -2197,39 +2513,47 @@ export async function joinLiveGameWithNickname(
           platform_version: deviceInfo.platformVersion,
           architecture: deviceInfo.architecture,
           join_request_ip: requestIp ?? existingByClerkUser.join_request_ip,
-          join_request_city: requestCity ?? existingByClerkUser.join_request_city,
-          join_request_country: requestCountry ?? existingByClerkUser.join_request_country,
-          join_request_latitude: requestLatitude ?? existingByClerkUser.join_request_latitude,
-          join_request_longitude: requestLongitude ?? existingByClerkUser.join_request_longitude,
-          join_request_distance_km: joinDecision.distanceKm ?? existingByClerkUser.join_request_distance_km,
-          join_status: existingByClerkUser.join_status === 'rejected'
-            ? 'rejected'
-            : joinDecision.status === 'approved'
-              ? 'approved'
-              : existingByClerkUser.join_status === 'pending'
-                ? 'pending'
-                : 'approved',
-          approved_at: existingByClerkUser.join_status === 'rejected'
-            ? existingByClerkUser.approved_at
-            : joinDecision.status === 'approved'
-              ? now
-              : existingByClerkUser.approved_at,
+          join_request_city:
+            requestCity ?? existingByClerkUser.join_request_city,
+          join_request_country:
+            requestCountry ?? existingByClerkUser.join_request_country,
+          join_request_latitude:
+            requestLatitude ?? existingByClerkUser.join_request_latitude,
+          join_request_longitude:
+            requestLongitude ?? existingByClerkUser.join_request_longitude,
+          join_request_distance_km:
+            joinDecision.distanceKm ??
+            existingByClerkUser.join_request_distance_km,
+          join_status:
+            existingByClerkUser.join_status === "rejected"
+              ? "rejected"
+              : joinDecision.status === "approved"
+                ? "approved"
+                : existingByClerkUser.join_status === "pending"
+                  ? "pending"
+                  : "approved",
+          approved_at:
+            existingByClerkUser.join_status === "rejected"
+              ? existingByClerkUser.approved_at
+              : joinDecision.status === "approved"
+                ? now
+                : existingByClerkUser.approved_at,
         })
-        .where('id', '=', String(existingByClerkUser.id))
-        .execute()
+        .where("id", "=", String(existingByClerkUser.id))
+        .execute();
 
       const refreshed = await db
-        .selectFrom('live_game_players')
+        .selectFrom("live_game_players")
         .selectAll()
-        .where('id', '=', String(existingByClerkUser.id))
-        .executeTakeFirstOrThrow()
+        .where("id", "=", String(existingByClerkUser.id))
+        .executeTakeFirstOrThrow();
 
-      const mapped = mapLiveGamePlayer(refreshed)
-      if (mapped.joinStatus === 'pending') {
-        return { ok: false, reason: 'pending-approval' }
+      const mapped = mapLiveGamePlayer(refreshed);
+      if (mapped.joinStatus === "pending") {
+        return { ok: false, reason: "pending-approval" };
       }
-      if (mapped.joinStatus === 'rejected') {
-        return { ok: false, reason: 'rejected' }
+      if (mapped.joinStatus === "rejected") {
+        return { ok: false, reason: "rejected" };
       }
 
       return {
@@ -2237,29 +2561,38 @@ export async function joinLiveGameWithNickname(
         game,
         player: mapped,
         isNew: false,
-      }
+      };
     }
   }
 
   if (sessionTokenHash) {
-    const existingBySession = await findLiveGamePlayerBySession(game.id, sessionTokenHash, {
-      includeNonApproved: true,
-    })
+    const existingBySession = await findLiveGamePlayerBySession(
+      game.id,
+      sessionTokenHash,
+      {
+        includeNonApproved: true,
+      },
+    );
     if (existingBySession) {
       if (normalizeNicknameKey(existingBySession.nickname) !== nicknameKey) {
-        return { ok: false, reason: 'session-mismatch' }
+        return { ok: false, reason: "session-mismatch" };
       }
 
-      if (existingBySession.joinStatus === 'rejected') {
-        return { ok: false, reason: 'rejected' }
+      if (existingBySession.joinStatus === "rejected") {
+        return { ok: false, reason: "rejected" };
       }
 
-      const nextJoinStatus = joinDecision.status === 'approved' ? 'approved' : existingBySession.joinStatus
+      const nextJoinStatus =
+        joinDecision.status === "approved"
+          ? "approved"
+          : existingBySession.joinStatus;
 
       await db
-        .updateTable('live_game_players')
+        .updateTable("live_game_players")
         .set({
-          auth_method: normalizedClerkUserId ? 'clerk' : existingBySession.authMethod,
+          auth_method: normalizedClerkUserId
+            ? "clerk"
+            : existingBySession.authMethod,
           clerk_user_id: normalizedClerkUserId ?? existingBySession.clerkUserId,
           last_seen_at: now,
           updated_at: now,
@@ -2277,18 +2610,23 @@ export async function joinLiveGameWithNickname(
           architecture: deviceInfo.architecture,
           join_request_ip: requestIp ?? existingBySession.joinRequestIp,
           join_request_city: requestCity ?? existingBySession.joinRequestCity,
-          join_request_country: requestCountry ?? existingBySession.joinRequestCountry,
-          join_request_latitude: requestLatitude ?? existingBySession.joinRequestLatitude,
-          join_request_longitude: requestLongitude ?? existingBySession.joinRequestLongitude,
-          join_request_distance_km: joinDecision.distanceKm ?? existingBySession.joinRequestDistanceKm,
+          join_request_country:
+            requestCountry ?? existingBySession.joinRequestCountry,
+          join_request_latitude:
+            requestLatitude ?? existingBySession.joinRequestLatitude,
+          join_request_longitude:
+            requestLongitude ?? existingBySession.joinRequestLongitude,
+          join_request_distance_km:
+            joinDecision.distanceKm ?? existingBySession.joinRequestDistanceKm,
           join_status: nextJoinStatus,
-          approved_at: nextJoinStatus === 'approved' ? now : existingBySession.approvedAt,
+          approved_at:
+            nextJoinStatus === "approved" ? now : existingBySession.approvedAt,
         })
-        .where('id', '=', existingBySession.id)
-        .execute()
+        .where("id", "=", existingBySession.id)
+        .execute();
 
-      if (nextJoinStatus === 'pending') {
-        return { ok: false, reason: 'pending-approval' }
+      if (nextJoinStatus === "pending") {
+        return { ok: false, reason: "pending-approval" };
       }
 
       return {
@@ -2296,7 +2634,9 @@ export async function joinLiveGameWithNickname(
         game,
         player: {
           ...existingBySession,
-          authMethod: normalizedClerkUserId ? 'clerk' : existingBySession.authMethod,
+          authMethod: normalizedClerkUserId
+            ? "clerk"
+            : existingBySession.authMethod,
           clerkUserId: normalizedClerkUserId ?? existingBySession.clerkUserId,
           lastSeenAt: now,
           updatedAt: now,
@@ -2311,46 +2651,53 @@ export async function joinLiveGameWithNickname(
           platformVersion: deviceInfo.platformVersion,
           architecture: deviceInfo.architecture,
           joinStatus: nextJoinStatus,
-          approvedAt: nextJoinStatus === 'approved' ? now : existingBySession.approvedAt,
+          approvedAt:
+            nextJoinStatus === "approved" ? now : existingBySession.approvedAt,
           joinRequestIp: requestIp ?? existingBySession.joinRequestIp,
           joinRequestCity: requestCity ?? existingBySession.joinRequestCity,
-          joinRequestCountry: requestCountry ?? existingBySession.joinRequestCountry,
-          joinRequestLatitude: requestLatitude ?? existingBySession.joinRequestLatitude,
-          joinRequestLongitude: requestLongitude ?? existingBySession.joinRequestLongitude,
-          joinRequestDistanceKm: joinDecision.distanceKm ?? existingBySession.joinRequestDistanceKm,
+          joinRequestCountry:
+            requestCountry ?? existingBySession.joinRequestCountry,
+          joinRequestLatitude:
+            requestLatitude ?? existingBySession.joinRequestLatitude,
+          joinRequestLongitude:
+            requestLongitude ?? existingBySession.joinRequestLongitude,
+          joinRequestDistanceKm:
+            joinDecision.distanceKm ?? existingBySession.joinRequestDistanceKm,
         },
         isNew: false,
-      }
+      };
     }
   }
 
-  if (game.status === 'live' && !game.allowLateJoins) {
-    return { ok: false, reason: 'entry-closed' }
+  if (game.status === "live" && !game.allowLateJoins) {
+    return { ok: false, reason: "entry-closed" };
   }
 
   const existingByNickname = await db
-    .selectFrom('live_game_players')
-    .select('id')
-    .where('game_id', '=', game.id)
-    .where('normalized_nickname', '=', nicknameKey)
-    .executeTakeFirst()
+    .selectFrom("live_game_players")
+    .select("id")
+    .where("game_id", "=", game.id)
+    .where("normalized_nickname", "=", nicknameKey)
+    .executeTakeFirst();
 
   if (existingByNickname) {
-    return { ok: false, reason: 'nickname-taken' }
+    return { ok: false, reason: "nickname-taken" };
   }
 
-  const playerId = randomUUID()
+  const playerId = randomUUID();
 
   await db
-    .insertInto('live_game_players')
+    .insertInto("live_game_players")
     .values({
       id: playerId,
       game_id: game.id,
       nickname: cleanedNickname,
       normalized_nickname: nicknameKey,
-      auth_method: normalizedClerkUserId ? 'clerk' : 'guest',
+      auth_method: normalizedClerkUserId ? "clerk" : "guest",
       clerk_user_id: normalizedClerkUserId,
-      session_token_hash: sessionTokenHash ?? hashLiveGameSessionToken(createLiveGameSessionToken()),
+      session_token_hash:
+        sessionTokenHash ??
+        hashLiveGameSessionToken(createLiveGameSessionToken()),
       picks_json: JSON.stringify(normalizeLivePlayerPicks(null)),
       is_submitted: 0,
       submitted_at: null,
@@ -2370,7 +2717,8 @@ export async function joinLiveGameWithNickname(
       platform_version: deviceInfo.platformVersion,
       architecture: deviceInfo.architecture,
       join_status: joinDecision.status,
-      approved_at: joinDecision.status === 'approved' ? joinDecision.approvedAt : null,
+      approved_at:
+        joinDecision.status === "approved" ? joinDecision.approvedAt : null,
       join_request_ip: requestIp,
       join_request_city: requestCity,
       join_request_country: requestCountry,
@@ -2378,23 +2726,31 @@ export async function joinLiveGameWithNickname(
       join_request_longitude: requestLongitude,
       join_request_distance_km: joinDecision.distanceKm,
     })
-    .execute()
+    .execute();
 
-  if (joinDecision.status === 'approved') {
-    await insertLiveGameEvent(game.id, 'player.joined', `${cleanedNickname} joined the game`)
+  if (joinDecision.status === "approved") {
+    await insertLiveGameEvent(
+      game.id,
+      "player.joined",
+      `${cleanedNickname} joined the game`,
+    );
   } else {
-    await insertLiveGameEvent(game.id, 'player.pending', `${cleanedNickname} is waiting for host approval`)
+    await insertLiveGameEvent(
+      game.id,
+      "player.pending",
+      `${cleanedNickname} is waiting for host approval`,
+    );
   }
 
   const playerRow = await db
-    .selectFrom('live_game_players')
+    .selectFrom("live_game_players")
     .selectAll()
-    .where('id', '=', playerId)
-    .executeTakeFirstOrThrow()
+    .where("id", "=", playerId)
+    .executeTakeFirstOrThrow();
 
-  const mapped = mapLiveGamePlayer(playerRow)
-  if (mapped.joinStatus === 'pending') {
-    return { ok: false, reason: 'pending-approval' }
+  const mapped = mapLiveGamePlayer(playerRow);
+  if (mapped.joinStatus === "pending") {
+    return { ok: false, reason: "pending-approval" };
   }
 
   return {
@@ -2402,34 +2758,41 @@ export async function joinLiveGameWithNickname(
     game,
     player: mapped,
     isNew: true,
-  }
+  };
 }
 
 export function buildEffectiveLockSnapshot(
   game: LiveGame,
   card: ResolvedCard,
 ): {
-  globalLocked: boolean
-  matchLocks: Record<string, boolean>
-  matchBonusLocks: Record<string, boolean>
-  eventBonusLocks: Record<string, boolean>
-  tiebreakerLocked: boolean
+  globalLocked: boolean;
+  matchLocks: Record<string, boolean>;
+  matchBonusLocks: Record<string, boolean>;
+  eventBonusLocks: Record<string, boolean>;
+  tiebreakerLocked: boolean;
 } {
-  const matchLocks: Record<string, boolean> = {}
-  const matchBonusLocks: Record<string, boolean> = {}
-  const eventBonusLocks: Record<string, boolean> = {}
+  const matchLocks: Record<string, boolean> = {};
+  const matchBonusLocks: Record<string, boolean> = {};
+  const eventBonusLocks: Record<string, boolean> = {};
 
   for (const match of card.matches) {
-    matchLocks[match.id] = isMatchLocked(game.lockState, match.id)
+    matchLocks[match.id] = isMatchLocked(game.lockState, match.id);
 
     for (const question of match.bonusQuestions) {
-      const key = toMatchBonusKey(match.id, question.id)
-      matchBonusLocks[key] = isMatchBonusLocked(game.lockState, match.id, question.id)
+      const key = toMatchBonusKey(match.id, question.id);
+      matchBonusLocks[key] = isMatchBonusLocked(
+        game.lockState,
+        match.id,
+        question.id,
+      );
     }
   }
 
   for (const question of card.eventBonusQuestions) {
-    eventBonusLocks[question.id] = isEventBonusLocked(game.lockState, question.id)
+    eventBonusLocks[question.id] = isEventBonusLocked(
+      game.lockState,
+      question.id,
+    );
   }
 
   return {
@@ -2438,7 +2801,7 @@ export function buildEffectiveLockSnapshot(
     matchBonusLocks,
     eventBonusLocks,
     tiebreakerLocked: game.lockState.globalLocked,
-  }
+  };
 }
 
 function mergeAnswerByLock(
@@ -2446,29 +2809,36 @@ function mergeAnswerByLock(
   existing: LivePlayerAnswer[],
   isLocked: (questionId: string) => boolean,
 ): LivePlayerAnswer[] {
-  const incomingByQuestion = new Map(incoming.map((answer) => [answer.questionId, answer]))
-  const existingByQuestion = new Map(existing.map((answer) => [answer.questionId, answer]))
-  const keys = new Set([...incomingByQuestion.keys(), ...existingByQuestion.keys()])
+  const incomingByQuestion = new Map(
+    incoming.map((answer) => [answer.questionId, answer]),
+  );
+  const existingByQuestion = new Map(
+    existing.map((answer) => [answer.questionId, answer]),
+  );
+  const keys = new Set([
+    ...incomingByQuestion.keys(),
+    ...existingByQuestion.keys(),
+  ]);
 
-  const merged: LivePlayerAnswer[] = []
+  const merged: LivePlayerAnswer[] = [];
 
   for (const key of keys) {
-    const incomingAnswer = incomingByQuestion.get(key)
-    const existingAnswer = existingByQuestion.get(key)
+    const incomingAnswer = incomingByQuestion.get(key);
+    const existingAnswer = existingByQuestion.get(key);
 
     if (isLocked(key)) {
       if (existingAnswer) {
-        merged.push(existingAnswer)
+        merged.push(existingAnswer);
       }
-      continue
+      continue;
     }
 
     if (incomingAnswer) {
-      merged.push(incomingAnswer)
+      merged.push(incomingAnswer);
     }
   }
 
-  return merged
+  return merged;
 }
 
 function mergePicksWithLocks(
@@ -2477,85 +2847,104 @@ function mergePicksWithLocks(
   incoming: LivePlayerPicksPayload,
   existing: LivePlayerPicksPayload,
 ): { picks: LivePlayerPicksPayload; ignoredLocks: string[] } {
-  const ignoredLocks: string[] = []
+  const ignoredLocks: string[] = [];
 
-  const incomingByMatchId = new Map(incoming.matchPicks.map((pick) => [pick.matchId, pick]))
-  const existingByMatchId = new Map(existing.matchPicks.map((pick) => [pick.matchId, pick]))
+  const incomingByMatchId = new Map(
+    incoming.matchPicks.map((pick) => [pick.matchId, pick]),
+  );
+  const existingByMatchId = new Map(
+    existing.matchPicks.map((pick) => [pick.matchId, pick]),
+  );
 
-  const mergedMatchPicks: LivePlayerMatchPick[] = []
+  const mergedMatchPicks: LivePlayerMatchPick[] = [];
 
   for (const match of card.matches) {
-    const incomingMatchPick = incomingByMatchId.get(match.id)
+    const incomingMatchPick = incomingByMatchId.get(match.id);
     const existingMatchPick = existingByMatchId.get(match.id) ?? {
       matchId: match.id,
-      winnerName: '',
+      winnerName: "",
       battleRoyalEntrants: [],
       bonusAnswers: [],
-    }
+    };
 
     if (!incomingMatchPick) {
-      mergedMatchPicks.push(existingMatchPick)
-      continue
+      mergedMatchPicks.push(existingMatchPick);
+      continue;
     }
 
     if (isMatchLocked(lockState, match.id)) {
       if (
         incomingMatchPick.winnerName !== existingMatchPick.winnerName ||
-        JSON.stringify(incomingMatchPick.battleRoyalEntrants) !== JSON.stringify(existingMatchPick.battleRoyalEntrants)
+        JSON.stringify(incomingMatchPick.battleRoyalEntrants) !==
+          JSON.stringify(existingMatchPick.battleRoyalEntrants)
       ) {
-        ignoredLocks.push(`match:${match.id}`)
+        ignoredLocks.push(`match:${match.id}`);
       }
 
       for (const question of match.bonusQuestions) {
-        const incomingAnswer = pickBonusAnswer(incomingMatchPick.bonusAnswers, question.id)
-        const existingAnswer = pickBonusAnswer(existingMatchPick.bonusAnswers, question.id)
+        const incomingAnswer = pickBonusAnswer(
+          incomingMatchPick.bonusAnswers,
+          question.id,
+        );
+        const existingAnswer = pickBonusAnswer(
+          existingMatchPick.bonusAnswers,
+          question.id,
+        );
         if (incomingAnswer !== existingAnswer) {
-          ignoredLocks.push(`match-bonus:${match.id}:${question.id}`)
+          ignoredLocks.push(`match-bonus:${match.id}:${question.id}`);
         }
       }
 
-      mergedMatchPicks.push(existingMatchPick)
-      continue
+      mergedMatchPicks.push(existingMatchPick);
+      continue;
     }
 
     const mergedBonusAnswers = mergeAnswerByLock(
       incomingMatchPick.bonusAnswers,
       existingMatchPick.bonusAnswers,
       (questionId) => {
-        const locked = isMatchBonusLocked(lockState, match.id, questionId)
-        if (locked && pickBonusAnswer(incomingMatchPick.bonusAnswers, questionId) !== pickBonusAnswer(existingMatchPick.bonusAnswers, questionId)) {
-          ignoredLocks.push(`match-bonus:${match.id}:${questionId}`)
+        const locked = isMatchBonusLocked(lockState, match.id, questionId);
+        if (
+          locked &&
+          pickBonusAnswer(incomingMatchPick.bonusAnswers, questionId) !==
+            pickBonusAnswer(existingMatchPick.bonusAnswers, questionId)
+        ) {
+          ignoredLocks.push(`match-bonus:${match.id}:${questionId}`);
         }
-        return locked
+        return locked;
       },
-    )
+    );
 
     mergedMatchPicks.push({
       matchId: match.id,
       winnerName: incomingMatchPick.winnerName,
       battleRoyalEntrants: incomingMatchPick.battleRoyalEntrants,
       bonusAnswers: mergedBonusAnswers,
-    })
+    });
   }
 
   const mergedEventBonusAnswers = mergeAnswerByLock(
     incoming.eventBonusAnswers,
     existing.eventBonusAnswers,
     (questionId) => {
-      const locked = isEventBonusLocked(lockState, questionId)
-      if (locked && pickBonusAnswer(incoming.eventBonusAnswers, questionId) !== pickBonusAnswer(existing.eventBonusAnswers, questionId)) {
-        ignoredLocks.push(`event-bonus:${questionId}`)
+      const locked = isEventBonusLocked(lockState, questionId);
+      if (
+        locked &&
+        pickBonusAnswer(incoming.eventBonusAnswers, questionId) !==
+          pickBonusAnswer(existing.eventBonusAnswers, questionId)
+      ) {
+        ignoredLocks.push(`event-bonus:${questionId}`);
       }
-      return locked
+      return locked;
     },
-  )
+  );
 
-  let tiebreakerAnswer = incoming.tiebreakerAnswer
+  let tiebreakerAnswer = incoming.tiebreakerAnswer;
   if (lockState.globalLocked) {
     if (incoming.tiebreakerAnswer !== existing.tiebreakerAnswer) {
-      ignoredLocks.push('tiebreaker')
+      ignoredLocks.push("tiebreaker");
     }
-    tiebreakerAnswer = existing.tiebreakerAnswer
+    tiebreakerAnswer = existing.tiebreakerAnswer;
   }
 
   return {
@@ -2565,29 +2954,29 @@ function mergePicksWithLocks(
       tiebreakerAnswer,
     },
     ignoredLocks,
-  }
+  };
 }
 
 export async function getLiveGameViewerAccess(
   gameId: string,
   options: {
-    hostUserId?: string | null
-    sessionTokenHash?: string | null
-    joinCode?: string | null
+    hostUserId?: string | null;
+    sessionTokenHash?: string | null;
+    joinCode?: string | null;
   },
 ): Promise<LiveGameViewerAccess | null> {
   const gameRow = await db
-    .selectFrom('live_games')
+    .selectFrom("live_games")
     .selectAll()
-    .where('id', '=', gameId)
-    .executeTakeFirst()
+    .where("id", "=", gameId)
+    .executeTakeFirst();
 
-  if (!gameRow) return null
+  if (!gameRow) return null;
 
-  const card = await getCardForGame(gameRow.card_id, gameRow.host_user_id)
-  if (!card) return null
-  const hydratedGameRow = await autoStartGameForCardEvent(gameRow, card)
-  const game = mapLiveGame(hydratedGameRow)
+  const card = await getCardForGame(gameRow.card_id, gameRow.host_user_id);
+  if (!card) return null;
+  const hydratedGameRow = await autoStartGameForCardEvent(gameRow, card);
+  const game = mapLiveGame(hydratedGameRow);
 
   if (options.hostUserId && options.hostUserId === game.hostUserId) {
     return {
@@ -2595,30 +2984,36 @@ export async function getLiveGameViewerAccess(
       card,
       player: null,
       isHost: true,
-    }
+    };
   }
 
-  if (options.joinCode && options.joinCode.trim().toUpperCase() === game.joinCode.trim().toUpperCase()) {
+  if (
+    options.joinCode &&
+    options.joinCode.trim().toUpperCase() === game.joinCode.trim().toUpperCase()
+  ) {
     return {
       game,
       card,
       player: null,
       isHost: false,
-    }
+    };
   }
 
   if (options.sessionTokenHash) {
-    const player = await findLiveGamePlayerBySession(game.id, options.sessionTokenHash)
-    if (!player) return null
+    const player = await findLiveGamePlayerBySession(
+      game.id,
+      options.sessionTokenHash,
+    );
+    if (!player) return null;
 
-    const now = nowIso()
+    const now = nowIso();
     await db
-      .updateTable('live_game_players')
+      .updateTable("live_game_players")
       .set({
         last_seen_at: now,
       })
-      .where('id', '=', player.id)
-      .execute()
+      .where("id", "=", player.id)
+      .execute();
 
     return {
       game,
@@ -2628,45 +3023,51 @@ export async function getLiveGameViewerAccess(
         lastSeenAt: now,
       },
       isHost: false,
-    }
+    };
   }
 
-  return null
+  return null;
 }
 
 export async function getLiveGameState(
   gameId: string,
   options: {
-    hostUserId?: string | null
-    sessionTokenHash?: string | null
-    joinCode?: string | null
+    hostUserId?: string | null;
+    sessionTokenHash?: string | null;
+    joinCode?: string | null;
   },
 ): Promise<LiveGameComputedState | null> {
-  const access = await getLiveGameViewerAccess(gameId, options)
-  if (!access) return null
+  const access = await getLiveGameViewerAccess(gameId, options);
+  if (!access) return null;
 
   const [playerRows, eventRows] = await Promise.all([
     db
-      .selectFrom('live_game_players')
+      .selectFrom("live_game_players")
       .selectAll()
-      .where('game_id', '=', gameId)
-      .orderBy('joined_at', 'asc')
+      .where("game_id", "=", gameId)
+      .orderBy("joined_at", "asc")
       .execute(),
     db
-      .selectFrom('live_game_events')
+      .selectFrom("live_game_events")
       .selectAll()
-      .where('game_id', '=', gameId)
-      .orderBy('created_at', 'desc')
+      .where("game_id", "=", gameId)
+      .orderBy("created_at", "desc")
       .limit(30)
       .execute(),
-  ])
+  ]);
 
-  const players = playerRows.map((row) => mapLiveGamePlayer(row))
-  const approvedPlayers = players.filter((player) => player.joinStatus === 'approved')
+  const players = playerRows.map((row) => mapLiveGamePlayer(row));
+  const approvedPlayers = players.filter(
+    (player) => player.joinStatus === "approved",
+  );
   const pendingPlayers = access.isHost
-    ? players.filter((player) => player.joinStatus === 'pending')
-    : []
-  const leaderboard = computeLeaderboard(access.card, access.game.keyPayload, approvedPlayers)
+    ? players.filter((player) => player.joinStatus === "pending")
+    : [];
+  const leaderboard = computeLeaderboard(
+    access.card,
+    access.game.keyPayload,
+    approvedPlayers,
+  );
 
   return {
     game: access.game,
@@ -2702,7 +3103,8 @@ export async function getLiveGameState(
     leaderboard,
     events: eventRows.map((row) => mapLiveGameEvent(row)),
     playerCount: approvedPlayers.length,
-    submittedCount: approvedPlayers.filter((player) => player.isSubmitted).length,
+    submittedCount: approvedPlayers.filter((player) => player.isSubmitted)
+      .length,
     playerAnswerSummaries: access.isHost
       ? approvedPlayers
           .filter((p) => p.isSubmitted)
@@ -2713,91 +3115,89 @@ export async function getLiveGameState(
             eventBonusAnswers: player.picks.eventBonusAnswers,
           }))
       : [],
-  }
+  };
 }
 
 export async function reviewLiveGameJoinRequest(
   gameId: string,
   hostUserId: string,
   playerId: string,
-  action: 'approve' | 'deny',
-): Promise<'ok' | 'not-found'> {
-  const game = await getHostLiveGame(gameId, hostUserId)
-  if (!game) return 'not-found'
+  action: "approve" | "deny",
+): Promise<"ok" | "not-found"> {
+  const game = await getHostLiveGame(gameId, hostUserId);
+  if (!game) return "not-found";
 
-  const nextStatus = action === 'approve' ? 'approved' : 'rejected'
-  const now = nowIso()
+  const nextStatus = action === "approve" ? "approved" : "rejected";
+  const now = nowIso();
 
   const updated = await db
-    .updateTable('live_game_players')
+    .updateTable("live_game_players")
     .set({
       join_status: nextStatus,
-      approved_at: action === 'approve' ? now : null,
+      approved_at: action === "approve" ? now : null,
       updated_at: now,
     })
-    .where('id', '=', playerId)
-    .where('game_id', '=', gameId)
-    .where('join_status', '=', 'pending')
+    .where("id", "=", playerId)
+    .where("game_id", "=", gameId)
+    .where("join_status", "=", "pending")
     .returningAll()
-    .executeTakeFirst()
+    .executeTakeFirst();
 
-  if (!updated) return 'not-found'
+  if (!updated) return "not-found";
 
   await insertLiveGameEvent(
     gameId,
-    action === 'approve' ? 'player.approved' : 'player.denied',
-    action === 'approve'
+    action === "approve" ? "player.approved" : "player.denied",
+    action === "approve"
       ? `${updated.nickname} was approved to join`
       : `${updated.nickname} was denied entry`,
-  )
+  );
 
-  return 'ok'
+  return "ok";
 }
 
 export async function getLiveGameMe(
   gameId: string,
   sessionTokenHash: string,
-): Promise<
-  | {
-    game: LiveGame
-    card: ResolvedCard
-    player: LiveGamePlayer
-    locks: ReturnType<typeof buildEffectiveLockSnapshot>
-  }
-  | null
-> {
+): Promise<{
+  game: LiveGame;
+  card: ResolvedCard;
+  player: LiveGamePlayer;
+  locks: ReturnType<typeof buildEffectiveLockSnapshot>;
+} | null> {
   const access = await getLiveGameViewerAccess(gameId, {
     sessionTokenHash,
-  })
+  });
 
-  if (!access?.player) return null
+  if (!access?.player) return null;
 
   return {
     game: access.game,
     card: access.card,
     player: access.player,
     locks: buildEffectiveLockSnapshot(access.game, access.card),
-  }
+  };
 }
 
 export async function upsertLiveGamePushSubscriptionForPlayer(
   gameId: string,
   sessionTokenHash: string,
   subscription: LiveGamePushSubscriptionInput,
-): Promise<'ok' | 'unauthorized' | 'inactive'> {
+): Promise<"ok" | "unauthorized" | "inactive"> {
   const access = await getLiveGameViewerAccess(gameId, {
     sessionTokenHash,
-  })
+  });
 
-  if (!access?.player) return 'unauthorized'
-  if (access.game.status === 'ended') return 'inactive'
-  if (new Date(access.game.expiresAt).getTime() <= Date.now()) return 'inactive'
+  if (!access?.player) return "unauthorized";
+  if (access.game.status === "ended") return "inactive";
+  if (new Date(access.game.expiresAt).getTime() <= Date.now())
+    return "inactive";
 
-  const now = nowIso()
-  const playerId = access.player.id
+  const now = nowIso();
+  const playerId = access.player.id;
 
   await db
-    .insertInto('live_game_push_subscriptions')
+    .insertInto("live_game_push_subscriptions")
     .values({
       id: randomUUID(),
       game_id: gameId,
@@ -2809,18 +3209,18 @@ export async function upsertLiveGamePushSubscriptionForPlayer(
       created_at: now,
       updated_at: now,
     })
-    .onConflict((oc) => oc
-      .columns(['game_id', 'endpoint'])
-      .doUpdateSet({
+    .onConflict((oc) =>
+      oc.columns(["game_id", "endpoint"]).doUpdateSet({
         player_id: playerId,
         p256dh: subscription.keys.p256dh,
         auth: subscription.keys.auth,
         expiration_time: subscription.expirationTime,
         updated_at: now,
-      }))
-    .execute()
+      }),
+    )
+    .execute();
 
-  return 'ok'
+  return "ok";
 }
 
 export async function removeLiveGamePushSubscriptionForPlayer(
@@ -2830,17 +3230,17 @@ export async function removeLiveGamePushSubscriptionForPlayer(
 ): Promise<boolean> {
   const access = await getLiveGameViewerAccess(gameId, {
     sessionTokenHash,
-  })
+  });
 
-  if (!access?.player) return false
+  if (!access?.player) return false;
 
   await db
-    .deleteFrom('live_game_push_subscriptions')
-    .where('game_id', '=', gameId)
-    .where('endpoint', '=', endpoint)
-    .execute()
+    .deleteFrom("live_game_push_subscriptions")
+    .where("game_id", "=", gameId)
+    .where("endpoint", "=", endpoint)
+    .execute();
 
-  return true
+  return true;
 }
 
 export async function saveLiveGamePlayerPicks(
@@ -2848,14 +3248,16 @@ export async function saveLiveGamePlayerPicks(
   sessionTokenHash: string,
   incoming: LivePlayerPicksPayload,
   expectedUpdatedAt?: string,
-): Promise<{ player: LiveGamePlayer; ignoredLocks: string[] } | 'conflict' | null> {
+): Promise<
+  { player: LiveGamePlayer; ignoredLocks: string[] } | "conflict" | null
+> {
   const access = await getLiveGameViewerAccess(gameId, {
     sessionTokenHash,
-  })
+  });
 
-  if (!access?.player) return null
+  if (!access?.player) return null;
   if (expectedUpdatedAt && access.player.updatedAt !== expectedUpdatedAt) {
-    return 'conflict'
+    return "conflict";
   }
 
   const merged = mergePicksWithLocks(
@@ -2863,30 +3265,30 @@ export async function saveLiveGamePlayerPicks(
     access.game.lockState,
     normalizeLivePlayerPicks(incoming),
     access.player.picks,
-  )
+  );
 
-  const now = nowIso()
+  const now = nowIso();
 
   await db
-    .updateTable('live_game_players')
+    .updateTable("live_game_players")
     .set({
       picks_json: JSON.stringify(merged.picks),
       last_seen_at: now,
       updated_at: now,
     })
-    .where('id', '=', access.player.id)
-    .execute()
+    .where("id", "=", access.player.id)
+    .execute();
 
   const row = await db
-    .selectFrom('live_game_players')
+    .selectFrom("live_game_players")
     .selectAll()
-    .where('id', '=', access.player.id)
-    .executeTakeFirstOrThrow()
+    .where("id", "=", access.player.id)
+    .executeTakeFirstOrThrow();
 
   return {
     player: mapLiveGamePlayer(row),
     ignoredLocks: merged.ignoredLocks,
-  }
+  };
 }
 
 export async function submitLiveGamePlayer(
@@ -2895,30 +3297,34 @@ export async function submitLiveGamePlayer(
 ): Promise<LiveGamePlayer | null> {
   const access = await getLiveGameViewerAccess(gameId, {
     sessionTokenHash,
-  })
+  });
 
-  if (!access?.player) return null
+  if (!access?.player) return null;
 
-  const now = nowIso()
+  const now = nowIso();
 
   await db
-    .updateTable('live_game_players')
+    .updateTable("live_game_players")
     .set({
       is_submitted: 1,
       submitted_at: now,
       last_seen_at: now,
       updated_at: now,
     })
-    .where('id', '=', access.player.id)
-    .execute()
+    .where("id", "=", access.player.id)
+    .execute();
 
-  await insertLiveGameEvent(gameId, 'player.submitted', `${access.player.nickname} submitted picks`)
+  await insertLiveGameEvent(
+    gameId,
+    "player.submitted",
+    `${access.player.nickname} submitted picks`,
+  );
 
   const updated = await db
-    .selectFrom('live_game_players')
+    .selectFrom("live_game_players")
     .selectAll()
-    .where('id', '=', access.player.id)
-    .executeTakeFirstOrThrow()
+    .where("id", "=", access.player.id)
+    .executeTakeFirstOrThrow();
 
-  return mapLiveGamePlayer(updated)
+  return mapLiveGamePlayer(updated);
 }

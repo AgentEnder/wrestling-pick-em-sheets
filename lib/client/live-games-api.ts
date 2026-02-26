@@ -3,212 +3,228 @@ import type {
   LiveGameKeyPayload,
   LiveGameLockState,
   LivePlayerPicksPayload,
-} from '@/lib/types'
-import type { ResolvedCard } from '@/lib/client/cards-api'
+} from "@/lib/types";
+import type { ResolvedCard } from "@/lib/client/cards-api";
 
 interface ApiErrorBody {
-  error?: string
+  error?: string;
 }
 
 interface ApiDataEnvelope<T> {
-  data: T
+  data: T;
 }
 
 export interface CreateLiveGameResponse {
-  game: LiveGame
-  hostUrl: string
-  displayUrl: string
-  joinUrl: string
+  game: LiveGame;
+  hostUrl: string;
+  displayUrl: string;
+  joinUrl: string;
 }
 
 export interface LiveGameStateResponse {
-  game: LiveGame
-  card: ResolvedCard
+  game: LiveGame;
+  card: ResolvedCard;
   joinedPlayers: Array<{
-    id: string
-    nickname: string
-    joinedAt: string
-    lastSeenAt: string
-    isSubmitted: boolean
-    authMethod: 'guest' | 'clerk'
-    browserName: string | null
-    osName: string | null
-    deviceType: string | null
-    platform: string | null
-    model: string | null
-  }>
+    id: string;
+    nickname: string;
+    joinedAt: string;
+    lastSeenAt: string;
+    isSubmitted: boolean;
+    authMethod: "guest" | "clerk";
+    browserName: string | null;
+    osName: string | null;
+    deviceType: string | null;
+    platform: string | null;
+    model: string | null;
+  }>;
   pendingJoinRequests: Array<{
-    id: string
-    nickname: string
-    joinedAt: string
-    authMethod: 'guest' | 'clerk'
-    browserName: string | null
-    osName: string | null
-    deviceType: string | null
-    platform: string | null
-    model: string | null
-    joinRequestIp: string | null
-    joinRequestCity: string | null
-    joinRequestCountry: string | null
-    joinRequestDistanceKm: number | null
-  }>
+    id: string;
+    nickname: string;
+    joinedAt: string;
+    authMethod: "guest" | "clerk";
+    browserName: string | null;
+    osName: string | null;
+    deviceType: string | null;
+    platform: string | null;
+    model: string | null;
+    joinRequestIp: string | null;
+    joinRequestCity: string | null;
+    joinRequestCountry: string | null;
+    joinRequestDistanceKm: number | null;
+  }>;
   leaderboard: Array<{
-    rank: number
-    nickname: string
-    score: number
+    rank: number;
+    nickname: string;
+    score: number;
     breakdown: {
-      winnerPoints: number
-      bonusPoints: number
-      surprisePoints: number
-    }
-    isSubmitted: boolean
-    lastUpdatedAt: string
-    lastSeenAt: string
-  }>
+      winnerPoints: number;
+      bonusPoints: number;
+      surprisePoints: number;
+    };
+    isSubmitted: boolean;
+    lastUpdatedAt: string;
+    lastSeenAt: string;
+  }>;
   events: Array<{
-    id: string
-    type: string
-    message: string
-    createdAt: string
-  }>
-  playerCount: number
-  submittedCount: number
+    id: string;
+    type: string;
+    message: string;
+    createdAt: string;
+  }>;
+  playerCount: number;
+  submittedCount: number;
   playerAnswerSummaries: Array<{
-    nickname: string
-    normalizedNickname: string
+    nickname: string;
+    normalizedNickname: string;
     matchPicks: Array<{
-      matchId: string
-      winnerName: string
-      battleRoyalEntrants: string[]
-      bonusAnswers: Array<{ questionId: string; answer: string }>
-    }>
-    eventBonusAnswers: Array<{ questionId: string; answer: string }>
-  }>
+      matchId: string;
+      winnerName: string;
+      battleRoyalEntrants: string[];
+      bonusAnswers: Array<{ questionId: string; answer: string }>;
+    }>;
+    eventBonusAnswers: Array<{ questionId: string; answer: string }>;
+  }>;
 }
 
 export interface JoinDeviceInfoPayload {
-  userAgent?: string | null
+  userAgent?: string | null;
   userAgentData?: {
-    brands?: Array<{ brand: string; version: string }>
-    mobile?: boolean
-    platform?: string
-    architecture?: string
-    model?: string
-    platformVersion?: string
-    fullVersionList?: Array<{ brand: string; version: string }>
-  } | null
+    brands?: Array<{ brand: string; version: string }>;
+    mobile?: boolean;
+    platform?: string;
+    architecture?: string;
+    model?: string;
+    platformVersion?: string;
+    fullVersionList?: Array<{ brand: string; version: string }>;
+  } | null;
 }
 
 export interface LiveGameJoinPreviewResponse {
-  gameId: string
-  joinCode: string
-  eventName: string
-  status: LiveGame['status']
-  eventStartAt: string | null
-  isStarted: boolean
-  allowLateJoins: boolean
+  gameId: string;
+  joinCode: string;
+  eventName: string;
+  status: LiveGame["status"];
+  eventStartAt: string | null;
+  isStarted: boolean;
+  allowLateJoins: boolean;
 }
 
 export interface LiveGameMeResponse {
-  game: LiveGame
-  card: ResolvedCard
+  game: LiveGame;
+  card: ResolvedCard;
   player: {
-    id: string
-    gameId: string
-    nickname: string
-    picks: LivePlayerPicksPayload
-    isSubmitted: boolean
-    submittedAt: string | null
-    joinedAt: string
-    lastSeenAt: string
-    updatedAt: string
-  }
+    id: string;
+    gameId: string;
+    nickname: string;
+    picks: LivePlayerPicksPayload;
+    isSubmitted: boolean;
+    submittedAt: string | null;
+    joinedAt: string;
+    lastSeenAt: string;
+    updatedAt: string;
+  };
   locks: {
-    globalLocked: boolean
-    matchLocks: Record<string, boolean>
-    matchBonusLocks: Record<string, boolean>
-    eventBonusLocks: Record<string, boolean>
-    tiebreakerLocked: boolean
-  }
+    globalLocked: boolean;
+    matchLocks: Record<string, boolean>;
+    matchBonusLocks: Record<string, boolean>;
+    eventBonusLocks: Record<string, boolean>;
+    tiebreakerLocked: boolean;
+  };
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
-  const fallback = `Request failed (${response.status})`
+  const fallback = `Request failed (${response.status})`;
 
   try {
-    const body = (await response.json()) as ApiErrorBody
+    const body = (await response.json()) as ApiErrorBody;
     if (body.error && body.error.trim()) {
-      return body.error
+      return body.error;
     }
 
-    return fallback
+    return fallback;
   } catch {
-    return fallback
+    return fallback;
   }
 }
 
-async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init)
+async function requestJson<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch(input, init);
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response))
+    throw new Error(await parseErrorMessage(response));
   }
 
-  const body = (await response.json()) as ApiDataEnvelope<T>
-  return body.data
+  const body = (await response.json()) as ApiDataEnvelope<T>;
+  return body.data;
 }
 
 export function listLiveGames(cardId: string): Promise<LiveGame[]> {
-  return requestJson<LiveGame[]>(`/api/cards/${cardId}/live-games`)
+  return requestJson<LiveGame[]>(`/api/cards/${cardId}/live-games`);
 }
 
-export function createLiveGame(cardId: string): Promise<CreateLiveGameResponse> {
-  return requestJson<CreateLiveGameResponse>(`/api/cards/${cardId}/live-games`, {
-    method: 'POST',
-  })
+export function createLiveGame(
+  cardId: string,
+): Promise<CreateLiveGameResponse> {
+  return requestJson<CreateLiveGameResponse>(
+    `/api/cards/${cardId}/live-games`,
+    {
+      method: "POST",
+    },
+  );
 }
 
-export function getLiveGameState(gameId: string, joinCode?: string): Promise<LiveGameStateResponse> {
-  const suffix = joinCode ? `?code=${encodeURIComponent(joinCode)}` : ''
-  return requestJson<LiveGameStateResponse>(`/api/live-games/${gameId}/state${suffix}`)
+export function getLiveGameState(
+  gameId: string,
+  joinCode?: string,
+): Promise<LiveGameStateResponse> {
+  const suffix = joinCode ? `?code=${encodeURIComponent(joinCode)}` : "";
+  return requestJson<LiveGameStateResponse>(
+    `/api/live-games/${gameId}/state${suffix}`,
+  );
 }
 
 export function updateLiveGameStatus(
   gameId: string,
-  status: LiveGame['status'],
+  status: LiveGame["status"],
   options?: {
-    allowLateJoins?: boolean
+    allowLateJoins?: boolean;
   },
 ): Promise<LiveGame> {
   return requestJson<LiveGame>(`/api/live-games/${gameId}/status`, {
-    method: 'PATCH',
+    method: "PATCH",
     headers: {
-      'content-type': 'application/json',
+      "content-type": "application/json",
     },
     body: JSON.stringify({
       status,
       allowLateJoins: options?.allowLateJoins,
     }),
-  })
+  });
 }
 
-export function updateLiveGameLocks(gameId: string, lockState: LiveGameLockState): Promise<LiveGame> {
+export function updateLiveGameLocks(
+  gameId: string,
+  lockState: LiveGameLockState,
+): Promise<LiveGame> {
   return requestJson<LiveGame>(`/api/live-games/${gameId}/locks`, {
-    method: 'PATCH',
+    method: "PATCH",
     headers: {
-      'content-type': 'application/json',
+      "content-type": "application/json",
     },
     body: JSON.stringify(lockState),
-  })
+  });
 }
 
 export function getLiveGameKey(gameId: string): Promise<{
-  game: LiveGame
-  card: ResolvedCard
-  key: LiveGameKeyPayload
-  locks: LiveGameLockState
+  game: LiveGame;
+  card: ResolvedCard;
+  key: LiveGameKeyPayload;
+  locks: LiveGameLockState;
 }> {
-  return requestJson(`/api/live-games/${gameId}/key`)
+  return requestJson(`/api/live-games/${gameId}/key`);
 }
 
 export function saveLiveGameKey(
@@ -217,15 +233,15 @@ export function saveLiveGameKey(
   options?: { expectedUpdatedAt?: string },
 ): Promise<LiveGame> {
   return requestJson<LiveGame>(`/api/live-games/${gameId}/key`, {
-    method: 'PUT',
+    method: "PUT",
     headers: {
-      'content-type': 'application/json',
+      "content-type": "application/json",
     },
     body: JSON.stringify({
       payload,
       expectedUpdatedAt: options?.expectedUpdatedAt,
     }),
-  })
+  });
 }
 
 export function joinLiveGame(
@@ -235,68 +251,72 @@ export function joinLiveGame(
   bypassSecret?: string | null,
 ): Promise<
   | {
-    status: 'joined'
-    gameId: string
-    joinCode: string
-    player: LiveGameMeResponse['player']
-    isNew: boolean
-  }
+      status: "joined";
+      gameId: string;
+      joinCode: string;
+      player: LiveGameMeResponse["player"];
+      isNew: boolean;
+    }
   | {
-    status: 'pending'
-  }
+      status: "pending";
+    }
 > {
-  return requestJson('/api/live-games/join', {
-    method: 'POST',
+  return requestJson("/api/live-games/join", {
+    method: "POST",
     headers: {
-      'content-type': 'application/json',
+      "content-type": "application/json",
     },
     body: JSON.stringify({ joinCode, nickname, deviceInfo, bypassSecret }),
-  })
+  });
 }
 
 export function reviewLiveGameJoinRequest(
   gameId: string,
   playerId: string,
-  action: 'approve' | 'deny',
+  action: "approve" | "deny",
 ): Promise<{ ok: true }> {
   return requestJson(`/api/live-games/${gameId}/join-requests`, {
-    method: 'PATCH',
+    method: "PATCH",
     headers: {
-      'content-type': 'application/json',
+      "content-type": "application/json",
     },
     body: JSON.stringify({ playerId, action }),
-  })
+  });
 }
 
 export function getLiveGameMe(gameId: string): Promise<LiveGameMeResponse> {
-  return requestJson<LiveGameMeResponse>(`/api/live-games/${gameId}/me`)
+  return requestJson<LiveGameMeResponse>(`/api/live-games/${gameId}/me`);
 }
 
-export function getLiveGameJoinPreview(joinCode: string): Promise<LiveGameJoinPreviewResponse> {
+export function getLiveGameJoinPreview(
+  joinCode: string,
+): Promise<LiveGameJoinPreviewResponse> {
   return requestJson<LiveGameJoinPreviewResponse>(
     `/api/live-games/join-preview?code=${encodeURIComponent(joinCode)}`,
-  )
+  );
 }
 
 export function saveMyLiveGamePicks(
   gameId: string,
   picks: LivePlayerPicksPayload,
   options?: { expectedUpdatedAt?: string },
-): Promise<{ player: LiveGameMeResponse['player']; ignoredLocks: string[] }> {
+): Promise<{ player: LiveGameMeResponse["player"]; ignoredLocks: string[] }> {
   return requestJson(`/api/live-games/${gameId}/me/picks`, {
-    method: 'PUT',
+    method: "PUT",
     headers: {
-      'content-type': 'application/json',
+      "content-type": "application/json",
     },
     body: JSON.stringify({
       picks,
       expectedUpdatedAt: options?.expectedUpdatedAt,
     }),
-  })
+  });
 }
 
-export function submitMyLiveGamePicks(gameId: string): Promise<LiveGameMeResponse['player']> {
+export function submitMyLiveGamePicks(
+  gameId: string,
+): Promise<LiveGameMeResponse["player"]> {
   return requestJson(`/api/live-games/${gameId}/me/submit`, {
-    method: 'POST',
-  })
+    method: "POST",
+  });
 }
