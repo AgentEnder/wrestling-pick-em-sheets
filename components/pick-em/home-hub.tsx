@@ -12,7 +12,9 @@ import {
   useUser,
 } from "@/lib/client/clerk-test-mode";
 import { listCards, type CardSummary } from "@/lib/client/cards-api";
+import { fetchMyGames, type MyActiveGame } from "@/lib/client/my-games-api";
 import { ArrowRight, FolderOpen, Swords, Users } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 const ADMIN_EMAIL = "craigorycoppola@gmail.com";
@@ -33,6 +35,7 @@ export function HomeHub() {
   const { user } = useUser();
   const [cards, setCards] = useState<CardSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeGames, setActiveGames] = useState<MyActiveGame[]>([]);
 
   const isAdminUser = useMemo(() => {
     const emailAddresses = Array.isArray(user?.emailAddresses)
@@ -76,6 +79,13 @@ export function HomeHub() {
   useEffect(() => {
     void loadCards();
   }, [loadCards]);
+
+  useEffect(() => {
+    if (!user) return;
+    void fetchMyGames()
+      .then((data) => setActiveGames(data.activeGames))
+      .catch(() => {});
+  }, [user]);
 
   const lastEditedCard = useMemo(
     () =>
@@ -221,6 +231,58 @@ export function HomeHub() {
               </div>
             )}
           </div>
+
+          {activeGames.length > 0 && (
+            <div className="rounded-2xl border border-border/70 bg-card/75 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.25)] backdrop-blur">
+              <h3 className="mb-3 text-xs uppercase tracking-[0.18em] text-primary">
+                Active Games
+              </h3>
+              <div className="flex flex-col gap-2">
+                {activeGames.slice(0, 3).map((game) => (
+                  <Link
+                    key={game.gameId}
+                    href={`/games/${game.gameId}/play?code=${encodeURIComponent(game.joinCode)}`}
+                    className="flex items-center justify-between rounded-lg border border-border/50 px-3 py-2 transition-colors hover:bg-muted/50"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {game.eventName || game.cardName}
+                      </p>
+                      {game.promotionName && (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {game.promotionName}
+                        </p>
+                      )}
+                    </div>
+                    <Badge
+                      variant={
+                        game.status === "live" ? "default" : "secondary"
+                      }
+                      className="ml-2 shrink-0"
+                    >
+                      {game.status === "live" ? "Live" : "Lobby"}
+                    </Badge>
+                  </Link>
+                ))}
+              </div>
+              {activeGames.length > 3 && (
+                <Link
+                  href="/my-games"
+                  className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  View all games
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+              )}
+              <Link
+                href="/my-games"
+                className="mt-3 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                View game history
+                <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+          )}
         </section>
       </main>
     </div>
