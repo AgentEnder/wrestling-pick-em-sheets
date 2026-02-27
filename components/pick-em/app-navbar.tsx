@@ -28,6 +28,7 @@ const PRIMARY_ITEMS: NavItem[] = [
   { href: "/", label: "Home" },
   { href: "/join", label: "Join" },
   { href: "/cards", label: "Cards" },
+  { href: "/my-games", label: "My Games" },
 ];
 
 const ADMIN_ITEMS: NavItem[] = [
