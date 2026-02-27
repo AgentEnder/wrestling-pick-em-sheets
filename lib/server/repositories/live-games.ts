@@ -45,7 +45,7 @@ type LiveGameEventSelectable = Selectable<LiveGameEvents>;
 
 const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const JOIN_CODE_LENGTH = 6;
-const LIVE_GAME_DURATION_MS = 1000 * 60 * 60 * 12;
+const LIVE_GAME_DURATION_MS = 1000 * 60 * 60 * 24 * 365;
 const MAX_DETAILED_EVENTS_PER_MUTATION = 30;
 
 const EMPTY_PICKS: LivePlayerPicksPayload = {
