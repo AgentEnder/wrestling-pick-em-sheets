@@ -1,53 +1,59 @@
-import type { CardLiveKey, CardLiveKeyPayload } from '@/lib/types'
+import type { CardLiveKey, CardLiveKeyPayload } from "@/lib/types";
 
 interface ApiErrorBody {
-  error?: string
+  error?: string;
 }
 
 interface ApiDataEnvelope<T> {
-  data: T
+  data: T;
 }
 
 export interface LiveKeyStateResponse {
-  key: CardLiveKey
+  key: CardLiveKey;
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
-  const fallback = `Request failed (${response.status})`
+  const fallback = `Request failed (${response.status})`;
 
   try {
-    const body = (await response.json()) as ApiErrorBody
+    const body = (await response.json()) as ApiErrorBody;
     if (body.error && body.error.trim()) {
-      return body.error
+      return body.error;
     }
 
-    return fallback
+    return fallback;
   } catch {
-    return fallback
+    return fallback;
   }
 }
 
-async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init)
+async function requestJson<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch(input, init);
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response))
+    throw new Error(await parseErrorMessage(response));
   }
 
-  const body = (await response.json()) as ApiDataEnvelope<T>
-  return body.data
+  const body = (await response.json()) as ApiDataEnvelope<T>;
+  return body.data;
 }
 
 export function getLiveKeyState(cardId: string): Promise<LiveKeyStateResponse> {
-  return requestJson<LiveKeyStateResponse>(`/api/cards/${cardId}/live-key`)
+  return requestJson<LiveKeyStateResponse>(`/api/cards/${cardId}/live-key`);
 }
 
-export function saveLiveKey(cardId: string, payload: CardLiveKeyPayload): Promise<CardLiveKey> {
+export function saveLiveKey(
+  cardId: string,
+  payload: CardLiveKeyPayload,
+): Promise<CardLiveKey> {
   return requestJson<CardLiveKey>(`/api/cards/${cardId}/live-key`, {
-    method: 'PUT',
+    method: "PUT",
     headers: {
-      'content-type': 'application/json',
+      "content-type": "application/json",
     },
     body: JSON.stringify(payload),
-  })
+  });
 }

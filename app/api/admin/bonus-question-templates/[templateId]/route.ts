@@ -1,14 +1,14 @@
-import { NextResponse } from 'next/server'
-import { z } from 'zod'
+import { NextResponse } from "next/server";
+import { z } from "zod";
 
-import { ensureAdminRequest } from '@/lib/server/admin-auth'
-import { enforceSameOrigin } from '@/lib/server/csrf'
+import { ensureAdminRequest } from "@/lib/server/admin-auth";
+import { enforceSameOrigin } from "@/lib/server/csrf";
 import {
   deleteBonusQuestionTemplate,
   updateBonusQuestionTemplate,
-} from '@/lib/server/repositories/bonus-question-pools'
+} from "@/lib/server/repositories/bonus-question-pools";
 
-const optionSchema = z.string().trim().min(1).max(120)
+const optionSchema = z.string().trim().min(1).max(120);
 
 const updateTemplateSchema = z
   .object({
@@ -16,10 +16,12 @@ const updateTemplateSchema = z
     label: z.string().trim().min(1).max(120).optional(),
     questionTemplate: z.string().trim().min(1).max(260).optional(),
     defaultPoints: z.number().int().min(1).max(100).nullable().optional(),
-    answerType: z.enum(['write-in', 'multiple-choice']).optional(),
+    answerType: z.enum(["write-in", "multiple-choice"]).optional(),
     options: z.array(optionSchema).max(20).optional(),
-    valueType: z.enum(['string', 'numerical', 'time', 'rosterMember']).optional(),
-    defaultSection: z.enum(['match', 'event']).optional(),
+    valueType: z
+      .enum(["string", "numerical", "time", "rosterMember"])
+      .optional(),
+    defaultSection: z.enum(["match", "event"]).optional(),
     sortOrder: z.number().int().min(0).max(10000).optional(),
     isActive: z.boolean().optional(),
   })
@@ -35,111 +37,120 @@ const updateTemplateSchema = z
       value.defaultSection !== undefined ||
       value.sortOrder !== undefined ||
       value.isActive !== undefined,
-    { message: 'At least one field must be provided' },
-  )
+    { message: "At least one field must be provided" },
+  );
 
 function normalizeOptions(options: string[]): string[] {
-  const deduped: string[] = []
-  const seen = new Set<string>()
+  const deduped: string[] = [];
+  const seen = new Set<string>();
 
   for (const option of options) {
-    const trimmed = option.trim()
-    if (!trimmed) continue
+    const trimmed = option.trim();
+    if (!trimmed) continue;
 
-    const key = trimmed.toLowerCase()
-    if (seen.has(key)) continue
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
 
-    seen.add(key)
-    deduped.push(trimmed)
+    seen.add(key);
+    deduped.push(trimmed);
   }
 
-  return deduped
+  return deduped;
 }
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ templateId: string }> },
 ) {
-  const csrfError = enforceSameOrigin(request)
+  const csrfError = enforceSameOrigin(request);
   if (csrfError) {
-    return csrfError
+    return csrfError;
   }
 
-  const adminError = await ensureAdminRequest(request)
-  if (adminError) return adminError
+  const adminError = await ensureAdminRequest(request);
+  if (adminError) return adminError;
 
-  const body = await request.json().catch(() => null)
-  const parsed = updateTemplateSchema.safeParse(body)
+  const body = await request.json().catch(() => null);
+  const parsed = updateTemplateSchema.safeParse(body);
 
   if (!parsed.success) {
     return NextResponse.json(
       {
-        error: 'Invalid request body',
+        error: "Invalid request body",
         issues: parsed.error.issues,
       },
       { status: 400 },
-    )
+    );
   }
 
   const options =
     parsed.data.options === undefined
       ? undefined
-      : normalizeOptions(parsed.data.options)
+      : normalizeOptions(parsed.data.options);
 
-  if (parsed.data.answerType === 'multiple-choice') {
+  if (parsed.data.answerType === "multiple-choice") {
     if (options !== undefined && options.length < 2) {
       return NextResponse.json(
         {
-          error: 'Multiple-choice templates require at least two distinct options',
+          error:
+            "Multiple-choice templates require at least two distinct options",
         },
         { status: 400 },
-      )
+      );
     }
-  } else if (parsed.data.answerType === undefined && options !== undefined && options.length === 1) {
+  } else if (
+    parsed.data.answerType === undefined &&
+    options !== undefined &&
+    options.length === 1
+  ) {
     return NextResponse.json(
       {
-        error: 'When updating options, provide at least two distinct options',
+        error: "When updating options, provide at least two distinct options",
       },
       { status: 400 },
-    )
+    );
   }
 
   const normalizedInput = {
     ...parsed.data,
     options:
-      parsed.data.answerType !== undefined && parsed.data.answerType === 'write-in'
+      parsed.data.answerType !== undefined &&
+      parsed.data.answerType === "write-in"
         ? []
         : options,
-  }
+  };
 
-  const { templateId } = await context.params
-  const updated = await updateBonusQuestionTemplate(templateId, normalizedInput)
+  const { templateId } = await context.params;
+  const updated = await updateBonusQuestionTemplate(
+    templateId,
+    normalizedInput,
+  );
 
   if (!updated) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return new NextResponse(null, { status: 204 })
+  return new NextResponse(null, { status: 204 });
 }
 
 export async function DELETE(
   request: Request,
   context: { params: Promise<{ templateId: string }> },
 ) {
-  const csrfError = enforceSameOrigin(request)
+  const csrfError = enforceSameOrigin(request);
   if (csrfError) {
-    return csrfError
+    return csrfError;
   }
 
-  const adminError = await ensureAdminRequest(request)
-  if (adminError) return adminError
+  const adminError = await ensureAdminRequest(request);
+  if (adminError) return adminError;
 
-  const { templateId } = await context.params
-  const deleted = await deleteBonusQuestionTemplate(templateId)
+  const { templateId } = await context.params;
+  const deleted = await deleteBonusQuestionTemplate(templateId);
 
   if (!deleted) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return new NextResponse(null, { status: 204 })
+  return new NextResponse(null, { status: 204 });
 }

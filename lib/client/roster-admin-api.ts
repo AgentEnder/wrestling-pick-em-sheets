@@ -1,145 +1,162 @@
-import type { Promotion, PromotionRosterMember } from '@/lib/types'
+import type { Promotion, PromotionRosterMember } from "@/lib/types";
 
 interface ApiErrorBody {
-  error?: string
+  error?: string;
 }
 
 interface ApiDataEnvelope<T> {
-  data: T
+  data: T;
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
-  const fallback = `Request failed (${response.status})`
+  const fallback = `Request failed (${response.status})`;
 
   try {
-    const body = (await response.json()) as ApiErrorBody
+    const body = (await response.json()) as ApiErrorBody;
     if (body.error && body.error.trim()) {
-      return body.error
+      return body.error;
     }
-    return fallback
+    return fallback;
   } catch {
-    return fallback
+    return fallback;
   }
 }
 
-async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init)
+async function requestJson<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch(input, init);
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response))
+    throw new Error(await parseErrorMessage(response));
   }
 
-  const body = (await response.json()) as ApiDataEnvelope<T>
-  return body.data
+  const body = (await response.json()) as ApiDataEnvelope<T>;
+  return body.data;
 }
 
-async function requestNoContent(input: RequestInfo | URL, init?: RequestInit): Promise<void> {
-  const response = await fetch(input, init)
+async function requestNoContent(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<void> {
+  const response = await fetch(input, init);
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response))
+    throw new Error(await parseErrorMessage(response));
   }
 }
 
 export function listAdminPromotions(): Promise<Promotion[]> {
-  return requestJson<Promotion[]>('/api/admin/promotions')
+  return requestJson<Promotion[]>("/api/admin/promotions");
 }
 
 export function createAdminPromotion(input: {
-  name: string
-  aliases?: string[]
-  sortOrder?: number
-  isActive?: boolean
+  name: string;
+  aliases?: string[];
+  sortOrder?: number;
+  isActive?: boolean;
 }): Promise<Promotion> {
-  return requestJson<Promotion>('/api/admin/promotions', {
-    method: 'POST',
+  return requestJson<Promotion>("/api/admin/promotions", {
+    method: "POST",
     headers: {
-      'content-type': 'application/json',
+      "content-type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export function updateAdminPromotion(
   promotionId: string,
   input: {
-    name?: string
-    aliases?: string[]
-    sortOrder?: number
-    isActive?: boolean
+    name?: string;
+    aliases?: string[];
+    sortOrder?: number;
+    isActive?: boolean;
   },
 ): Promise<void> {
   return requestNoContent(`/api/admin/promotions/${promotionId}`, {
-    method: 'PATCH',
+    method: "PATCH",
     headers: {
-      'content-type': 'application/json',
+      "content-type": "application/json",
     },
     body: JSON.stringify(input),
-  })
+  });
 }
 
 export function deleteAdminPromotion(promotionId: string): Promise<void> {
   return requestNoContent(`/api/admin/promotions/${promotionId}`, {
-    method: 'DELETE',
-  })
+    method: "DELETE",
+  });
 }
 
 export function listAdminPromotionRosterMembers(
   promotionId: string,
 ): Promise<PromotionRosterMember[]> {
-  return requestJson<PromotionRosterMember[]>(`/api/admin/promotions/${promotionId}/roster-members`)
+  return requestJson<PromotionRosterMember[]>(
+    `/api/admin/promotions/${promotionId}/roster-members`,
+  );
 }
 
 export function createAdminPromotionRosterMember(
   promotionId: string,
   input: {
-    displayName: string
-    aliases?: string[]
-    isActive?: boolean
+    displayName: string;
+    aliases?: string[];
+    isActive?: boolean;
   },
 ): Promise<PromotionRosterMember> {
-  return requestJson<PromotionRosterMember>(`/api/admin/promotions/${promotionId}/roster-members`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
+  return requestJson<PromotionRosterMember>(
+    `/api/admin/promotions/${promotionId}/roster-members`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
     },
-    body: JSON.stringify(input),
-  })
+  );
 }
 
 export function updateAdminPromotionRosterMember(
   promotionId: string,
   memberId: string,
   input: {
-    displayName?: string
-    aliases?: string[]
-    isActive?: boolean
+    displayName?: string;
+    aliases?: string[];
+    isActive?: boolean;
   },
 ): Promise<void> {
-  return requestNoContent(`/api/admin/promotions/${promotionId}/roster-members/${memberId}`, {
-    method: 'PATCH',
-    headers: {
-      'content-type': 'application/json',
+  return requestNoContent(
+    `/api/admin/promotions/${promotionId}/roster-members/${memberId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
     },
-    body: JSON.stringify(input),
-  })
+  );
 }
 
 export function deleteAdminPromotionRosterMember(
   promotionId: string,
   memberId: string,
 ): Promise<void> {
-  return requestNoContent(`/api/admin/promotions/${promotionId}/roster-members/${memberId}`, {
-    method: 'DELETE',
-  })
+  return requestNoContent(
+    `/api/admin/promotions/${promotionId}/roster-members/${memberId}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 export function syncAdminWweRoster(promotionId: string): Promise<{
-  promotionId: string
-  promotionName: string
-  fetchedCount: number
-  insertedCount: number
-  updatedCount: number
+  promotionId: string;
+  promotionName: string;
+  fetchedCount: number;
+  insertedCount: number;
+  updatedCount: number;
 }> {
   return requestJson(`/api/admin/promotions/${promotionId}/sync-wwe`, {
-    method: 'POST',
-  })
+    method: "POST",
+  });
 }

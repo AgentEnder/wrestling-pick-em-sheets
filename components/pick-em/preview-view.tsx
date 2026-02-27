@@ -1,16 +1,16 @@
-"use client"
+"use client";
 
-import { PrintSheet } from "@/components/print-sheet"
-import { Button } from "@/components/ui/button"
-import type { PickEmSheet } from "@/lib/types"
-import { Printer } from "lucide-react"
-import type { RefObject } from "react"
+import { PrintSheet } from "@/components/print-sheet";
+import { Button } from "@/components/ui/button";
+import type { PickEmSheet } from "@/lib/types";
+import { Printer } from "lucide-react";
+import type { RefObject } from "react";
 
 interface PreviewViewProps {
-  sheet: PickEmSheet
-  hasMatches: boolean
-  printRef: RefObject<HTMLDivElement | null>
-  onPrint: () => void
+  sheet: PickEmSheet;
+  hasMatches: boolean;
+  printRef: RefObject<HTMLDivElement | null>;
+  onPrint: () => void;
 }
 
 export function PreviewView({
@@ -26,18 +26,15 @@ export function PreviewView({
           Add some matches first to preview your sheet.
         </p>
       </div>
-    )
+    );
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          This is how your sheet will look when printed. Click
-          {' '}
-          &ldquo;Print Sheet&rdquo;
-          {' '}
-          to print it.
+          This is how your sheet will look when printed. Click &ldquo;Print
+          Sheet&rdquo; to print it.
         </p>
         <Button
           size="sm"
@@ -56,5 +53,5 @@ export function PreviewView({
         </div>
       </div>
     </div>
-  )
+  );
 }

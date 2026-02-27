@@ -1,31 +1,31 @@
-"use client"
+"use client";
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import type { CardSummary } from "@/lib/client/cards-api"
-import { LibraryBig, RefreshCcw, Sparkles } from "lucide-react"
-import { useMemo, useState } from "react"
+} from "@/components/ui/select";
+import type { CardSummary } from "@/lib/client/cards-api";
+import { LibraryBig, RefreshCcw, Sparkles } from "lucide-react";
+import { useMemo, useState } from "react";
 
 interface CardLibraryProps {
-  cards: CardSummary[]
-  selectedCardId: string | null
-  isLoading: boolean
-  isSyncingOverrides: boolean
-  onRefresh: () => void
-  onSelectCard: (cardId: string) => void
-  onCreateFromTemplate: (templateCardId: string) => void
+  cards: CardSummary[];
+  selectedCardId: string | null;
+  isLoading: boolean;
+  isSyncingOverrides: boolean;
+  onRefresh: () => void;
+  onSelectCard: (cardId: string) => void;
+  onCreateFromTemplate: (templateCardId: string) => void;
 }
 
 function cardLabel(card: CardSummary): string {
-  const visibility = card.isPublic ? "Public" : "Private"
-  const kind = card.isTemplate ? "Template" : "Card"
-  return `${card.name} (${kind}, ${visibility})`
+  const visibility = card.isPublic ? "Public" : "Private";
+  const kind = card.isTemplate ? "Template" : "Card";
+  return `${card.name} (${kind}, ${visibility})`;
 }
 
 export function CardLibrary({
@@ -37,12 +37,12 @@ export function CardLibrary({
   onSelectCard,
   onCreateFromTemplate,
 }: CardLibraryProps) {
-  const [templateToUse, setTemplateToUse] = useState<string>("")
+  const [templateToUse, setTemplateToUse] = useState<string>("");
 
   const templateCards = useMemo(
     () => cards.filter((card) => card.isTemplate && card.isPublic),
     [cards],
-  )
+  );
 
   return (
     <section className="rounded-2xl border border-border/80 bg-card/70 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.25)] backdrop-blur">
@@ -52,11 +52,20 @@ export function CardLibrary({
             <LibraryBig className="h-4 w-4" />
           </span>
           <div>
-            <p className="text-sm font-semibold text-foreground">Card Workspace</p>
-            <p className="text-xs text-muted-foreground">{cards.length} available</p>
+            <p className="text-sm font-semibold text-foreground">
+              Card Workspace
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {cards.length} available
+            </p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={onRefresh} disabled={isLoading}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRefresh}
+          disabled={isLoading}
+        >
           <RefreshCcw className="h-4 w-4" />
           Refresh
         </Button>
@@ -73,7 +82,11 @@ export function CardLibrary({
             disabled={isLoading || cards.length === 0}
           >
             <SelectTrigger className="w-full min-w-0 bg-background/50">
-              <SelectValue placeholder={cards.length === 0 ? "No cards available" : "Select a card"} />
+              <SelectValue
+                placeholder={
+                  cards.length === 0 ? "No cards available" : "Select a card"
+                }
+              />
             </SelectTrigger>
             <SelectContent>
               {cards.map((card) => (
@@ -118,8 +131,8 @@ export function CardLibrary({
               size="sm"
               disabled={!templateToUse}
               onClick={() => {
-                onCreateFromTemplate(templateToUse)
-                setTemplateToUse("")
+                onCreateFromTemplate(templateToUse);
+                setTemplateToUse("");
               }}
             >
               <Sparkles className="h-4 w-4" />
@@ -129,5 +142,5 @@ export function CardLibrary({
         </div>
       </div>
     </section>
-  )
+  );
 }

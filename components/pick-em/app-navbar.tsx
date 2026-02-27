@@ -1,9 +1,9 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { Menu } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Menu } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,42 +11,42 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { cn } from "@/lib/utils"
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 interface NavItem {
-  href: string
-  label: string
+  href: string;
+  label: string;
 }
 
 interface AppNavbarProps {
-  isAdminUser?: boolean
-  className?: string
+  isAdminUser?: boolean;
+  className?: string;
 }
 
 const PRIMARY_ITEMS: NavItem[] = [
   { href: "/", label: "Home" },
   { href: "/join", label: "Join" },
   { href: "/cards", label: "Cards" },
-]
+];
 
 const ADMIN_ITEMS: NavItem[] = [
   { href: "/admin/rosters", label: "Roster Admin" },
   { href: "/admin/bonus-questions", label: "Bonus Pool Admin" },
-]
+];
 
 function matchesPath(pathname: string, href: string): boolean {
-  return pathname === href || pathname.startsWith(`${href}/`)
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
-  const isActive = matchesPath(pathname, item.href)
+  const isActive = matchesPath(pathname, item.href);
 
   return (
     <Button asChild size="sm" variant={isActive ? "secondary" : "ghost"}>
       <Link href={item.href}>{item.label}</Link>
     </Button>
-  )
+  );
 }
 
 function DropdownLink({ item }: { item: NavItem }) {
@@ -54,16 +54,21 @@ function DropdownLink({ item }: { item: NavItem }) {
     <DropdownMenuItem asChild>
       <Link href={item.href}>{item.label}</Link>
     </DropdownMenuItem>
-  )
+  );
 }
 
 export function AppNavbar({ isAdminUser = false, className }: AppNavbarProps) {
-  const pathname = usePathname()
-  const overflowItems = isAdminUser ? ADMIN_ITEMS : []
-  const mobileItems = isAdminUser ? [...PRIMARY_ITEMS, ...ADMIN_ITEMS] : PRIMARY_ITEMS
+  const pathname = usePathname();
+  const overflowItems = isAdminUser ? ADMIN_ITEMS : [];
+  const mobileItems = isAdminUser
+    ? [...PRIMARY_ITEMS, ...ADMIN_ITEMS]
+    : PRIMARY_ITEMS;
 
   return (
-    <nav aria-label="Primary navigation" className={cn("flex items-center gap-2", className)}>
+    <nav
+      aria-label="Primary navigation"
+      className={cn("flex items-center gap-2", className)}
+    >
       <div className="hidden items-center gap-1 sm:flex">
         {PRIMARY_ITEMS.map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} />
@@ -100,5 +105,5 @@ export function AppNavbar({ isAdminUser = false, className }: AppNavbarProps) {
         </DropdownMenuContent>
       </DropdownMenu>
     </nav>
-  )
+  );
 }

@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextResponse } from "next/server";
 
-import { listMatchTypes } from '@/lib/server/repositories/match-types'
+import { listMatchTypes } from "@/lib/server/repositories/match-types";
 
 export async function GET() {
-  const matchTypes = await listMatchTypes()
-  return NextResponse.json({ data: matchTypes })
+  const matchTypes = await listMatchTypes();
+  return NextResponse.json({ data: matchTypes });
 }

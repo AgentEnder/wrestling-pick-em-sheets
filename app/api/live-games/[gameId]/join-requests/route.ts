@@ -3,21 +3,12 @@ import { z } from "zod";
 
 import { getRequestUserId } from "@/lib/server/auth";
 import { enforceSameOrigin } from "@/lib/server/csrf";
-import { updateLiveGameStatus } from "@/lib/server/repositories/live-games";
+import { reviewLiveGameJoinRequest } from "@/lib/server/repositories/live-games";
 
-const updateStatusSchema = z
-  .object({
-    status: z.enum(["lobby", "live", "ended"]).optional(),
-    allowLateJoins: z.boolean().optional(),
-  })
-  .refine(
-    (value) =>
-      typeof value.status !== "undefined" ||
-      typeof value.allowLateJoins !== "undefined",
-    {
-      message: "At least one setting is required",
-    },
-  );
+const reviewJoinRequestSchema = z.object({
+  playerId: z.string().trim().min(1),
+  action: z.enum(["approve", "deny"]),
+});
 
 export async function PATCH(
   request: Request,
@@ -34,8 +25,7 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => null);
-  const parsed = updateStatusSchema.safeParse(body);
-
+  const parsed = reviewJoinRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid request body", issues: parsed.error.issues },
@@ -44,14 +34,16 @@ export async function PATCH(
   }
 
   const { gameId } = await context.params;
-  const updated = await updateLiveGameStatus(gameId, userId, {
-    status: parsed.data.status,
-    allowLateJoins: parsed.data.allowLateJoins,
-  });
+  const result = await reviewLiveGameJoinRequest(
+    gameId,
+    userId,
+    parsed.data.playerId,
+    parsed.data.action,
+  );
 
-  if (!updated) {
+  if (result !== "ok") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ data: updated });
+  return NextResponse.json({ data: { ok: true } });
 }

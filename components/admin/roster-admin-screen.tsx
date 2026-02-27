@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createAdminPromotion,
   createAdminPromotionRosterMember,
@@ -12,200 +12,229 @@ import {
   syncAdminWweRoster,
   updateAdminPromotion,
   updateAdminPromotionRosterMember,
-} from "@/lib/client/roster-admin-api"
-import type { Promotion, PromotionRosterMember } from "@/lib/types"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { ChevronLeft, Plus, RefreshCcw, Save, Trash2 } from "lucide-react"
-import { toast } from "sonner"
+} from "@/lib/client/roster-admin-api";
+import type { Promotion, PromotionRosterMember } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ChevronLeft, Plus, RefreshCcw, Save, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 function parseAliasesInput(value: string): string[] {
-  const seen = new Set<string>()
-  const aliases: string[] = []
+  const seen = new Set<string>();
+  const aliases: string[] = [];
 
   for (const raw of value.split(",")) {
-    const trimmed = raw.trim()
-    if (!trimmed) continue
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
 
-    const normalized = trimmed.toLowerCase()
-    if (seen.has(normalized)) continue
-    seen.add(normalized)
-    aliases.push(trimmed)
+    const normalized = trimmed.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    aliases.push(trimmed);
   }
 
-  return aliases
+  return aliases;
 }
 
 function aliasesToText(aliases: string[]): string {
-  return aliases.join(", ")
+  return aliases.join(", ");
 }
 
 function isWwePromotion(promotion: Promotion | null): boolean {
-  if (!promotion) return false
-  const allNames = [promotion.name, ...promotion.aliases]
-  return allNames.some((name) => name.trim().toLowerCase() === "wwe")
+  if (!promotion) return false;
+  const allNames = [promotion.name, ...promotion.aliases];
+  return allNames.some((name) => name.trim().toLowerCase() === "wwe");
 }
 
 export function RosterAdminScreen() {
-  const [promotions, setPromotions] = useState<Promotion[]>([])
-  const [selectedPromotionId, setSelectedPromotionId] = useState<string>("")
-  const [members, setMembers] = useState<PromotionRosterMember[]>([])
-  const [isLoadingPromotions, setIsLoadingPromotions] = useState(true)
-  const [isLoadingMembers, setIsLoadingMembers] = useState(false)
-  const [busyByKey, setBusyByKey] = useState<Record<string, boolean>>({})
-  const [newPromotionName, setNewPromotionName] = useState("")
-  const [newPromotionAliases, setNewPromotionAliases] = useState("")
-  const [newMemberName, setNewMemberName] = useState("")
-  const [newMemberAliases, setNewMemberAliases] = useState("")
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [selectedPromotionId, setSelectedPromotionId] = useState<string>("");
+  const [members, setMembers] = useState<PromotionRosterMember[]>([]);
+  const [isLoadingPromotions, setIsLoadingPromotions] = useState(true);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [busyByKey, setBusyByKey] = useState<Record<string, boolean>>({});
+  const [newPromotionName, setNewPromotionName] = useState("");
+  const [newPromotionAliases, setNewPromotionAliases] = useState("");
+  const [newMemberName, setNewMemberName] = useState("");
+  const [newMemberAliases, setNewMemberAliases] = useState("");
 
-  const [promotionNameDrafts, setPromotionNameDrafts] = useState<Record<string, string>>({})
-  const [promotionAliasesDrafts, setPromotionAliasesDrafts] = useState<Record<string, string>>({})
-  const [memberNameDrafts, setMemberNameDrafts] = useState<Record<string, string>>({})
-  const [memberAliasesDrafts, setMemberAliasesDrafts] = useState<Record<string, string>>({})
+  const [promotionNameDrafts, setPromotionNameDrafts] = useState<
+    Record<string, string>
+  >({});
+  const [promotionAliasesDrafts, setPromotionAliasesDrafts] = useState<
+    Record<string, string>
+  >({});
+  const [memberNameDrafts, setMemberNameDrafts] = useState<
+    Record<string, string>
+  >({});
+  const [memberAliasesDrafts, setMemberAliasesDrafts] = useState<
+    Record<string, string>
+  >({});
 
   const selectedPromotion = useMemo(
-    () => promotions.find((promotion) => promotion.id === selectedPromotionId) ?? null,
+    () =>
+      promotions.find((promotion) => promotion.id === selectedPromotionId) ??
+      null,
     [promotions, selectedPromotionId],
-  )
+  );
 
   function setBusy(key: string, value: boolean) {
     setBusyByKey((prev) => ({
       ...prev,
       [key]: value,
-    }))
+    }));
   }
 
   const loadPromotions = useCallback(async () => {
-    setIsLoadingPromotions(true)
+    setIsLoadingPromotions(true);
     try {
-      const data = await listAdminPromotions()
-      setPromotions(data)
+      const data = await listAdminPromotions();
+      setPromotions(data);
       setPromotionNameDrafts((prev) => {
-        const next = { ...prev }
+        const next = { ...prev };
         for (const promotion of data) {
           if (next[promotion.id] === undefined) {
-            next[promotion.id] = promotion.name
+            next[promotion.id] = promotion.name;
           }
         }
-        return next
-      })
+        return next;
+      });
       setPromotionAliasesDrafts((prev) => {
-        const next = { ...prev }
+        const next = { ...prev };
         for (const promotion of data) {
           if (next[promotion.id] === undefined) {
-            next[promotion.id] = aliasesToText(promotion.aliases)
+            next[promotion.id] = aliasesToText(promotion.aliases);
           }
         }
-        return next
-      })
+        return next;
+      });
 
-      if (data.length > 0 && !data.some((promotion) => promotion.id === selectedPromotionId)) {
-        setSelectedPromotionId(data[0].id)
+      if (
+        data.length > 0 &&
+        !data.some((promotion) => promotion.id === selectedPromotionId)
+      ) {
+        setSelectedPromotionId(data[0].id);
       }
       if (data.length === 0) {
-        setSelectedPromotionId("")
+        setSelectedPromotionId("");
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load promotions"
-      toast.error(message)
+      const message =
+        error instanceof Error ? error.message : "Failed to load promotions";
+      toast.error(message);
     } finally {
-      setIsLoadingPromotions(false)
+      setIsLoadingPromotions(false);
     }
-  }, [selectedPromotionId])
+  }, [selectedPromotionId]);
 
   const loadMembers = useCallback(async (promotionId: string) => {
     if (!promotionId) {
-      setMembers([])
-      return
+      setMembers([]);
+      return;
     }
 
-    setIsLoadingMembers(true)
+    setIsLoadingMembers(true);
     try {
-      const data = await listAdminPromotionRosterMembers(promotionId)
-      setMembers(data)
+      const data = await listAdminPromotionRosterMembers(promotionId);
+      setMembers(data);
       setMemberNameDrafts((prev) => {
-        const next = { ...prev }
+        const next = { ...prev };
         for (const member of data) {
           if (next[member.id] === undefined) {
-            next[member.id] = member.displayName
+            next[member.id] = member.displayName;
           }
         }
-        return next
-      })
+        return next;
+      });
       setMemberAliasesDrafts((prev) => {
-        const next = { ...prev }
+        const next = { ...prev };
         for (const member of data) {
           if (next[member.id] === undefined) {
-            next[member.id] = aliasesToText(member.aliases)
+            next[member.id] = aliasesToText(member.aliases);
           }
         }
-        return next
-      })
+        return next;
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load roster members"
-      toast.error(message)
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load roster members";
+      toast.error(message);
     } finally {
-      setIsLoadingMembers(false)
+      setIsLoadingMembers(false);
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    void loadPromotions()
-  }, [loadPromotions])
+    void loadPromotions();
+  }, [loadPromotions]);
 
   useEffect(() => {
     if (!selectedPromotionId) {
-      setMembers([])
-      return
+      setMembers([]);
+      return;
     }
-    void loadMembers(selectedPromotionId)
-  }, [loadMembers, selectedPromotionId])
+    void loadMembers(selectedPromotionId);
+  }, [loadMembers, selectedPromotionId]);
 
   async function handleCreatePromotion() {
-    const name = newPromotionName.trim()
+    const name = newPromotionName.trim();
     if (!name) {
-      toast.error("Promotion name is required")
-      return
+      toast.error("Promotion name is required");
+      return;
     }
 
-    const key = "create-promotion"
-    setBusy(key, true)
+    const key = "create-promotion";
+    setBusy(key, true);
     try {
       const created = await createAdminPromotion({
         name,
         aliases: parseAliasesInput(newPromotionAliases),
-      })
-      setPromotions((prev) => [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder))
-      setPromotionNameDrafts((prev) => ({ ...prev, [created.id]: created.name }))
+      });
+      setPromotions((prev) =>
+        [...prev, created].sort((a, b) => a.sortOrder - b.sortOrder),
+      );
+      setPromotionNameDrafts((prev) => ({
+        ...prev,
+        [created.id]: created.name,
+      }));
       setPromotionAliasesDrafts((prev) => ({
         ...prev,
         [created.id]: aliasesToText(created.aliases),
-      }))
-      setNewPromotionName("")
-      setNewPromotionAliases("")
-      setSelectedPromotionId(created.id)
-      toast.success("Promotion created")
+      }));
+      setNewPromotionName("");
+      setNewPromotionAliases("");
+      setSelectedPromotionId(created.id);
+      toast.success("Promotion created");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create promotion"
-      toast.error(message)
+      const message =
+        error instanceof Error ? error.message : "Failed to create promotion";
+      toast.error(message);
     } finally {
-      setBusy(key, false)
+      setBusy(key, false);
     }
   }
 
   async function handleSavePromotion(promotion: Promotion) {
-    const key = `save-promotion-${promotion.id}`
-    setBusy(key, true)
+    const key = `save-promotion-${promotion.id}`;
+    setBusy(key, true);
     try {
-      const name = (promotionNameDrafts[promotion.id] ?? promotion.name).trim()
+      const name = (promotionNameDrafts[promotion.id] ?? promotion.name).trim();
       await updateAdminPromotion(promotion.id, {
         name,
         aliases: parseAliasesInput(promotionAliasesDrafts[promotion.id] ?? ""),
         isActive: promotion.isActive,
         sortOrder: promotion.sortOrder,
-      })
+      });
 
       setPromotions((prev) =>
         prev.map((item) =>
@@ -213,84 +242,105 @@ export function RosterAdminScreen() {
             ? {
                 ...item,
                 name,
-                aliases: parseAliasesInput(promotionAliasesDrafts[promotion.id] ?? ""),
+                aliases: parseAliasesInput(
+                  promotionAliasesDrafts[promotion.id] ?? "",
+                ),
               }
             : item,
         ),
-      )
-      toast.success("Promotion saved")
+      );
+      toast.success("Promotion saved");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save promotion"
-      toast.error(message)
+      const message =
+        error instanceof Error ? error.message : "Failed to save promotion";
+      toast.error(message);
     } finally {
-      setBusy(key, false)
+      setBusy(key, false);
     }
   }
 
   async function handleDeletePromotion(promotionId: string) {
-    const key = `delete-promotion-${promotionId}`
-    setBusy(key, true)
+    const key = `delete-promotion-${promotionId}`;
+    setBusy(key, true);
     try {
-      await deleteAdminPromotion(promotionId)
-      setPromotions((prev) => prev.filter((promotion) => promotion.id !== promotionId))
+      await deleteAdminPromotion(promotionId);
+      setPromotions((prev) =>
+        prev.filter((promotion) => promotion.id !== promotionId),
+      );
       if (selectedPromotionId === promotionId) {
-        setSelectedPromotionId("")
+        setSelectedPromotionId("");
       }
-      toast.success("Promotion deleted")
+      toast.success("Promotion deleted");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to delete promotion"
-      toast.error(message)
+      const message =
+        error instanceof Error ? error.message : "Failed to delete promotion";
+      toast.error(message);
     } finally {
-      setBusy(key, false)
+      setBusy(key, false);
     }
   }
 
   async function handleCreateMember() {
     if (!selectedPromotionId) {
-      toast.error("Select a promotion first")
-      return
+      toast.error("Select a promotion first");
+      return;
     }
 
-    const displayName = newMemberName.trim()
+    const displayName = newMemberName.trim();
     if (!displayName) {
-      toast.error("Roster name is required")
-      return
+      toast.error("Roster name is required");
+      return;
     }
 
-    const key = `create-member-${selectedPromotionId}`
-    setBusy(key, true)
+    const key = `create-member-${selectedPromotionId}`;
+    setBusy(key, true);
     try {
-      const created = await createAdminPromotionRosterMember(selectedPromotionId, {
-        displayName,
-        aliases: parseAliasesInput(newMemberAliases),
-      })
-      setMembers((prev) => [...prev, created].sort((a, b) => a.displayName.localeCompare(b.displayName)))
-      setMemberNameDrafts((prev) => ({ ...prev, [created.id]: created.displayName }))
+      const created = await createAdminPromotionRosterMember(
+        selectedPromotionId,
+        {
+          displayName,
+          aliases: parseAliasesInput(newMemberAliases),
+        },
+      );
+      setMembers((prev) =>
+        [...prev, created].sort((a, b) =>
+          a.displayName.localeCompare(b.displayName),
+        ),
+      );
+      setMemberNameDrafts((prev) => ({
+        ...prev,
+        [created.id]: created.displayName,
+      }));
       setMemberAliasesDrafts((prev) => ({
         ...prev,
         [created.id]: aliasesToText(created.aliases),
-      }))
-      setNewMemberName("")
-      setNewMemberAliases("")
-      toast.success("Roster member created")
+      }));
+      setNewMemberName("");
+      setNewMemberAliases("");
+      toast.success("Roster member created");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create roster member"
-      toast.error(message)
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to create roster member";
+      toast.error(message);
     } finally {
-      setBusy(key, false)
+      setBusy(key, false);
     }
   }
 
   async function handleSaveMember(member: PromotionRosterMember) {
-    const key = `save-member-${member.id}`
-    setBusy(key, true)
+    const key = `save-member-${member.id}`;
+    setBusy(key, true);
     try {
-      const displayName = (memberNameDrafts[member.id] ?? member.displayName).trim()
+      const displayName = (
+        memberNameDrafts[member.id] ?? member.displayName
+      ).trim();
       await updateAdminPromotionRosterMember(member.promotionId, member.id, {
         displayName,
         aliases: parseAliasesInput(memberAliasesDrafts[member.id] ?? ""),
         isActive: member.isActive,
-      })
+      });
 
       setMembers((prev) =>
         prev.map((item) =>
@@ -298,51 +348,58 @@ export function RosterAdminScreen() {
             ? {
                 ...item,
                 displayName,
-                aliases: parseAliasesInput(memberAliasesDrafts[member.id] ?? ""),
+                aliases: parseAliasesInput(
+                  memberAliasesDrafts[member.id] ?? "",
+                ),
               }
             : item,
         ),
-      )
-      toast.success("Roster member saved")
+      );
+      toast.success("Roster member saved");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save roster member"
-      toast.error(message)
+      const message =
+        error instanceof Error ? error.message : "Failed to save roster member";
+      toast.error(message);
     } finally {
-      setBusy(key, false)
+      setBusy(key, false);
     }
   }
 
   async function handleDeleteMember(member: PromotionRosterMember) {
-    const key = `delete-member-${member.id}`
-    setBusy(key, true)
+    const key = `delete-member-${member.id}`;
+    setBusy(key, true);
     try {
-      await deleteAdminPromotionRosterMember(member.promotionId, member.id)
-      setMembers((prev) => prev.filter((item) => item.id !== member.id))
-      toast.success("Roster member deleted")
+      await deleteAdminPromotionRosterMember(member.promotionId, member.id);
+      setMembers((prev) => prev.filter((item) => item.id !== member.id));
+      toast.success("Roster member deleted");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to delete roster member"
-      toast.error(message)
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to delete roster member";
+      toast.error(message);
     } finally {
-      setBusy(key, false)
+      setBusy(key, false);
     }
   }
 
   async function handleSyncWweRoster() {
-    if (!selectedPromotion) return
+    if (!selectedPromotion) return;
 
-    const key = `sync-wwe-${selectedPromotion.id}`
-    setBusy(key, true)
+    const key = `sync-wwe-${selectedPromotion.id}`;
+    setBusy(key, true);
     try {
-      const result = await syncAdminWweRoster(selectedPromotion.id)
-      await loadMembers(selectedPromotion.id)
+      const result = await syncAdminWweRoster(selectedPromotion.id);
+      await loadMembers(selectedPromotion.id);
       toast.success(
         `Synced WWE roster: ${result.insertedCount} added, ${result.updatedCount} updated (${result.fetchedCount} fetched).`,
-      )
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to sync WWE roster"
-      toast.error(message)
+      const message =
+        error instanceof Error ? error.message : "Failed to sync WWE roster";
+      toast.error(message);
     } finally {
-      setBusy(key, false)
+      setBusy(key, false);
     }
   }
 
@@ -368,9 +425,9 @@ export function RosterAdminScreen() {
             <Button
               variant="outline"
               onClick={() => {
-                void loadPromotions()
+                void loadPromotions();
                 if (selectedPromotionId) {
-                  void loadMembers(selectedPromotionId)
+                  void loadMembers(selectedPromotionId);
                 }
               }}
             >
@@ -384,7 +441,9 @@ export function RosterAdminScreen() {
           <Card className="border-border/70 bg-card/70">
             <CardHeader>
               <CardTitle>Promotions</CardTitle>
-              <CardDescription>Create and edit promotion aliases.</CardDescription>
+              <CardDescription>
+                Create and edit promotion aliases.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-md border border-border/70 bg-background/40 p-3 space-y-3">
@@ -392,7 +451,9 @@ export function RosterAdminScreen() {
                   <Label>New Promotion</Label>
                   <Input
                     value={newPromotionName}
-                    onChange={(event) => setNewPromotionName(event.target.value)}
+                    onChange={(event) =>
+                      setNewPromotionName(event.target.value)
+                    }
                     placeholder="e.g. WWE"
                   />
                 </div>
@@ -400,13 +461,15 @@ export function RosterAdminScreen() {
                   <Label>Aliases (comma separated)</Label>
                   <Input
                     value={newPromotionAliases}
-                    onChange={(event) => setNewPromotionAliases(event.target.value)}
+                    onChange={(event) =>
+                      setNewPromotionAliases(event.target.value)
+                    }
                     placeholder="e.g. World Wrestling Entertainment"
                   />
                 </div>
                 <Button
                   onClick={() => {
-                    void handleCreatePromotion()
+                    void handleCreatePromotion();
                   }}
                   disabled={busyByKey["create-promotion"]}
                 >
@@ -416,13 +479,17 @@ export function RosterAdminScreen() {
               </div>
 
               {isLoadingPromotions ? (
-                <p className="text-sm text-muted-foreground">Loading promotions...</p>
+                <p className="text-sm text-muted-foreground">
+                  Loading promotions...
+                </p>
               ) : promotions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No promotions yet.</p>
+                <p className="text-sm text-muted-foreground">
+                  No promotions yet.
+                </p>
               ) : (
                 promotions.map((promotion) => {
-                  const saveKey = `save-promotion-${promotion.id}`
-                  const deleteKey = `delete-promotion-${promotion.id}`
+                  const saveKey = `save-promotion-${promotion.id}`;
+                  const deleteKey = `delete-promotion-${promotion.id}`;
                   return (
                     <div
                       key={promotion.id}
@@ -435,7 +502,9 @@ export function RosterAdminScreen() {
                       <div className="space-y-1.5">
                         <Label>Name</Label>
                         <Input
-                          value={promotionNameDrafts[promotion.id] ?? promotion.name}
+                          value={
+                            promotionNameDrafts[promotion.id] ?? promotion.name
+                          }
                           onChange={(event) =>
                             setPromotionNameDrafts((prev) => ({
                               ...prev,
@@ -447,7 +516,10 @@ export function RosterAdminScreen() {
                       <div className="space-y-1.5">
                         <Label>Aliases</Label>
                         <Input
-                          value={promotionAliasesDrafts[promotion.id] ?? aliasesToText(promotion.aliases)}
+                          value={
+                            promotionAliasesDrafts[promotion.id] ??
+                            aliasesToText(promotion.aliases)
+                          }
                           onChange={(event) =>
                             setPromotionAliasesDrafts((prev) => ({
                               ...prev,
@@ -457,14 +529,20 @@ export function RosterAdminScreen() {
                         />
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => setSelectedPromotionId(promotion.id)}>
-                          {promotion.id === selectedPromotionId ? "Selected" : "Select"}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setSelectedPromotionId(promotion.id)}
+                        >
+                          {promotion.id === selectedPromotionId
+                            ? "Selected"
+                            : "Select"}
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => {
-                            void handleSavePromotion(promotion)
+                            void handleSavePromotion(promotion);
                           }}
                           disabled={busyByKey[saveKey]}
                         >
@@ -476,7 +554,7 @@ export function RosterAdminScreen() {
                           variant="ghost"
                           className="text-destructive hover:text-destructive"
                           onClick={() => {
-                            void handleDeletePromotion(promotion.id)
+                            void handleDeletePromotion(promotion.id);
                           }}
                           disabled={busyByKey[deleteKey]}
                         >
@@ -485,7 +563,7 @@ export function RosterAdminScreen() {
                         </Button>
                       </div>
                     </div>
-                  )
+                  );
                 })
               )}
             </CardContent>
@@ -510,13 +588,14 @@ export function RosterAdminScreen() {
                   {isWwePromotion(selectedPromotion) ? (
                     <div className="rounded-md border border-border/70 bg-background/40 p-3">
                       <p className="text-sm text-muted-foreground">
-                        Pull names from the WWE talent feed to bootstrap this roster.
+                        Pull names from the WWE talent feed to bootstrap this
+                        roster.
                       </p>
                       <Button
                         className="mt-3"
                         variant="secondary"
                         onClick={() => {
-                          void handleSyncWweRoster()
+                          void handleSyncWweRoster();
                         }}
                         disabled={busyByKey[`sync-wwe-${selectedPromotion.id}`]}
                       >
@@ -530,7 +609,9 @@ export function RosterAdminScreen() {
                       <Label>New Roster Member</Label>
                       <Input
                         value={newMemberName}
-                        onChange={(event) => setNewMemberName(event.target.value)}
+                        onChange={(event) =>
+                          setNewMemberName(event.target.value)
+                        }
                         placeholder="e.g. Randy Orton"
                       />
                     </div>
@@ -538,15 +619,19 @@ export function RosterAdminScreen() {
                       <Label>Aliases (comma separated)</Label>
                       <Input
                         value={newMemberAliases}
-                        onChange={(event) => setNewMemberAliases(event.target.value)}
+                        onChange={(event) =>
+                          setNewMemberAliases(event.target.value)
+                        }
                         placeholder="e.g. The Viper"
                       />
                     </div>
                     <Button
                       onClick={() => {
-                        void handleCreateMember()
+                        void handleCreateMember();
                       }}
-                      disabled={busyByKey[`create-member-${selectedPromotion.id}`]}
+                      disabled={
+                        busyByKey[`create-member-${selectedPromotion.id}`]
+                      }
                     >
                       <Plus className="h-4 w-4 mr-1" />
                       Add Member
@@ -554,21 +639,29 @@ export function RosterAdminScreen() {
                   </div>
 
                   {isLoadingMembers ? (
-                    <p className="text-sm text-muted-foreground">Loading roster...</p>
+                    <p className="text-sm text-muted-foreground">
+                      Loading roster...
+                    </p>
                   ) : members.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       No roster members for this promotion yet.
                     </p>
                   ) : (
                     members.map((member) => {
-                      const saveKey = `save-member-${member.id}`
-                      const deleteKey = `delete-member-${member.id}`
+                      const saveKey = `save-member-${member.id}`;
+                      const deleteKey = `delete-member-${member.id}`;
                       return (
-                        <div key={member.id} className="rounded-md border border-border/70 bg-background/30 p-3 space-y-3">
+                        <div
+                          key={member.id}
+                          className="rounded-md border border-border/70 bg-background/30 p-3 space-y-3"
+                        >
                           <div className="space-y-1.5">
                             <Label>Name</Label>
                             <Input
-                              value={memberNameDrafts[member.id] ?? member.displayName}
+                              value={
+                                memberNameDrafts[member.id] ??
+                                member.displayName
+                              }
                               onChange={(event) =>
                                 setMemberNameDrafts((prev) => ({
                                   ...prev,
@@ -580,7 +673,10 @@ export function RosterAdminScreen() {
                           <div className="space-y-1.5">
                             <Label>Aliases</Label>
                             <Input
-                              value={memberAliasesDrafts[member.id] ?? aliasesToText(member.aliases)}
+                              value={
+                                memberAliasesDrafts[member.id] ??
+                                aliasesToText(member.aliases)
+                              }
                               onChange={(event) =>
                                 setMemberAliasesDrafts((prev) => ({
                                   ...prev,
@@ -594,7 +690,7 @@ export function RosterAdminScreen() {
                               size="sm"
                               variant="outline"
                               onClick={() => {
-                                void handleSaveMember(member)
+                                void handleSaveMember(member);
                               }}
                               disabled={busyByKey[saveKey]}
                             >
@@ -606,7 +702,7 @@ export function RosterAdminScreen() {
                               variant="ghost"
                               className="text-destructive hover:text-destructive"
                               onClick={() => {
-                                void handleDeleteMember(member)
+                                void handleDeleteMember(member);
                               }}
                               disabled={busyByKey[deleteKey]}
                             >
@@ -615,7 +711,7 @@ export function RosterAdminScreen() {
                             </Button>
                           </div>
                         </div>
-                      )
+                      );
                     })
                   )}
                 </>
@@ -625,5 +721,5 @@ export function RosterAdminScreen() {
         </div>
       </div>
     </div>
-  )
+  );
 }

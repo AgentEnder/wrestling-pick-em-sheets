@@ -1,19 +1,47 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
-import { SignInButton, SignedIn, SignedOut, UserButton, useAuth, useUser } from "@/lib/client/clerk-test-mode"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { AppNavbar } from "@/components/pick-em/app-navbar"
-import { createCard, createCardFromTemplate, listCards, type CardSummary } from "@/lib/client/cards-api"
-import type { PickEmSheet } from "@/lib/types"
-import { ArrowRight, CalendarDays, FolderOpen, Plus, RefreshCcw, Sparkles, Swords, Users } from "lucide-react"
-import { toast } from "sonner"
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  SignInButton,
+  SignedIn,
+  SignedOut,
+  UserButton,
+  useAuth,
+  useUser,
+} from "@/lib/client/clerk-test-mode";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { AppNavbar } from "@/components/pick-em/app-navbar";
+import {
+  createCard,
+  createCardFromTemplate,
+  listCards,
+  type CardSummary,
+} from "@/lib/client/cards-api";
+import type { PickEmSheet } from "@/lib/types";
+import {
+  ArrowRight,
+  CalendarDays,
+  FolderOpen,
+  Plus,
+  RefreshCcw,
+  Sparkles,
+  Swords,
+  Users,
+} from "lucide-react";
+import { toast } from "sonner";
 
-const ADMIN_EMAIL = "craigorycoppola@gmail.com"
-const LOCAL_DRAFT_STORAGE_KEY = "pick-em-editor-draft-v2"
+const ADMIN_EMAIL = "craigorycoppola@gmail.com";
+const LOCAL_DRAFT_STORAGE_KEY = "pick-em-editor-draft-v2";
 
 const INITIAL_LOCAL_SHEET: PickEmSheet = {
   eventName: "",
@@ -25,24 +53,28 @@ const INITIAL_LOCAL_SHEET: PickEmSheet = {
   tiebreakerIsTimeBased: true,
   matches: [],
   eventBonusQuestions: [],
-}
+};
 
 interface LocalDraftState {
-  draftsByCardId: Record<string, PickEmSheet>
-  dirtyByCardId: Record<string, boolean>
+  draftsByCardId: Record<string, PickEmSheet>;
+  dirtyByCardId: Record<string, boolean>;
 }
 
 function addLocalDraftCard(cardId: string, sheet: PickEmSheet) {
   try {
-    const raw = localStorage.getItem(LOCAL_DRAFT_STORAGE_KEY)
-    const parsed = raw ? (JSON.parse(raw) as Partial<LocalDraftState>) : {}
+    const raw = localStorage.getItem(LOCAL_DRAFT_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Partial<LocalDraftState>) : {};
     const draftsByCardId =
-      parsed.draftsByCardId && typeof parsed.draftsByCardId === "object" ? parsed.draftsByCardId : {}
+      parsed.draftsByCardId && typeof parsed.draftsByCardId === "object"
+        ? parsed.draftsByCardId
+        : {};
     const dirtyByCardId =
-      parsed.dirtyByCardId && typeof parsed.dirtyByCardId === "object" ? parsed.dirtyByCardId : {}
+      parsed.dirtyByCardId && typeof parsed.dirtyByCardId === "object"
+        ? parsed.dirtyByCardId
+        : {};
 
-    draftsByCardId[cardId] = sheet
-    dirtyByCardId[cardId] = false
+    draftsByCardId[cardId] = sheet;
+    dirtyByCardId[cardId] = false;
 
     localStorage.setItem(
       LOCAL_DRAFT_STORAGE_KEY,
@@ -50,7 +82,7 @@ function addLocalDraftCard(cardId: string, sheet: PickEmSheet) {
         draftsByCardId,
         dirtyByCardId,
       } satisfies LocalDraftState),
-    )
+    );
   } catch {
     localStorage.setItem(
       LOCAL_DRAFT_STORAGE_KEY,
@@ -62,117 +94,134 @@ function addLocalDraftCard(cardId: string, sheet: PickEmSheet) {
           [cardId]: false,
         },
       } satisfies LocalDraftState),
-    )
+    );
   }
 }
 
 function formatDate(value: string): string {
-  if (!value) return "Unknown update time"
+  if (!value) return "Unknown update time";
 
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return "Unknown update time"
-  return parsed.toLocaleString()
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Unknown update time";
+  return parsed.toLocaleString();
 }
 
 function toTimestamp(value: string): number {
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return 0
-  return parsed.getTime()
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 0;
+  return parsed.getTime();
 }
 
 export function CardsWorkspace() {
-  const router = useRouter()
-  const { userId, isLoaded: isAuthLoaded } = useAuth()
-  const { user } = useUser()
-  const [cards, setCards] = useState<CardSummary[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [isCreatingCard, setIsCreatingCard] = useState(false)
-  const [isUsingTemplateId, setIsUsingTemplateId] = useState<string | null>(null)
+  const router = useRouter();
+  const { userId, isLoaded: isAuthLoaded } = useAuth();
+  const { user } = useUser();
+  const [cards, setCards] = useState<CardSummary[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCreatingCard, setIsCreatingCard] = useState(false);
+  const [isUsingTemplateId, setIsUsingTemplateId] = useState<string | null>(
+    null,
+  );
 
   const ownedCards = useMemo(
     () => cards.filter((card) => Boolean(card.ownerId) && !card.isTemplate),
     [cards],
-  )
+  );
 
   const publicTemplates = useMemo(
     () => cards.filter((card) => card.isTemplate && card.isPublic),
     [cards],
-  )
+  );
   const recentOwnedCards = useMemo(
-    () => [...ownedCards].sort((left, right) => toTimestamp(right.updatedAt) - toTimestamp(left.updatedAt)),
+    () =>
+      [...ownedCards].sort(
+        (left, right) =>
+          toTimestamp(right.updatedAt) - toTimestamp(left.updatedAt),
+      ),
     [ownedCards],
-  )
+  );
   const recentTemplates = useMemo(
     () =>
       [...publicTemplates]
-        .sort((left, right) => toTimestamp(right.updatedAt) - toTimestamp(left.updatedAt))
+        .sort(
+          (left, right) =>
+            toTimestamp(right.updatedAt) - toTimestamp(left.updatedAt),
+        )
         .slice(0, 6),
     [publicTemplates],
-  )
+  );
   const isAdminUser = useMemo(() => {
-    const emailAddresses = Array.isArray(user?.emailAddresses) ? user.emailAddresses : []
+    const emailAddresses = Array.isArray(user?.emailAddresses)
+      ? user.emailAddresses
+      : [];
     const primary =
-      emailAddresses.find((email) => email.id === user?.primaryEmailAddressId) ??
-      emailAddresses[0]
+      emailAddresses.find(
+        (email) => email.id === user?.primaryEmailAddressId,
+      ) ?? emailAddresses[0];
 
-    const email = primary?.emailAddress?.trim().toLowerCase()
-    return email === ADMIN_EMAIL
-  }, [user])
+    const email = primary?.emailAddress?.trim().toLowerCase();
+    return email === ADMIN_EMAIL;
+  }, [user]);
 
   const loadCards = useCallback(async () => {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      const data = await listCards()
-      setCards(data)
+      const data = await listCards();
+      setCards(data);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load cards"
-      toast.error(message)
+      const message =
+        error instanceof Error ? error.message : "Failed to load cards";
+      toast.error(message);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    void loadCards()
-  }, [loadCards])
+    void loadCards();
+  }, [loadCards]);
 
   async function handleCreateCard() {
-    setIsCreatingCard(true)
+    setIsCreatingCard(true);
     try {
       if (userId) {
         const created = await createCard({
           name: "Untitled card",
-        })
-        router.push(`/cards/${created.id}`)
-        return
+        });
+        router.push(`/cards/${created.id}`);
+        return;
       }
 
-      const localCardId = `local-${crypto.randomUUID()}`
-      addLocalDraftCard(localCardId, INITIAL_LOCAL_SHEET)
-      router.push(`/cards/${localCardId}`)
+      const localCardId = `local-${crypto.randomUUID()}`;
+      addLocalDraftCard(localCardId, INITIAL_LOCAL_SHEET);
+      router.push(`/cards/${localCardId}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create card"
-      toast.error(message)
+      const message =
+        error instanceof Error ? error.message : "Failed to create card";
+      toast.error(message);
     } finally {
-      setIsCreatingCard(false)
+      setIsCreatingCard(false);
     }
   }
 
   async function handleUseTemplate(templateCardId: string) {
     if (!userId) {
-      toast.error("Sign in to create a card from a template")
-      return
+      toast.error("Sign in to create a card from a template");
+      return;
     }
 
-    setIsUsingTemplateId(templateCardId)
+    setIsUsingTemplateId(templateCardId);
     try {
-      const created = await createCardFromTemplate(templateCardId)
-      router.push(`/cards/${created.id}`)
+      const created = await createCardFromTemplate(templateCardId);
+      router.push(`/cards/${created.id}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create card from template"
-      toast.error(message)
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to create card from template";
+      toast.error(message);
     } finally {
-      setIsUsingTemplateId(null)
+      setIsUsingTemplateId(null);
     }
   }
 
@@ -181,7 +230,10 @@ export function CardsWorkspace() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(230,170,60,0.20),transparent_35%),radial-gradient(circle_at_90%_20%,rgba(130,160,255,0.12),transparent_35%),linear-gradient(to_bottom,rgba(255,255,255,0.02),transparent_35%)]" />
       <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <Link href="/" className="flex items-center gap-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Link
+            href="/"
+            className="flex items-center gap-3 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-[0_0_0_1px_rgba(0,0,0,0.25)]">
               <Swords className="h-4 w-4 text-primary-foreground" />
             </div>
@@ -197,7 +249,12 @@ export function CardsWorkspace() {
 
           <div className="flex flex-wrap items-center justify-end gap-2">
             <AppNavbar isAdminUser={isAdminUser} />
-            <Button variant="outline" size="sm" onClick={() => void loadCards()} disabled={isLoading}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void loadCards()}
+              disabled={isLoading}
+            >
               <RefreshCcw className="h-4 w-4 mr-1" />
               Refresh
             </Button>
@@ -222,13 +279,14 @@ export function CardsWorkspace() {
               <div>
                 <CardTitle className="text-xl">Start Here</CardTitle>
                 <CardDescription className="mt-1">
-                  Jump back into editing, join a live room, or spin up a new card.
+                  Jump back into editing, join a live room, or spin up a new
+                  card.
                 </CardDescription>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
                   onClick={() => {
-                    void handleCreateCard()
+                    void handleCreateCard();
                   }}
                   disabled={isCreatingCard}
                 >
@@ -258,7 +316,9 @@ export function CardsWorkspace() {
               </div>
               <div className="rounded-md border border-border/70 bg-background/40 px-3 py-2">
                 <p className="text-xs text-muted-foreground">Templates</p>
-                <p className="text-lg font-semibold">{publicTemplates.length}</p>
+                <p className="text-lg font-semibold">
+                  {publicTemplates.length}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -272,7 +332,8 @@ export function CardsWorkspace() {
                 Continue Editing
               </CardTitle>
               <CardDescription>
-                {ownedCards.length} saved card{ownedCards.length === 1 ? "" : "s"}
+                {ownedCards.length} saved card
+                {ownedCards.length === 1 ? "" : "s"}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -288,7 +349,9 @@ export function CardsWorkspace() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">{card.name}</p>
+                        <p className="truncate font-medium text-foreground">
+                          {card.name}
+                        </p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           Updated {formatDate(card.updatedAt)}
                         </p>
@@ -331,7 +394,9 @@ export function CardsWorkspace() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">{template.name}</p>
+                        <p className="truncate font-medium text-foreground">
+                          {template.name}
+                        </p>
                         <p className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
                           <CalendarDays className="h-3 w-3" />
                           Updated {formatDate(template.updatedAt)}
@@ -340,12 +405,18 @@ export function CardsWorkspace() {
                       <Button
                         size="sm"
                         variant="secondary"
-                        disabled={!isAuthLoaded || !userId || isUsingTemplateId === template.id}
+                        disabled={
+                          !isAuthLoaded ||
+                          !userId ||
+                          isUsingTemplateId === template.id
+                        }
                         onClick={() => {
-                          void handleUseTemplate(template.id)
+                          void handleUseTemplate(template.id);
                         }}
                       >
-                        {isUsingTemplateId === template.id ? "Using..." : "Use Template"}
+                        {isUsingTemplateId === template.id
+                          ? "Using..."
+                          : "Use Template"}
                       </Button>
                     </div>
                   </div>
@@ -361,5 +432,5 @@ export function CardsWorkspace() {
         </section>
       </main>
     </div>
-  )
+  );
 }

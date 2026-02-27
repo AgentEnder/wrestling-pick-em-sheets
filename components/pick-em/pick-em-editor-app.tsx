@@ -159,7 +159,8 @@ function normalizeMatch(match: Match): Match {
   const isBattleRoyal =
     typeof raw.isBattleRoyal === "boolean"
       ? raw.isBattleRoyal
-      : (typeDefinition?.defaultRuleSetIds.includes("timed-entry") ?? raw.type === "battleRoyal");
+      : (typeDefinition?.defaultRuleSetIds.includes("timed-entry") ??
+        raw.type === "battleRoyal");
   const bonusQuestions = Array.isArray(raw.bonusQuestions)
     ? raw.bonusQuestions.map((question) => normalizeBonusQuestion(question))
     : [];
