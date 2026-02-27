@@ -178,7 +178,28 @@ export function MyGamesPage() {
 /* ── Stub sub-components (replaced in later tasks) ── */
 
 function StatsBar({ stats }: { stats: MyGamesStats }) {
-  return <div>Stats: {stats.gamesPlayed} games</div>;
+  const statItems = [
+    { label: "Games Played", value: String(stats.gamesPlayed) },
+    { label: "Avg Score", value: `${stats.avgScorePercentage.toFixed(1)}%` },
+    {
+      label: "Best Score",
+      value: `${stats.bestScorePercentage.toFixed(1)}%`,
+    },
+    { label: "Best Finish", value: stats.bestRank },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {statItems.map((item) => (
+        <Card key={item.label}>
+          <CardContent className="py-4 text-center">
+            <p className="text-2xl font-bold tabular-nums">{item.value}</p>
+            <p className="text-xs text-muted-foreground">{item.label}</p>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
 }
 
 function TrendChart({ data }: { data: MyGamesStats["trendData"] }) {
