@@ -2195,6 +2195,8 @@ export async function updateLiveGameKeyForHost(
     });
   }
 
+  await snapshotScores(gameId, card, mergedPayload);
+
   return mapLiveGame(updated);
 }
 
