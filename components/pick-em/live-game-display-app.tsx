@@ -41,6 +41,24 @@ const FULLSCREEN_LEADERBOARD_LIMIT = 8;
 const LEADERBOARD_SWAP_DURATION_MS = 1_000;
 const LEADERBOARD_FINAL_PAUSE_MS = 5_000;
 const UPDATE_VIBRATE_PATTERN = [150, 80, 150];
+const JOIN_OVERLAY_ENTRY_DURATION_MS = 5_000;
+
+const FULLSCREEN_HIDDEN_EVENT_TYPES = new Set([
+  "player.submitted",
+  "player.pending",
+  "player.denied",
+]);
+
+const JOIN_OVERLAY_EVENT_TYPES = new Set([
+  "player.joined",
+  "player.approved",
+]);
+
+interface JoinOverlayEntry {
+  id: string;
+  message: string;
+  addedAt: number;
+}
 
 type FullscreenEffect =
   | {
@@ -218,6 +236,9 @@ export function LiveGameDisplayApp({
   const fullscreenEffectTimeoutRef = useRef<number | null>(null);
   const leaderboardStepIntervalRef = useRef<number | null>(null);
   const wakeLockManagerRef = useRef<WakeLockManager | null>(null);
+  const [joinOverlayEntries, setJoinOverlayEntries] = useState<
+    JoinOverlayEntry[]
+  >([]);
 
   function queueFullscreenEffects(effects: FullscreenEffect[]) {
     if (effects.length === 0) return;
@@ -296,6 +317,24 @@ export function LiveGameDisplayApp({
   }, [activeFullscreenEffect]);
 
   useEffect(() => {
+    if (joinOverlayEntries.length === 0) return;
+    const nextExpiry = Math.min(
+      ...joinOverlayEntries.map(
+        (e) => e.addedAt + JOIN_OVERLAY_ENTRY_DURATION_MS,
+      ),
+    );
+    const delay = Math.max(0, nextExpiry - Date.now()) + 100;
+    const id = window.setTimeout(() => {
+      setJoinOverlayEntries((prev) =>
+        prev.filter(
+          (e) => e.addedAt + JOIN_OVERLAY_ENTRY_DURATION_MS > Date.now(),
+        ),
+      );
+    }, delay);
+    return () => window.clearTimeout(id);
+  }, [joinOverlayEntries]);
+
+  useEffect(() => {
     const intervalId = window.setInterval(() => {
       setNowTickMs(Date.now());
     }, 1_000);
@@ -353,15 +392,38 @@ export function LiveGameDisplayApp({
           const previousEventIds = new Set(
             previous.events.map((event) => event.id),
           );
-          const addedEvents = loaded.events.filter(
+          const allAddedEvents = loaded.events.filter(
             (event) => !previousEventIds.has(event.id),
           );
+          const joinAddedEvents = allAddedEvents.filter((event) =>
+            JOIN_OVERLAY_EVENT_TYPES.has(event.type),
+          );
+          const fullscreenAddedEvents = allAddedEvents.filter(
+            (event) =>
+              !JOIN_OVERLAY_EVENT_TYPES.has(event.type) &&
+              !FULLSCREEN_HIDDEN_EVENT_TYPES.has(event.type),
+          );
+
+          if (joinAddedEvents.length > 0) {
+            const now = Date.now();
+            setJoinOverlayEntries((prev) => [
+              ...prev.filter(
+                (e) =>
+                  e.addedAt + JOIN_OVERLAY_ENTRY_DURATION_MS > now,
+              ),
+              ...joinAddedEvents.map((event) => ({
+                id: event.id,
+                message: event.message,
+                addedAt: now,
+              })),
+            ]);
+          }
 
           const queuedFullscreenEffects: FullscreenEffect[] = [];
-          if (addedEvents.length > 0) {
+          if (fullscreenAddedEvents.length > 0) {
             queuedFullscreenEffects.push({
               kind: "events",
-              events: addedEvents.slice(0, 4),
+              events: fullscreenAddedEvents.slice(0, 4),
             });
             vibrateForeground(UPDATE_VIBRATE_PATTERN);
           }
@@ -661,6 +723,31 @@ export function LiveGameDisplayApp({
               </div>
             </div>
           )}
+        </div>
+      ) : null}
+      {joinOverlayEntries.length > 0 && !activeFullscreenEffect ? (
+        <div
+          className="lg-fullscreen-effect lg-fullscreen-effect-joins"
+          onClick={() => setJoinOverlayEntries([])}
+        >
+          <div className="lg-fullscreen-effect-panel lg-join-overlay-panel">
+            <div className="lg-fullscreen-effect-title">
+              <UserRound className="h-6 w-6" />
+              <span className="font-heading text-2xl uppercase tracking-wide">
+                Player Joined
+              </span>
+            </div>
+            <div className="lg-fullscreen-effect-body">
+              {joinOverlayEntries.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="lg-fullscreen-event-item lg-join-overlay-entry"
+                >
+                  <p className="text-base text-foreground">{entry.message}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       ) : null}
       <header className="mb-6 rounded-2xl border border-border/70 bg-card/90 p-5 shadow-xl shadow-black/25 backdrop-blur">

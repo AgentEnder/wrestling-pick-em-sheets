@@ -342,6 +342,43 @@
   }
 }
 
+.lg-fullscreen-effect-joins {
+  animation: none;
+  background: oklch(0.11 0.01 260 / 0.92);
+}
+
+.lg-fullscreen-effect-joins::before {
+  background:
+    radial-gradient(circle at 32% 44%, oklch(0.72 0.10 240 / 0.34), transparent 44%),
+    radial-gradient(circle at 70% 40%, oklch(0.78 0.10 190 / 0.26), transparent 42%);
+}
+
+.lg-join-overlay-panel {
+  animation: none;
+}
+
+.lg-join-overlay-entry {
+  animation: lgJoinEntryLifecycle 5000ms ease-out forwards;
+}
+
+@keyframes lgJoinEntryLifecycle {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lg-event-pop,
   .lg-rank-up,
@@ -363,7 +400,8 @@
   .lg-fullscreen-effect,
   .lg-fullscreen-effect-panel,
   .lg-fullscreen-event-item,
-  .lg-fullscreen-leaderboard-row {
+  .lg-fullscreen-leaderboard-row,
+  .lg-join-overlay-entry {
     animation: none;
   }
 }

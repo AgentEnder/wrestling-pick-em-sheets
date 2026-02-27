@@ -79,6 +79,14 @@ const LEADERBOARD_SWAP_DURATION_MS = 1_000;
 const LEADERBOARD_FINAL_PAUSE_MS = 5_000;
 const UPDATE_VIBRATE_PATTERN = [110, 60, 110];
 
+const PLAYER_FULLSCREEN_HIDDEN_EVENT_TYPES = new Set([
+  "player.submitted",
+  "player.pending",
+  "player.denied",
+  "player.joined",
+  "player.approved",
+]);
+
 function getPushPromptStorageKey(gameId: string, playerId: string): string {
   return `live-game-push-prompted:${gameId}:${playerId}`;
 }
@@ -386,7 +394,9 @@ export function LiveGamePlayerApp({
         previousState.events.map((event) => event.id),
       );
       const addedEvents = nextState.events.filter(
-        (event) => !previousEventIds.has(event.id),
+        (event) =>
+          !previousEventIds.has(event.id) &&
+          !PLAYER_FULLSCREEN_HIDDEN_EVENT_TYPES.has(event.type),
       );
       const leaderboardChanged = hasLeaderboardChanged(
         previousState,
