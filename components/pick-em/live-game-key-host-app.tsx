@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { updateCardOverrides } from "@/lib/client/cards-api";
+import { getConnectionStatus } from "@/lib/client/connection-status";
 import {
   getLiveGameKey,
   getLiveGameState,
@@ -24,9 +25,7 @@ import {
   updateLiveGameStatus,
   type LiveGameStateResponse,
 } from "@/lib/client/live-games-api";
-import { getConnectionStatus } from "@/lib/client/connection-status";
 import { computeFuzzyConfidence } from "@/lib/fuzzy-match";
-import { getRosterSuggestions } from "@/lib/client/roster-api";
 import type {
   LiveGame,
   LiveGameKeyPayload,
@@ -35,6 +34,21 @@ import type {
   LiveKeyMatchResult,
   LiveKeyTimer,
 } from "@/lib/types";
+import {
+  formatDuration,
+  getTimerElapsedMs,
+  nowIso,
+  nowMs,
+} from "@/lib/pick-em/timer-utils";
+import {
+  findMatchResult,
+  findAnswer,
+  toLockKey,
+  snapshotPayload,
+} from "@/lib/pick-em/payload-utils";
+import { normalizeText, filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import { useTimerClock } from "@/hooks/use-timer-clock";
+import { useRosterSuggestions } from "@/hooks/use-roster-suggestions";
 import {
   Pause,
   Play,
@@ -64,18 +78,6 @@ interface FuzzyCandidate {
   isAutoAccepted: boolean;
 }
 
-function normalizeText(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
-function nowMs(): number {
-  return Date.now();
-}
-
 function isoToDatetimeLocalInput(value: string | null): string {
   if (!value) return "";
   const date = new Date(value);
@@ -90,35 +92,6 @@ function datetimeLocalInputToIso(value: string): string | null {
   const date = new Date(trimmed);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
-}
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function getTimerElapsedMs(
-  timer: LiveKeyTimer,
-  referenceNowMs: number,
-): number {
-  if (!timer.isRunning || !timer.startedAt) {
-    return timer.elapsedMs;
-  }
-
-  const startedAtMs = new Date(timer.startedAt).getTime();
-  if (!Number.isFinite(startedAtMs)) {
-    return timer.elapsedMs;
-  }
-
-  return Math.max(0, timer.elapsedMs + (referenceNowMs - startedAtMs));
 }
 
 function parseValueForDisplay(value: string, valueType: string): number | null {
@@ -192,59 +165,6 @@ function ensureAllMatchTimers(
       ),
     payload,
   );
-}
-
-function findMatchResult(
-  payload: LiveGameKeyPayload,
-  matchId: string,
-): LiveKeyMatchResult | null {
-  return (
-    payload.matchResults.find((result) => result.matchId === matchId) ?? null
-  );
-}
-
-function findAnswer(
-  answers: LiveKeyAnswer[],
-  questionId: string,
-): LiveKeyAnswer | null {
-  return answers.find((answer) => answer.questionId === questionId) ?? null;
-}
-
-function toLockKey(matchId: string, questionId: string): string {
-  return `${matchId}:${questionId}`;
-}
-
-function filterRosterMemberSuggestions(
-  input: string,
-  candidates: string[],
-): string[] {
-  const normalizedInput = input.trim().toLowerCase();
-  if (!normalizedInput) return [];
-
-  const deduped: string[] = [];
-  const seen = new Set<string>();
-
-  for (const candidate of candidates) {
-    const trimmed = candidate.trim();
-    if (!trimmed) continue;
-
-    const normalizedCandidate = trimmed.toLowerCase();
-    if (!normalizedCandidate.includes(normalizedInput)) continue;
-    if (seen.has(normalizedCandidate)) continue;
-
-    seen.add(normalizedCandidate);
-    deduped.push(trimmed);
-
-    if (deduped.length >= 8) {
-      break;
-    }
-  }
-
-  return deduped;
-}
-
-function snapshotPayload(payload: LiveGameKeyPayload): string {
-  return JSON.stringify(payload);
 }
 
 function FuzzyReviewPanel({
@@ -358,20 +278,15 @@ export function LiveGameKeyHostApp({
   const [card, setCard] = useState<LiveGameStateResponse["card"] | null>(null);
   const [lockState, setLockState] = useState<LiveGameLockState | null>(null);
   const [state, setState] = useState<LiveGameStateResponse | null>(null);
-  const [clockMs, setClockMs] = useState(nowMs());
   const [isDirty, setIsDirty] = useState(false);
-  const [querySuggestions, setQuerySuggestions] = useState<string[]>([]);
-  const [isLoadingQuerySuggestions, setIsLoadingQuerySuggestions] =
-    useState(false);
-  const [activeRosterFieldKey, setActiveRosterFieldKey] = useState<
-    string | null
-  >(null);
-  const [activeRosterQuery, setActiveRosterQuery] = useState("");
   const [battleRoyalEntryInputByMatchId, setBattleRoyalEntryInputByMatchId] =
     useState<Record<string, string>>({});
   const [eventStartInput, setEventStartInput] = useState("");
   const [lastRefreshAtMs, setLastRefreshAtMs] = useState<number | null>(null);
   const [nowTickMs, setNowTickMs] = useState(nowMs());
+
+  const clockMs = useTimerClock(300, true);
+  const roster = useRosterSuggestions({ promotionName: card?.promotionName });
 
   const hasInitializedRef = useRef(false);
   const payloadRef = useRef<LiveGameKeyPayload | null>(null);
@@ -415,14 +330,6 @@ export function LiveGameKeyHostApp({
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      setClockMs(nowMs());
-    }, 300);
-
-    return () => window.clearInterval(intervalId);
-  }, []);
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
       setNowTickMs(nowMs());
     }, 1_000);
 
@@ -461,44 +368,6 @@ export function LiveGameKeyHostApp({
   useEffect(() => {
     setEventStartInput(isoToDatetimeLocalInput(card?.eventDate ?? null));
   }, [card?.eventDate]);
-
-  useEffect(() => {
-    const promotionName = card?.promotionName?.trim() ?? "";
-    const query = activeRosterQuery.trim();
-    if (!promotionName || query.length < 2) {
-      setQuerySuggestions([]);
-      setIsLoadingQuerySuggestions(false);
-      return;
-    }
-
-    let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
-      setIsLoadingQuerySuggestions(true);
-      void getRosterSuggestions(promotionName, query)
-        .then((response) => {
-          if (cancelled) return;
-          setQuerySuggestions(response.names);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setQuerySuggestions([]);
-        })
-        .finally(() => {
-          if (cancelled) return;
-          setIsLoadingQuerySuggestions(false);
-        });
-    }, 220);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
-  }, [activeRosterQuery, card?.promotionName]);
-
-  function setActiveRosterInput(fieldKey: string, value: string) {
-    setActiveRosterFieldKey(fieldKey);
-    setActiveRosterQuery(value);
-  }
 
   useEffect(() => {
     if (
@@ -599,8 +468,7 @@ export function LiveGameKeyHostApp({
     });
 
     setBattleRoyalEntryInputByMatchId((prev) => ({ ...prev, [matchId]: "" }));
-    setActiveRosterFieldKey(`battleRoyal:${matchId}`);
-    setActiveRosterQuery("");
+    roster.clearSuggestions();
   }
 
   function removeBattleRoyalEntrant(matchId: string, entrantIndex: number) {
@@ -1535,7 +1403,7 @@ export function LiveGameKeyHostApp({
           .trim()
           .toLowerCase();
         const battleRoyalSuggestions =
-          activeRosterFieldKey === battleRoyalFieldKey ? querySuggestions : [];
+          roster.activeFieldKey === battleRoyalFieldKey ? roster.suggestions : [];
         const battleRoyalCandidates = match.isBattleRoyal
           ? Array.from(
               new Set([...match.participants, ...battleRoyalSuggestions]),
@@ -1665,13 +1533,13 @@ export function LiveGameKeyHostApp({
                             ...prev,
                             [match.id]: event.target.value,
                           }));
-                          setActiveRosterInput(
+                          roster.setActiveInput(
                             battleRoyalFieldKey,
                             event.target.value,
                           );
                         }}
                         onFocus={() =>
-                          setActiveRosterInput(
+                          roster.setActiveInput(
                             battleRoyalFieldKey,
                             battleRoyalEntryInput,
                           )
@@ -1697,13 +1565,13 @@ export function LiveGameKeyHostApp({
                         Add Entrant
                       </Button>
                     </div>
-                    {(activeRosterFieldKey === battleRoyalFieldKey &&
-                      isLoadingQuerySuggestions) ||
+                    {(roster.activeFieldKey === battleRoyalFieldKey &&
+                      roster.isLoading) ||
                     filteredBattleRoyalSuggestions.length > 0 ? (
                       <div className="rounded-md border border-border/70 bg-background/35 px-3 py-2">
                         <p className="text-[11px] text-muted-foreground">
-                          {activeRosterFieldKey === battleRoyalFieldKey &&
-                          isLoadingQuerySuggestions
+                          {roster.activeFieldKey === battleRoyalFieldKey &&
+                          roster.isLoading
                             ? "Loading roster suggestions..."
                             : "Autocomplete from promotion roster"}
                         </p>
@@ -1806,8 +1674,8 @@ export function LiveGameKeyHostApp({
                     question.valueType === "rosterMember";
                   const rosterFieldKey = `matchBonus:${match.id}:${question.id}`;
                   const rosterQuerySuggestions =
-                    activeRosterFieldKey === rosterFieldKey
-                      ? querySuggestions
+                    roster.activeFieldKey === rosterFieldKey
+                      ? roster.suggestions
                       : [];
                   const filteredRosterSuggestions = isRosterMemberType
                     ? filterRosterMemberSuggestions(
@@ -1847,13 +1715,13 @@ export function LiveGameKeyHostApp({
                             question.id,
                             event.target.value,
                           );
-                          setActiveRosterInput(
+                          roster.setActiveInput(
                             rosterFieldKey,
                             event.target.value,
                           );
                         }}
                         onFocus={() =>
-                          setActiveRosterInput(
+                          roster.setActiveInput(
                             rosterFieldKey,
                             answer?.answer ?? "",
                           )
@@ -1887,13 +1755,13 @@ export function LiveGameKeyHostApp({
                         </p>
                       ) : null}
                       {isRosterMemberType &&
-                      ((activeRosterFieldKey === rosterFieldKey &&
-                        isLoadingQuerySuggestions) ||
+                      ((roster.activeFieldKey === rosterFieldKey &&
+                        roster.isLoading) ||
                         filteredRosterSuggestions.length > 0) ? (
                         <div className="mt-2 rounded-md border border-border/70 bg-background/35 px-3 py-2">
                           <p className="text-[11px] text-muted-foreground">
-                            {activeRosterFieldKey === rosterFieldKey &&
-                            isLoadingQuerySuggestions
+                            {roster.activeFieldKey === rosterFieldKey &&
+                            roster.isLoading
                               ? "Loading roster suggestions..."
                               : "Autocomplete from promotion roster"}
                           </p>
@@ -1991,7 +1859,7 @@ export function LiveGameKeyHostApp({
               const isRosterMemberType = question.valueType === "rosterMember";
               const rosterFieldKey = `eventBonus:${question.id}`;
               const rosterQuerySuggestions =
-                activeRosterFieldKey === rosterFieldKey ? querySuggestions : [];
+                roster.activeFieldKey === rosterFieldKey ? roster.suggestions : [];
               const filteredRosterSuggestions = isRosterMemberType
                 ? filterRosterMemberSuggestions(
                     answer?.answer ?? "",
@@ -2024,10 +1892,10 @@ export function LiveGameKeyHostApp({
                     value={answer?.answer ?? ""}
                     onChange={(event) => {
                       setEventBonusAnswer(question.id, event.target.value);
-                      setActiveRosterInput(rosterFieldKey, event.target.value);
+                      roster.setActiveInput(rosterFieldKey, event.target.value);
                     }}
                     onFocus={() =>
-                      setActiveRosterInput(rosterFieldKey, answer?.answer ?? "")
+                      roster.setActiveInput(rosterFieldKey, answer?.answer ?? "")
                     }
                     placeholder={
                       isRosterMemberType
@@ -2056,13 +1924,13 @@ export function LiveGameKeyHostApp({
                     </p>
                   ) : null}
                   {isRosterMemberType &&
-                  ((activeRosterFieldKey === rosterFieldKey &&
-                    isLoadingQuerySuggestions) ||
+                  ((roster.activeFieldKey === rosterFieldKey &&
+                    roster.isLoading) ||
                     filteredRosterSuggestions.length > 0) ? (
                     <div className="mt-2 rounded-md border border-border/70 bg-background/35 px-3 py-2">
                       <p className="text-[11px] text-muted-foreground">
-                        {activeRosterFieldKey === rosterFieldKey &&
-                        isLoadingQuerySuggestions
+                        {roster.activeFieldKey === rosterFieldKey &&
+                        roster.isLoading
                           ? "Loading roster suggestions..."
                           : "Autocomplete from promotion roster"}
                       </p>
