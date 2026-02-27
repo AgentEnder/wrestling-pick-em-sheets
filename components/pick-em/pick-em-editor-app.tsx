@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
+import { Timer } from "lucide-react";
 import { EditorView } from "@/components/pick-em/editor-view";
 import { PageHeader } from "@/components/pick-em/page-header";
 import { PreviewView } from "@/components/pick-em/preview-view";
 import { PrintSheet } from "@/components/print-sheet";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   getCard,
@@ -818,7 +821,6 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
         }}
         isSaving={isSavingSheet || isAutoSavingSheet}
         canSave={isAuthLoaded && Boolean(userId)}
-        liveHref={`/cards/${cardId}/live`}
       />
 
       <input
@@ -833,21 +835,29 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
         <section className="rounded-2xl border border-border/70 bg-card/65 p-4 shadow-[0_24px_50px_rgba(0,0,0,0.28)] backdrop-blur lg:p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <TabsList className="bg-secondary/80">
-                <TabsTrigger
-                  value="editor"
-                  className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                >
-                  Editor
-                </TabsTrigger>
-                <TabsTrigger
-                  value="preview"
-                  disabled={!hasMatches}
-                  className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                >
-                  Print Preview
-                </TabsTrigger>
-              </TabsList>
+              <div className="flex items-center gap-2">
+                <TabsList className="bg-secondary/80">
+                  <TabsTrigger
+                    value="editor"
+                    className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                  >
+                    Editor
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="preview"
+                    disabled={!hasMatches}
+                    className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                  >
+                    Print Preview
+                  </TabsTrigger>
+                </TabsList>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/cards/${cardId}/live`}>
+                    <Timer className="h-4 w-4 mr-1" />
+                    Live Game
+                  </Link>
+                </Button>
+              </div>
               <div className="w-full rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-xs text-muted-foreground sm:w-auto sm:max-w-[28rem]">
                 <p>
                   {isSyncingOverrides

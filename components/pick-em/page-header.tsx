@@ -22,7 +22,6 @@ import {
   RotateCcw,
   Save,
   Swords,
-  Timer,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
@@ -39,7 +38,6 @@ interface PageHeaderProps {
   canSave: boolean;
   backHref?: string;
   backLabel?: string;
-  liveHref?: string;
 }
 
 export function PageHeader({
@@ -54,7 +52,6 @@ export function PageHeader({
   canSave,
   backHref,
   backLabel = "Back",
-  liveHref,
 }: PageHeaderProps) {
   return (
     <header className="no-print sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
@@ -83,14 +80,6 @@ export function PageHeader({
               <Link href={backHref}>
                 <ChevronLeft className="h-4 w-4 mr-1" />
                 {backLabel}
-              </Link>
-            </Button>
-          ) : null}
-          {liveHref ? (
-            <Button asChild size="sm" variant="outline">
-              <Link href={liveHref}>
-                <Timer className="h-4 w-4 mr-1" />
-                Live Game
               </Link>
             </Button>
           ) : null}
