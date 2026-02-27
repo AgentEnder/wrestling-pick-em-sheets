@@ -12,10 +12,10 @@ export function findMatchResult(
   return payload.matchResults.find((result) => result.matchId === matchId);
 }
 
-export function findAnswer(
-  answers: { questionId: string; answer: string }[],
+export function findAnswer<T extends { questionId: string; answer: string }>(
+  answers: T[],
   questionId: string,
-): (typeof answers)[number] | undefined {
+): T | undefined {
   return answers.find((answer) => answer.questionId === questionId);
 }
 

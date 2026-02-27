@@ -26,6 +26,31 @@ import type {
   PickEmSheet,
 } from "@/lib/types";
 import {
+  formatDuration,
+  getTimerElapsedMs,
+  nowIso,
+  nowMs,
+  toMatchTimerId,
+  toMatchBonusTimerId,
+  toEventBonusTimerId,
+  isMatchTimerId,
+  isMatchBonusTimerId,
+  isEventBonusTimerId,
+  isSystemTimerId,
+} from "@/lib/pick-em/timer-utils";
+import {
+  findMatchResult,
+  findAnswer,
+  snapshotPayload,
+  updateMatchWinner as updateMatchWinnerPayload,
+  setBattleRoyalEntryOrder as setBattleRoyalEntryOrderPayload,
+  updateMatchBonusAnswer as updateMatchBonusAnswerPayload,
+  updateEventBonusAnswer as updateEventBonusAnswerPayload,
+} from "@/lib/pick-em/payload-utils";
+import { filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import { useTimerClock } from "@/hooks/use-timer-clock";
+import { useRosterSuggestions } from "@/hooks/use-roster-suggestions";
+import {
   ArrowLeft,
   Pause,
   Play,
@@ -346,53 +371,12 @@ function formatTimestamp(value: string | null): string {
   return parsed.toLocaleString();
 }
 
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
-function nowMs(): number {
-  return Date.now();
-}
-
-function snapshotPayload(payload: CardLiveKeyPayload): string {
-  return JSON.stringify(payload);
-}
-
 function parseCountAnswer(answer: string | null | undefined): number {
   if (!answer) return 0;
 
   const parsed = Number.parseInt(answer, 10);
   if (Number.isNaN(parsed)) return 0;
   return Math.max(0, parsed);
-}
-
-function filterRosterMemberSuggestions(
-  input: string,
-  candidates: string[],
-): string[] {
-  const normalizedInput = input.trim().toLowerCase();
-  if (!normalizedInput) return [];
-
-  const deduped: string[] = [];
-  const seen = new Set<string>();
-
-  for (const candidate of candidates) {
-    const trimmed = candidate.trim();
-    if (!trimmed) continue;
-
-    const normalizedCandidate = trimmed.toLowerCase();
-    if (!normalizedCandidate.includes(normalizedInput)) continue;
-    if (seen.has(normalizedCandidate)) continue;
-
-    seen.add(normalizedCandidate);
-    deduped.push(trimmed);
-
-    if (deduped.length >= 8) {
-      break;
-    }
-  }
-
-  return deduped;
 }
 
 function getQuestionValueType(question: {
@@ -414,78 +398,6 @@ function getQuestionValueType(question: {
 
 function getMatchParticipants(match: Match): string[] {
   return match.participants;
-}
-
-function findMatchResult(
-  payload: CardLiveKeyPayload,
-  matchId: string,
-): LiveKeyMatchResult | undefined {
-  return payload.matchResults.find((result) => result.matchId === matchId);
-}
-
-function findAnswer(
-  answers: LiveKeyAnswer[],
-  questionId: string,
-): LiveKeyAnswer | undefined {
-  return answers.find((answer) => answer.questionId === questionId);
-}
-
-function toMatchTimerId(matchId: string): string {
-  return `${MATCH_TIMER_PREFIX}${matchId}`;
-}
-
-function toMatchBonusTimerId(matchId: string, questionId: string): string {
-  return `${MATCH_BONUS_TIMER_PREFIX}${matchId}:${questionId}`;
-}
-
-function toEventBonusTimerId(questionId: string): string {
-  return `${EVENT_BONUS_TIMER_PREFIX}${questionId}`;
-}
-
-function isMatchTimerId(timerId: string): boolean {
-  return timerId.startsWith(MATCH_TIMER_PREFIX);
-}
-
-function isMatchBonusTimerId(timerId: string): boolean {
-  return timerId.startsWith(MATCH_BONUS_TIMER_PREFIX);
-}
-
-function isEventBonusTimerId(timerId: string): boolean {
-  return timerId.startsWith(EVENT_BONUS_TIMER_PREFIX);
-}
-
-function isSystemTimerId(timerId: string): boolean {
-  return (
-    isMatchTimerId(timerId) ||
-    isMatchBonusTimerId(timerId) ||
-    isEventBonusTimerId(timerId)
-  );
-}
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function getTimerElapsedMs(timer: LiveKeyTimer, currentMs: number): number {
-  if (!timer.isRunning || !timer.startedAt) {
-    return timer.elapsedMs;
-  }
-
-  const startedAtMs = new Date(timer.startedAt).getTime();
-  if (!Number.isFinite(startedAtMs)) {
-    return timer.elapsedMs;
-  }
-
-  return timer.elapsedMs + Math.max(0, currentMs - startedAtMs);
 }
 
 function buildMatchTimerLabel(match: Match, index: number): string {
@@ -613,7 +525,6 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [currentTimeMs, setCurrentTimeMs] = useState(() => nowMs());
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator === "undefined" ? true : navigator.onLine,
   );
@@ -622,15 +533,15 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [usingEditorDraft, setUsingEditorDraft] = useState(false);
-  const [querySuggestions, setQuerySuggestions] = useState<string[]>([]);
-  const [isLoadingQuerySuggestions, setIsLoadingQuerySuggestions] =
-    useState(false);
-  const [activeRosterFieldKey, setActiveRosterFieldKey] = useState<
-    string | null
-  >(null);
-  const [activeRosterQuery, setActiveRosterQuery] = useState("");
   const [battleRoyalEntryInputByMatchId, setBattleRoyalEntryInputByMatchId] =
     useState<Record<string, string>>({});
+
+  const roster = useRosterSuggestions({ promotionName: card?.promotionName });
+  const hasRunningTimers = useMemo(
+    () => payload.timers.some((timer) => timer.isRunning),
+    [payload.timers],
+  );
+  const currentTimeMs = useTimerClock(300, hasRunningTimers);
 
   const suppressDirtyRef = useRef(false);
   const lastSyncedSnapshotRef = useRef<string>(snapshotPayload(EMPTY_PAYLOAD));
@@ -788,59 +699,6 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
       ensureSystemTimers(payload, card.matches, card.eventBonusQuestions),
     );
   }, [card, applySystemPayload]);
-
-  useEffect(() => {
-    const promotionName = card?.promotionName?.trim() ?? "";
-    const query = activeRosterQuery.trim();
-    if (!promotionName || query.length < 2) {
-      setQuerySuggestions([]);
-      setIsLoadingQuerySuggestions(false);
-      return;
-    }
-
-    let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
-      setIsLoadingQuerySuggestions(true);
-      void getRosterSuggestions(promotionName, query)
-        .then((response) => {
-          if (cancelled) return;
-          setQuerySuggestions(response.names);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setQuerySuggestions([]);
-        })
-        .finally(() => {
-          if (cancelled) return;
-          setIsLoadingQuerySuggestions(false);
-        });
-    }, 220);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
-  }, [activeRosterQuery, card?.promotionName]);
-
-  function setActiveRosterInput(fieldKey: string, value: string) {
-    setActiveRosterFieldKey(fieldKey);
-    setActiveRosterQuery(value);
-  }
-
-  const hasRunningTimers = useMemo(
-    () => payload.timers.some((timer) => timer.isRunning),
-    [payload.timers],
-  );
-
-  useEffect(() => {
-    if (!hasRunningTimers) return;
-
-    const intervalId = window.setInterval(() => {
-      setCurrentTimeMs(nowMs());
-    }, 300);
-
-    return () => window.clearInterval(intervalId);
-  }, [hasRunningTimers]);
 
   useEffect(() => {
     if (!hasInitialized) return;
@@ -1022,7 +880,6 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
           startedAt: null,
         };
       });
-      setCurrentTimeMs(nowMs());
     },
     [updateTimer],
   );
@@ -1035,7 +892,6 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
         isRunning: false,
         startedAt: null,
       }));
-      setCurrentTimeMs(nowMs());
     },
     [updateTimer],
   );
@@ -1152,10 +1008,9 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
 
       setBattleRoyalEntryOrder(matchId, [...existingEntries, entrant]);
       setBattleRoyalEntryInputByMatchId((prev) => ({ ...prev, [matchId]: "" }));
-      setActiveRosterFieldKey(`battleRoyal:${matchId}`);
-      setActiveRosterQuery("");
+      roster.clearSuggestions();
     },
-    [payload, setBattleRoyalEntryOrder],
+    [payload, setBattleRoyalEntryOrder, roster],
   );
 
   const removeBattleRoyalEntrant = useCallback(
@@ -1746,8 +1601,8 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
             .trim()
             .toLowerCase();
           const battleRoyalSuggestions =
-            activeRosterFieldKey === battleRoyalFieldKey
-              ? querySuggestions
+            roster.activeFieldKey === battleRoyalFieldKey
+              ? roster.suggestions
               : [];
           const battleRoyalCandidates = match.isBattleRoyal
             ? Array.from(
@@ -1900,13 +1755,13 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
                           ...prev,
                           [match.id]: event.target.value,
                         }));
-                        setActiveRosterInput(
+                        roster.setActiveInput(
                           battleRoyalFieldKey,
                           event.target.value,
                         );
                       }}
                       onFocus={() =>
-                        setActiveRosterInput(
+                        roster.setActiveInput(
                           battleRoyalFieldKey,
                           battleRoyalEntryInput,
                         )
@@ -1928,13 +1783,13 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
                       Add Entrant
                     </Button>
                   </div>
-                  {(activeRosterFieldKey === battleRoyalFieldKey &&
-                    isLoadingQuerySuggestions) ||
+                  {(roster.activeFieldKey === battleRoyalFieldKey &&
+                    roster.isLoading) ||
                   filteredBattleRoyalSuggestions.length > 0 ? (
                     <div className="rounded-md border border-border/70 bg-background/35 px-3 py-2">
                       <p className="text-[11px] text-muted-foreground">
-                        {activeRosterFieldKey === battleRoyalFieldKey &&
-                        isLoadingQuerySuggestions
+                        {roster.activeFieldKey === battleRoyalFieldKey &&
+                        roster.isLoading
                           ? "Loading roster suggestions..."
                           : "Autocomplete from promotion roster"}
                       </p>
@@ -2001,8 +1856,8 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
                       questionValueType === "rosterMember";
                     const rosterFieldKey = `matchBonus:${match.id}:${question.id}`;
                     const rosterQuerySuggestions =
-                      activeRosterFieldKey === rosterFieldKey
-                        ? querySuggestions
+                      roster.activeFieldKey === rosterFieldKey
+                        ? roster.suggestions
                         : [];
                     const answer = findAnswer(
                       matchResult?.bonusAnswers ?? [],
@@ -2109,26 +1964,26 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
                                   event.target.value,
                                   isTimeValueType,
                                 );
-                                setActiveRosterInput(
+                                roster.setActiveInput(
                                   rosterFieldKey,
                                   event.target.value,
                                 );
                               }}
                               onFocus={() =>
-                                setActiveRosterInput(
+                                roster.setActiveInput(
                                   rosterFieldKey,
                                   answer?.answer ?? "",
                                 )
                               }
                             />
                             {isRosterMemberType &&
-                            ((activeRosterFieldKey === rosterFieldKey &&
-                              isLoadingQuerySuggestions) ||
+                            ((roster.activeFieldKey === rosterFieldKey &&
+                              roster.isLoading) ||
                               filteredRosterSuggestions.length > 0) ? (
                               <div className="mt-2 rounded-md border border-border/70 bg-background/35 px-3 py-2">
                                 <p className="text-[11px] text-muted-foreground">
-                                  {activeRosterFieldKey === rosterFieldKey &&
-                                  isLoadingQuerySuggestions
+                                  {roster.activeFieldKey === rosterFieldKey &&
+                                  roster.isLoading
                                     ? "Loading roster suggestions..."
                                     : "Autocomplete from promotion roster"}
                                 </p>
@@ -2328,8 +2183,8 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
                 const isRosterMemberType = questionValueType === "rosterMember";
                 const rosterFieldKey = `eventBonus:${question.id}`;
                 const rosterQuerySuggestions =
-                  activeRosterFieldKey === rosterFieldKey
-                    ? querySuggestions
+                  roster.activeFieldKey === rosterFieldKey
+                    ? roster.suggestions
                     : [];
                 const answer = findAnswer(
                   payload.eventBonusAnswers,
@@ -2424,26 +2279,26 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
                               event.target.value,
                               isTimeValueType,
                             );
-                            setActiveRosterInput(
+                            roster.setActiveInput(
                               rosterFieldKey,
                               event.target.value,
                             );
                           }}
                           onFocus={() =>
-                            setActiveRosterInput(
+                            roster.setActiveInput(
                               rosterFieldKey,
                               answer?.answer ?? "",
                             )
                           }
                         />
                         {isRosterMemberType &&
-                        ((activeRosterFieldKey === rosterFieldKey &&
-                          isLoadingQuerySuggestions) ||
+                        ((roster.activeFieldKey === rosterFieldKey &&
+                          roster.isLoading) ||
                           filteredRosterSuggestions.length > 0) ? (
                           <div className="mt-2 rounded-md border border-border/70 bg-background/35 px-3 py-2">
                             <p className="text-[11px] text-muted-foreground">
-                              {activeRosterFieldKey === rosterFieldKey &&
-                              isLoadingQuerySuggestions
+                              {roster.activeFieldKey === rosterFieldKey &&
+                              roster.isLoading
                                 ? "Loading roster suggestions..."
                                 : "Autocomplete from promotion roster"}
                             </p>
