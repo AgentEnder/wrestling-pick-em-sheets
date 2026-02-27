@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getRequestUserId } from "@/lib/server/auth";
 import { db } from "@/lib/server/db/client";
+import { ordinal } from "@/lib/utils";
 
 export async function GET(request: Request) {
   const userId = await getRequestUserId(request);
@@ -133,10 +134,4 @@ export async function GET(request: Request) {
       },
     },
   });
-}
-
-function ordinal(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }

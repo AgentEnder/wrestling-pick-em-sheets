@@ -43,6 +43,7 @@ import {
   type MyCompletedGame,
   type MyGamesStats,
 } from "@/lib/client/my-games-api";
+import { ordinal } from "@/lib/utils";
 
 const ADMIN_EMAIL = "craigorycoppola@gmail.com";
 
@@ -66,7 +67,7 @@ export function MyGamesPage() {
   const [activeGames, setActiveGames] = useState<MyActiveGame[]>([]);
   const [completedGames, setCompletedGames] = useState<MyCompletedGame[]>([]);
   const [stats, setStats] = useState<MyGamesStats | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const loadGames = useCallback(async () => {
     setIsLoading(true);
@@ -87,6 +88,8 @@ export function MyGamesPage() {
   useEffect(() => {
     if (isAuthLoaded && user) {
       void loadGames();
+    } else if (isAuthLoaded) {
+      setIsLoading(false);
     }
   }, [isAuthLoaded, user, loadGames]);
 
@@ -298,12 +301,6 @@ function TrendChart({ data }: { data: MyGamesStats["trendData"] }) {
       </CardContent>
     </Card>
   );
-}
-
-function ordinal(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
 function ActiveGameCard({ game }: { game: MyActiveGame }) {
