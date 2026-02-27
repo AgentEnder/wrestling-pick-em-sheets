@@ -2,12 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Gamepad2, History, Swords, Trophy } from "lucide-react";
+import { BarChart3, Gamepad2, History, Swords, Trophy } from "lucide-react";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
 import { AppNavbar } from "@/components/pick-em/app-navbar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import {
   useAuth,
   useUser,
@@ -202,8 +209,81 @@ function StatsBar({ stats }: { stats: MyGamesStats }) {
   );
 }
 
+const trendChartConfig = {
+  scorePercentage: {
+    label: "Score %",
+    color: "var(--chart-1)",
+  },
+} satisfies ChartConfig;
+
 function TrendChart({ data }: { data: MyGamesStats["trendData"] }) {
-  return <div>Trend chart ({data.length} points)</div>;
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <BarChart3 className="h-4 w-4 text-primary" />
+          Performance Trend
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={trendChartConfig} className="h-[200px] w-full">
+          <AreaChart
+            data={data}
+            margin={{ top: 5, right: 5, bottom: 5, left: 5 }}
+          >
+            <defs>
+              <linearGradient id="fillScore" x1="0" y1="0" x2="0" y2="1">
+                <stop
+                  offset="5%"
+                  stopColor="var(--color-scorePercentage)"
+                  stopOpacity={0.4}
+                />
+                <stop
+                  offset="95%"
+                  stopColor="var(--color-scorePercentage)"
+                  stopOpacity={0}
+                />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis
+              dataKey="eventName"
+              tickLine={false}
+              axisLine={false}
+              fontSize={11}
+              tickFormatter={(value: string) =>
+                value && value.length > 12
+                  ? value.slice(0, 12) + "..."
+                  : value || ""
+              }
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              fontSize={11}
+              domain={[0, 100]}
+              tickFormatter={(value: number) => `${value}%`}
+            />
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  labelFormatter={(label: string) => label}
+                  formatter={(value) => [`${value}%`, "Score"]}
+                />
+              }
+            />
+            <Area
+              type="monotone"
+              dataKey="scorePercentage"
+              stroke="var(--color-scorePercentage)"
+              fill="url(#fillScore)"
+              strokeWidth={2}
+            />
+          </AreaChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  );
 }
 
 function ActiveGameCard({ game }: { game: MyActiveGame }) {
