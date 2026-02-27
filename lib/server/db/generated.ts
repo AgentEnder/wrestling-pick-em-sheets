@@ -5,10 +5,9 @@
 
 import type { ColumnType } from "kysely";
 
-export type Generated<T> =
-  T extends ColumnType<infer S, infer I, infer U>
-    ? ColumnType<S, I | undefined, U>
-    : ColumnType<T, T | undefined, T>;
+export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
+  ? ColumnType<S, I | undefined, U>
+  : ColumnType<T, T | undefined, T>;
 
 export interface BonusQuestionPools {
   created_at: Generated<string>;
@@ -57,8 +56,8 @@ export interface CardMatches {
   created_at: Generated<string>;
   description: Generated<string>;
   id: string | null;
-  is_elimination_style: Generated<number>;
   is_custom: Generated<number>;
+  is_elimination_style: Generated<number>;
   match_type: string;
   match_type_id: Generated<string>;
   match_type_name_override: string | null;
@@ -122,38 +121,6 @@ export interface Cards {
   updated_at: Generated<string>;
 }
 
-export interface PromotionRosterMembers {
-  aliases_json: Generated<string>;
-  created_at: Generated<string>;
-  display_name: string;
-  id: string | null;
-  is_active: Generated<number>;
-  normalized_name: string;
-  promotion_id: string;
-  updated_at: Generated<string>;
-}
-
-export interface Promotions {
-  aliases_json: Generated<string>;
-  created_at: Generated<string>;
-  id: string | null;
-  is_active: Generated<number>;
-  name: string;
-  sort_order: Generated<number>;
-  updated_at: Generated<string>;
-}
-
-export interface MatchTypes {
-  created_at: Generated<string>;
-  default_rule_set_ids_json: Generated<string>;
-  default_is_battle_royal: Generated<number>;
-  id: string | null;
-  is_active: Generated<number>;
-  name: string;
-  sort_order: Generated<number>;
-  updated_at: Generated<string>;
-}
-
 export interface LiveGameEvents {
   created_at: Generated<string>;
   event_payload_json: Generated<string>;
@@ -174,6 +141,7 @@ export interface LiveGamePlayers {
   device_vendor: string | null;
   game_id: string;
   id: string | null;
+  is_submitted: Generated<number>;
   join_request_city: string | null;
   join_request_country: string | null;
   join_request_distance_km: number | null;
@@ -181,21 +149,20 @@ export interface LiveGamePlayers {
   join_request_latitude: number | null;
   join_request_longitude: number | null;
   join_status: Generated<string>;
-  is_submitted: Generated<number>;
   joined_at: Generated<string>;
   last_seen_at: Generated<string>;
   nickname: string;
   normalized_nickname: string;
   os_name: string | null;
   os_version: string | null;
+  picks_json: Generated<string>;
   platform: string | null;
   platform_version: string | null;
-  picks_json: Generated<string>;
   session_token_hash: string;
   submitted_at: string | null;
+  updated_at: Generated<string>;
   user_agent: string | null;
   user_agent_data_json: string | null;
-  updated_at: Generated<string>;
 }
 
 export interface LiveGamePushSubscriptions {
@@ -215,6 +182,7 @@ export interface LiveGames {
   card_id: string;
   created_at: Generated<string>;
   ended_at: string | null;
+  event_start_at: string | null;
   expires_at: string;
   geo_radius_km: Generated<number>;
   host_geo_city: string | null;
@@ -230,6 +198,53 @@ export interface LiveGames {
   mode: Generated<string>;
   qr_join_secret: string | null;
   status: Generated<string>;
+  updated_at: Generated<string>;
+}
+
+export interface LiveGameScoreSnapshots {
+  bonus_points: Generated<number>;
+  game_id: string;
+  id: Generated<number | null>;
+  max_possible_points: Generated<number>;
+  player_count: Generated<number>;
+  player_id: string;
+  rank: Generated<number>;
+  score_percentage: Generated<number>;
+  surprise_points: Generated<number>;
+  total_score: Generated<number>;
+  updated_at: Generated<string>;
+  winner_points: Generated<number>;
+}
+
+export interface MatchTypes {
+  created_at: Generated<string>;
+  default_is_battle_royal: Generated<number>;
+  default_rule_set_ids_json: Generated<string>;
+  id: string | null;
+  is_active: Generated<number>;
+  name: string;
+  sort_order: Generated<number>;
+  updated_at: Generated<string>;
+}
+
+export interface PromotionRosterMembers {
+  aliases_json: Generated<string>;
+  created_at: Generated<string>;
+  display_name: string;
+  id: string | null;
+  is_active: Generated<number>;
+  normalized_name: string;
+  promotion_id: string;
+  updated_at: Generated<string>;
+}
+
+export interface Promotions {
+  aliases_json: Generated<string>;
+  created_at: Generated<string>;
+  id: string | null;
+  is_active: Generated<number>;
+  name: string;
+  sort_order: Generated<number>;
   updated_at: Generated<string>;
 }
 
@@ -262,6 +277,7 @@ export interface DB {
   live_game_events: LiveGameEvents;
   live_game_players: LiveGamePlayers;
   live_game_push_subscriptions: LiveGamePushSubscriptions;
+  live_game_score_snapshots: LiveGameScoreSnapshots;
   live_games: LiveGames;
   match_types: MatchTypes;
   promotion_roster_members: PromotionRosterMembers;
