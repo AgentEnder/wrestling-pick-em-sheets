@@ -3134,11 +3134,48 @@ export async function getLiveGameState(
   const pendingPlayers = access.isHost
     ? players.filter((player) => player.joinStatus === "pending")
     : [];
-  const leaderboard = computeLeaderboard(
-    access.card,
-    access.game.keyPayload,
-    approvedPlayers,
-  );
+  const snapshotRows = await db
+    .selectFrom("live_game_score_snapshots")
+    .selectAll()
+    .where("game_id", "=", gameId)
+    .execute();
+
+  let leaderboard: LiveGameLeaderboardEntry[];
+
+  if (snapshotRows.length > 0) {
+    // Build leaderboard from snapshots
+    const playerIdToPlayer = new Map(
+      approvedPlayers.map((p) => [p.id, p]),
+    );
+
+    leaderboard = snapshotRows
+      .map((snap) => {
+        const player = playerIdToPlayer.get(snap.player_id);
+        if (!player) return null;
+        return {
+          rank: snap.rank,
+          nickname: player.nickname,
+          score: snap.total_score,
+          breakdown: {
+            winnerPoints: snap.winner_points,
+            bonusPoints: snap.bonus_points,
+            surprisePoints: snap.surprise_points,
+          },
+          isSubmitted: player.isSubmitted,
+          lastUpdatedAt: player.updatedAt,
+          lastSeenAt: player.lastSeenAt,
+        } satisfies LiveGameLeaderboardEntry;
+      })
+      .filter((entry): entry is LiveGameLeaderboardEntry => entry !== null)
+      .sort((a, b) => a.rank - b.rank);
+  } else {
+    // Fallback: compute on the fly (no key updates yet)
+    leaderboard = computeLeaderboard(
+      access.card,
+      access.game.keyPayload,
+      approvedPlayers,
+    );
+  }
 
   return {
     game: access.game,
