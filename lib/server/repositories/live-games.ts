@@ -2195,7 +2195,11 @@ export async function updateLiveGameKeyForHost(
     });
   }
 
-  await snapshotScores(gameId, card, mergedPayload);
+  try {
+    await snapshotScores(gameId, card, mergedPayload);
+  } catch (err) {
+    console.error("snapshotScores failed (non-fatal):", err);
+  }
 
   return mapLiveGame(updated);
 }
@@ -3111,7 +3115,7 @@ export async function getLiveGameState(
   const access = await getLiveGameViewerAccess(gameId, options);
   if (!access) return null;
 
-  const [playerRows, eventRows] = await Promise.all([
+  const [playerRows, eventRows, snapshotRows] = await Promise.all([
     db
       .selectFrom("live_game_players")
       .selectAll()
@@ -3125,6 +3129,11 @@ export async function getLiveGameState(
       .orderBy("created_at", "desc")
       .limit(30)
       .execute(),
+    db
+      .selectFrom("live_game_score_snapshots")
+      .selectAll()
+      .where("game_id", "=", gameId)
+      .execute(),
   ]);
 
   const players = playerRows.map((row) => mapLiveGamePlayer(row));
@@ -3134,11 +3143,6 @@ export async function getLiveGameState(
   const pendingPlayers = access.isHost
     ? players.filter((player) => player.joinStatus === "pending")
     : [];
-  const snapshotRows = await db
-    .selectFrom("live_game_score_snapshots")
-    .selectAll()
-    .where("game_id", "=", gameId)
-    .execute();
 
   let leaderboard: LiveGameLeaderboardEntry[];
 
