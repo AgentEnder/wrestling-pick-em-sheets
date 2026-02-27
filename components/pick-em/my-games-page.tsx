@@ -2,13 +2,27 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BarChart3, Gamepad2, History, Swords, Trophy } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  Gamepad2,
+  History,
+  Swords,
+  Trophy,
+} from "lucide-react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
 import { AppNavbar } from "@/components/pick-em/app-navbar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   ChartContainer,
   ChartTooltip,
@@ -286,10 +300,100 @@ function TrendChart({ data }: { data: MyGamesStats["trendData"] }) {
   );
 }
 
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 function ActiveGameCard({ game }: { game: MyActiveGame }) {
-  return <div>{game.eventName || game.cardName}</div>;
+  return (
+    <Card className="flex flex-col">
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle className="text-sm font-semibold">
+            {game.eventName || game.cardName}
+          </CardTitle>
+          <Badge variant={game.status === "live" ? "default" : "secondary"}>
+            {game.status === "live" ? "Live" : "Lobby"}
+          </Badge>
+        </div>
+        {game.promotionName && (
+          <CardDescription className="text-xs">
+            {game.promotionName}
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col justify-between gap-3 pt-0">
+        {game.score && (
+          <p className="text-sm tabular-nums text-muted-foreground">
+            {game.score.totalScore} / {game.score.maxPossible} pts{" \u00b7 "}
+            {ordinal(game.score.rank)} of {game.score.playerCount}
+          </p>
+        )}
+        <Button asChild size="sm" className="w-full">
+          <Link
+            href={`/games/${game.gameId}/play?code=${encodeURIComponent(game.joinCode)}`}
+          >
+            Rejoin
+            <ArrowRight className="ml-1 h-3 w-3" />
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
 }
 
 function CompletedGameCard({ game }: { game: MyCompletedGame }) {
-  return <div>{game.eventName || game.cardName}</div>;
+  const dateLabel = game.eventDate
+    ? new Date(game.eventDate).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : new Date(game.endedAt).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+
+  return (
+    <Card className="flex flex-col">
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle className="text-sm font-semibold">
+            {game.eventName || game.cardName}
+          </CardTitle>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {dateLabel}
+          </span>
+        </div>
+        {game.promotionName && (
+          <CardDescription className="text-xs">
+            {game.promotionName}
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col justify-between gap-3 pt-0">
+        <div>
+          <p className="text-lg font-bold tabular-nums">
+            {game.score.scorePercentage.toFixed(1)}%
+          </p>
+          <p className="text-xs tabular-nums text-muted-foreground">
+            {game.score.totalScore} / {game.score.maxPossible} pts
+            {" \u00b7 "}
+            {ordinal(game.score.rank)} of {game.score.playerCount}
+          </p>
+        </div>
+        <Button asChild size="sm" variant="outline" className="w-full">
+          <Link
+            href={`/games/${game.gameId}/play?code=${encodeURIComponent(game.joinCode || "")}`}
+          >
+            View Results
+            <ArrowRight className="ml-1 h-3 w-3" />
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
 }
