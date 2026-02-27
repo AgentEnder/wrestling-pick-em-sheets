@@ -22,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getRosterSuggestions } from "@/lib/client/roster-api";
 import {
   getLiveGameMe,
   getLiveGameState,
@@ -50,6 +49,15 @@ import type {
   LivePlayerPicksPayload,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { formatEventTypeLabel, filterRosterMemberSuggestions, normalizeText } from "@/lib/pick-em/text-utils";
+import { hasLeaderboardChanged, buildBubbleSortSteps } from "@/lib/pick-em/leaderboard-utils";
+import { useRosterSuggestions } from "@/hooks/use-roster-suggestions";
+import {
+  useFullscreenEffects,
+  type FullscreenEffect,
+  type FullscreenEventsEffect,
+  type FullscreenLeaderboardEffect,
+} from "@/hooks/use-fullscreen-effects";
 import {
   Bell,
   BellOff,
@@ -91,84 +99,6 @@ function getPushPromptStorageKey(gameId: string, playerId: string): string {
   return `live-game-push-prompted:${gameId}:${playerId}`;
 }
 
-type FullscreenEffect =
-  | {
-      kind: "events";
-      events: LiveGameStateResponse["events"];
-    }
-  | {
-      kind: "leaderboard";
-      previous: LiveGameStateResponse["leaderboard"];
-      current: LiveGameStateResponse["leaderboard"];
-      swapCount: number;
-    };
-
-function formatEventTypeLabel(type: string): string {
-  const normalized = type.toLowerCase();
-  if (normalized.includes("bonus")) return "Bonus Question";
-  if (normalized.includes("result")) return "Match Result";
-  if (normalized.includes("tiebreaker")) return "Tiebreaker";
-  return type.replace(/[_-]/g, " ");
-}
-
-function hasLeaderboardChanged(
-  previous: LiveGameStateResponse,
-  next: LiveGameStateResponse,
-): boolean {
-  if (previous.leaderboard.length !== next.leaderboard.length) return true;
-  for (let index = 0; index < next.leaderboard.length; index += 1) {
-    const prior = previous.leaderboard[index];
-    const current = next.leaderboard[index];
-    if (!prior || !current) return true;
-    if (prior.nickname !== current.nickname) return true;
-    if (prior.rank !== current.rank) return true;
-    if (prior.score !== current.score) return true;
-  }
-  return false;
-}
-
-function buildBubbleSortSteps(
-  previous: string[],
-  current: string[],
-): string[][] {
-  const currentSet = new Set(current);
-  const start = [
-    ...previous.filter((name) => currentSet.has(name)),
-    ...current.filter((name) => !previous.includes(name)),
-  ];
-  const steps: string[][] = [start];
-  const working = [...start];
-  const targetIndex = new Map(current.map((name, index) => [name, index]));
-
-  for (let outer = 0; outer < working.length; outer += 1) {
-    let swapped = false;
-    for (let inner = 0; inner < working.length - 1; inner += 1) {
-      const left = working[inner];
-      const right = working[inner + 1];
-      if (
-        (targetIndex.get(left) ?? Infinity) <=
-        (targetIndex.get(right) ?? Infinity)
-      )
-        continue;
-      working[inner] = right;
-      working[inner + 1] = left;
-      steps.push([...working]);
-      swapped = true;
-    }
-    if (!swapped) break;
-  }
-
-  const finalOrder = steps[steps.length - 1];
-  if (
-    finalOrder.length !== current.length ||
-    finalOrder.some((name, index) => name !== current[index])
-  ) {
-    steps.push([...current]);
-  }
-
-  return steps;
-}
-
 function getFullscreenEffectDurationMs(effect: FullscreenEffect): number {
   if (effect.kind === "events") return FULLSCREEN_EFFECT_DURATION_MS;
   return (
@@ -202,39 +132,6 @@ function toLockKey(matchId: string, questionId: string): string {
   return `${matchId}:${questionId}`;
 }
 
-function filterRosterMemberSuggestions(
-  input: string,
-  candidates: string[],
-): string[] {
-  const normalizedInput = input.trim().toLowerCase();
-  if (!normalizedInput) return [];
-
-  const deduped: string[] = [];
-  const seen = new Set<string>();
-
-  for (const candidate of candidates) {
-    const trimmed = candidate.trim();
-    if (!trimmed) continue;
-
-    const normalizedCandidate = trimmed.toLowerCase();
-    if (!normalizedCandidate.includes(normalizedInput)) continue;
-    if (seen.has(normalizedCandidate)) continue;
-
-    seen.add(normalizedCandidate);
-    deduped.push(trimmed);
-
-    if (deduped.length >= 8) {
-      break;
-    }
-  }
-
-  return deduped;
-}
-
-function normalizeForCompare(v: string): string {
-  return v.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
 export function LiveGamePlayerApp({
   gameId,
   joinCodeFromUrl,
@@ -245,13 +142,7 @@ export function LiveGamePlayerApp({
   const [me, setMe] = useState<LiveGameMeResponse | null>(null);
   const [state, setState] = useState<LiveGameStateResponse | null>(null);
   const [picks, setPicks] = useState<LivePlayerPicksPayload | null>(null);
-  const [querySuggestions, setQuerySuggestions] = useState<string[]>([]);
-  const [isLoadingQuerySuggestions, setIsLoadingQuerySuggestions] =
-    useState(false);
-  const [activeRosterFieldKey, setActiveRosterFieldKey] = useState<
-    string | null
-  >(null);
-  const [activeRosterQuery, setActiveRosterQuery] = useState("");
+  const roster = useRosterSuggestions({ promotionName: state?.card.promotionName });
   const [battleRoyalEntryInputByMatchId, setBattleRoyalEntryInputByMatchId] =
     useState<Record<string, string>>({});
   const [fullscreenEffectQueue, setFullscreenEffectQueue] = useState<
@@ -568,39 +459,6 @@ export function LiveGamePlayerApp({
     notificationPermission,
   ]);
 
-  useEffect(() => {
-    const promotionName = state?.card.promotionName?.trim() ?? "";
-    const query = activeRosterQuery.trim();
-    if (!promotionName || query.length < 2) {
-      setQuerySuggestions([]);
-      setIsLoadingQuerySuggestions(false);
-      return;
-    }
-
-    let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
-      setIsLoadingQuerySuggestions(true);
-      void getRosterSuggestions(promotionName, query)
-        .then((response) => {
-          if (cancelled) return;
-          setQuerySuggestions(response.names);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setQuerySuggestions([]);
-        })
-        .finally(() => {
-          if (cancelled) return;
-          setIsLoadingQuerySuggestions(false);
-        });
-    }, 220);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
-  }, [activeRosterQuery, state?.card.promotionName]);
-
   useEffect(
     () => () => {
       if (fullscreenEffectTimeoutRef.current) {
@@ -624,11 +482,6 @@ export function LiveGamePlayerApp({
       document.removeEventListener("fullscreenchange", syncFullscreenState);
     };
   }, []);
-
-  function setActiveRosterInput(fieldKey: string, value: string) {
-    setActiveRosterFieldKey(fieldKey);
-    setActiveRosterQuery(value);
-  }
 
   async function handleRefresh() {
     setIsRefreshing(true);
@@ -726,8 +579,7 @@ export function LiveGamePlayerApp({
     });
 
     setBattleRoyalEntryInputByMatchId((prev) => ({ ...prev, [matchId]: "" }));
-    setActiveRosterFieldKey(`battleRoyal:${matchId}`);
-    setActiveRosterQuery("");
+    roster.clearSuggestions();
   }
 
   function removeBattleRoyalEntrant(matchId: string, entrantIndex: number) {
@@ -1249,7 +1101,7 @@ export function LiveGamePlayerApp({
           .trim()
           .toLowerCase();
         const battleRoyalSuggestions =
-          activeRosterFieldKey === battleRoyalFieldKey ? querySuggestions : [];
+          roster.activeFieldKey === battleRoyalFieldKey ? roster.suggestions : [];
         const battleRoyalCandidates = match.isBattleRoyal
           ? Array.from(
               new Set([...match.participants, ...battleRoyalSuggestions]),
@@ -1319,13 +1171,13 @@ export function LiveGamePlayerApp({
                           ...prev,
                           [match.id]: event.target.value,
                         }));
-                        setActiveRosterInput(
+                        roster.setActiveInput(
                           battleRoyalFieldKey,
                           event.target.value,
                         );
                       }}
                       onFocus={() =>
-                        setActiveRosterInput(
+                        roster.setActiveInput(
                           battleRoyalFieldKey,
                           battleRoyalEntryInput,
                         )
@@ -1351,13 +1203,13 @@ export function LiveGamePlayerApp({
                       Add Entrant
                     </Button>
                   </div>
-                  {(activeRosterFieldKey === battleRoyalFieldKey &&
-                    isLoadingQuerySuggestions) ||
+                  {(roster.activeFieldKey === battleRoyalFieldKey &&
+                    roster.isLoading) ||
                   filteredBattleRoyalSuggestions.length > 0 ? (
                     <div className="rounded-md border border-border/70 bg-background/35 px-3 py-2">
                       <p className="text-[11px] text-muted-foreground">
-                        {activeRosterFieldKey === battleRoyalFieldKey &&
-                        isLoadingQuerySuggestions
+                        {roster.activeFieldKey === battleRoyalFieldKey &&
+                        roster.isLoading
                           ? "Loading roster suggestions..."
                           : "Autocomplete from promotion roster"}
                       </p>
@@ -1426,8 +1278,8 @@ export function LiveGamePlayerApp({
                     question.valueType === "rosterMember";
                   const rosterFieldKey = `matchBonus:${match.id}:${question.id}`;
                   const rosterQuerySuggestions =
-                    activeRosterFieldKey === rosterFieldKey
-                      ? querySuggestions
+                    roster.activeFieldKey === rosterFieldKey
+                      ? roster.suggestions
                       : [];
                   const filteredRosterSuggestions = isRosterMemberType
                     ? filterRosterMemberSuggestions(
@@ -1463,8 +1315,8 @@ export function LiveGamePlayerApp({
                                   )
                                 }
                                 className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                                  normalizeForCompare(answer?.answer ?? "") ===
-                                  normalizeForCompare(label)
+                                  normalizeText(answer?.answer ?? "") ===
+                                  normalizeText(label)
                                     ? "border-primary bg-primary text-primary-foreground"
                                     : "border-border bg-card text-card-foreground hover:border-primary/50"
                                 } disabled:cursor-not-allowed disabled:opacity-50`}
@@ -1484,13 +1336,13 @@ export function LiveGamePlayerApp({
                                 question.id,
                                 event.target.value,
                               );
-                              setActiveRosterInput(
+                              roster.setActiveInput(
                                 rosterFieldKey,
                                 event.target.value,
                               );
                             }}
                             onFocus={() =>
-                              setActiveRosterInput(
+                              roster.setActiveInput(
                                 rosterFieldKey,
                                 answer?.answer ?? "",
                               )
@@ -1503,13 +1355,13 @@ export function LiveGamePlayerApp({
                             }
                           />
                           {isRosterMemberType &&
-                          ((activeRosterFieldKey === rosterFieldKey &&
-                            isLoadingQuerySuggestions) ||
+                          ((roster.activeFieldKey === rosterFieldKey &&
+                            roster.isLoading) ||
                             filteredRosterSuggestions.length > 0) ? (
                             <div className="rounded-md border border-border/70 bg-background/35 px-3 py-2">
                               <p className="text-[11px] text-muted-foreground">
-                                {activeRosterFieldKey === rosterFieldKey &&
-                                isLoadingQuerySuggestions
+                                {roster.activeFieldKey === rosterFieldKey &&
+                                roster.isLoading
                                   ? "Loading roster suggestions..."
                                   : "Autocomplete from promotion roster"}
                               </p>
@@ -1564,7 +1416,7 @@ export function LiveGamePlayerApp({
               const isRosterMemberType = question.valueType === "rosterMember";
               const rosterFieldKey = `eventBonus:${question.id}`;
               const rosterQuerySuggestions =
-                activeRosterFieldKey === rosterFieldKey ? querySuggestions : [];
+                roster.activeFieldKey === rosterFieldKey ? roster.suggestions : [];
               const filteredRosterSuggestions = isRosterMemberType
                 ? filterRosterMemberSuggestions(
                     answer?.answer ?? "",
@@ -1595,8 +1447,8 @@ export function LiveGamePlayerApp({
                               setEventBonusAnswer(question.id, label)
                             }
                             className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                              normalizeForCompare(answer?.answer ?? "") ===
-                              normalizeForCompare(label)
+                              normalizeText(answer?.answer ?? "") ===
+                              normalizeText(label)
                                 ? "border-primary bg-primary text-primary-foreground"
                                 : "border-border bg-card text-card-foreground hover:border-primary/50"
                             } disabled:cursor-not-allowed disabled:opacity-50`}
@@ -1612,13 +1464,13 @@ export function LiveGamePlayerApp({
                         value={answer?.answer ?? ""}
                         onChange={(event) => {
                           setEventBonusAnswer(question.id, event.target.value);
-                          setActiveRosterInput(
+                          roster.setActiveInput(
                             rosterFieldKey,
                             event.target.value,
                           );
                         }}
                         onFocus={() =>
-                          setActiveRosterInput(
+                          roster.setActiveInput(
                             rosterFieldKey,
                             answer?.answer ?? "",
                           )
@@ -1631,13 +1483,13 @@ export function LiveGamePlayerApp({
                         }
                       />
                       {isRosterMemberType &&
-                      ((activeRosterFieldKey === rosterFieldKey &&
-                        isLoadingQuerySuggestions) ||
+                      ((roster.activeFieldKey === rosterFieldKey &&
+                        roster.isLoading) ||
                         filteredRosterSuggestions.length > 0) ? (
                         <div className="rounded-md border border-border/70 bg-background/35 px-3 py-2">
                           <p className="text-[11px] text-muted-foreground">
-                            {activeRosterFieldKey === rosterFieldKey &&
-                            isLoadingQuerySuggestions
+                            {roster.activeFieldKey === rosterFieldKey &&
+                            roster.isLoading
                               ? "Loading roster suggestions..."
                               : "Autocomplete from promotion roster"}
                           </p>
