@@ -742,7 +742,7 @@ function toCardMatchInsert(
 
   if (match.isBattleRoyal) {
     return {
-      id: randomUUID(),
+      id: match.id || randomUUID(),
       card_id: cardId,
       sort_order: sortOrder,
       match_type: "battleRoyal",
@@ -766,7 +766,7 @@ function toCardMatchInsert(
   }
 
   return {
-    id: randomUUID(),
+    id: match.id || randomUUID(),
     card_id: cardId,
     sort_order: sortOrder,
     match_type: "standard",

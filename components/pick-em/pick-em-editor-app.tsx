@@ -395,7 +395,9 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
       return;
     }
 
-    setIsDraftDirty(true);
+    const isEquivalent =
+      JSON.stringify(sheet) === JSON.stringify(resetSheetRef.current);
+    setIsDraftDirty(!isEquivalent);
   }, [sheet, hasHydratedDraft]);
 
   useEffect(() => {
