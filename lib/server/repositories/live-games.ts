@@ -6,6 +6,7 @@ import { UAParser } from "ua-parser-js";
 import type { ResolvedCard } from "@/lib/server/repositories/cards";
 import { findResolvedReadableCardById } from "@/lib/server/repositories/cards";
 import { db } from "@/lib/server/db/client";
+import { computeMaxPossiblePoints } from "@/lib/server/scoring-utils";
 import type {
   LiveGameEvents,
   LiveGamePlayers,
@@ -2195,6 +2196,74 @@ export async function updateLiveGameKeyForHost(
   }
 
   return mapLiveGame(updated);
+}
+
+export async function snapshotScores(
+  gameId: string,
+  card: ResolvedCard,
+  keyPayload: LiveGameKeyPayload,
+): Promise<void> {
+  const playerRows = await db
+    .selectFrom("live_game_players")
+    .selectAll()
+    .where("game_id", "=", gameId)
+    .where("join_status", "=", "approved")
+    .execute();
+
+  const players = playerRows.map((row) => mapLiveGamePlayer(row));
+  const leaderboard = computeLeaderboard(card, keyPayload, players);
+  const maxPossiblePoints = computeMaxPossiblePoints(card);
+  const now = nowIso();
+  const submittedCount = leaderboard.filter((e) => e.isSubmitted).length;
+
+  // Find player IDs by nickname for the join
+  const nicknameToPlayerId = new Map<string, string>();
+  for (const player of players) {
+    nicknameToPlayerId.set(normalizeText(player.nickname), player.id);
+  }
+
+  for (const entry of leaderboard) {
+    if (!entry.isSubmitted) continue;
+
+    const playerId = nicknameToPlayerId.get(normalizeText(entry.nickname));
+    if (!playerId) continue;
+
+    const percentage =
+      maxPossiblePoints > 0
+        ? (entry.score / maxPossiblePoints) * 100
+        : 0;
+
+    // Upsert: insert or update on conflict of (game_id, player_id)
+    await db
+      .insertInto("live_game_score_snapshots")
+      .values({
+        game_id: gameId,
+        player_id: playerId,
+        total_score: entry.score,
+        max_possible_points: maxPossiblePoints,
+        winner_points: entry.breakdown.winnerPoints,
+        bonus_points: entry.breakdown.bonusPoints,
+        surprise_points: entry.breakdown.surprisePoints,
+        rank: entry.rank,
+        player_count: submittedCount,
+        score_percentage: Math.round(percentage * 100) / 100,
+        updated_at: now,
+      })
+      .onConflict((oc) =>
+        oc.columns(["game_id", "player_id"]).doUpdateSet({
+          total_score: entry.score,
+          max_possible_points: maxPossiblePoints,
+          winner_points: entry.breakdown.winnerPoints,
+          bonus_points: entry.breakdown.bonusPoints,
+          surprise_points: entry.breakdown.surprisePoints,
+          rank: entry.rank,
+          player_count: submittedCount,
+          score_percentage: Math.round(percentage * 100) / 100,
+          updated_at: now,
+        }),
+      )
+      .execute();
+  }
 }
 
 export async function findLiveGamePlayerBySession(
