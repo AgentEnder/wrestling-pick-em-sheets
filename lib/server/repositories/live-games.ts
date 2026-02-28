@@ -911,9 +911,17 @@ function buildKeyMutationEvents(
           message: `${matchLabel} entrant order cleared`,
         });
       } else if (previousEntryOrder.length === 0) {
+        const preview = nextEntryOrder
+          .slice(0, 3)
+          .map((name) => abbreviateLabel(name, 40))
+          .join(", ");
+        const suffix =
+          nextEntryOrder.length > 3
+            ? ` (+${nextEntryOrder.length - 3} more)`
+            : "";
         events.push({
           type: "key.entryOrder",
-          message: `${matchLabel} entrant order started (${nextEntryOrder.length} recorded)`,
+          message: `${matchLabel} entrant order started: ${preview}${suffix}`,
         });
       } else if (
         nextEntryOrder.length > previousEntryOrder.length &&
