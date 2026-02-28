@@ -88,6 +88,7 @@ function PlayerMatchPicksInner({
       ? matchPick.winnerName
       : "__custom__"
     : "__none__";
+  const battleRoyalInputRef = React.useRef<HTMLInputElement>(null);
   const battleRoyalEntrants = matchPick?.battleRoyalEntrants ?? [];
   const battleRoyalFieldKey = `battleRoyal:${match.id}`;
   const isSurpriseEntrantsFull =
@@ -188,6 +189,7 @@ function PlayerMatchPicksInner({
             </Label>
             <div className="grid gap-2 md:grid-cols-[1fr_auto]">
               <Input
+                ref={battleRoyalInputRef}
                 value={battleRoyalEntryInput}
                 onChange={(event) => {
                   onSetBattleRoyalEntryInput(match.id, event.target.value);
@@ -239,9 +241,12 @@ function PlayerMatchPicksInner({
                       <button
                         key={candidate}
                         type="button"
-                        onClick={() =>
-                          onAddBattleRoyalEntrant(match.id, candidate)
-                        }
+                        onClick={() => {
+                          onAddBattleRoyalEntrant(match.id, candidate);
+                          requestAnimationFrame(() => {
+                            battleRoyalInputRef.current?.focus();
+                          });
+                        }}
                         disabled={isMatchLocked || isSurpriseEntrantsFull}
                         className="inline-flex items-center rounded-md border border-border bg-card px-2 py-1 text-xs text-card-foreground transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
                       >

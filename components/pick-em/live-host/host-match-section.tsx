@@ -134,6 +134,7 @@ function HostMatchSectionInner({
     : "--:--";
 
   /* Battle Royal state */
+  const battleRoyalInputRef = React.useRef<HTMLInputElement>(null);
   const battleRoyalEntryOrder = matchResult?.battleRoyalEntryOrder ?? [];
   const battleRoyalEntryInput = battleRoyalEntryInputByMatchId[match.id] ?? "";
   const battleRoyalFieldKey = `battleRoyal:${match.id}`;
@@ -481,6 +482,7 @@ function HostMatchSectionInner({
               <Label>Entry Order</Label>
               <div className="grid gap-2 md:grid-cols-[1fr_auto]">
                 <Input
+                  ref={battleRoyalInputRef}
                   value={battleRoyalEntryInput}
                   onChange={(event) => {
                     setBattleRoyalEntryInput(match.id, event.target.value);
@@ -527,7 +529,12 @@ function HostMatchSectionInner({
                         <button
                           key={candidate}
                           type="button"
-                          onClick={() => addBattleRoyalEntrant(candidate)}
+                          onClick={() => {
+                            addBattleRoyalEntrant(candidate);
+                            requestAnimationFrame(() => {
+                              battleRoyalInputRef.current?.focus();
+                            });
+                          }}
                           className="inline-flex items-center rounded-md border border-border bg-card px-2 py-1 text-xs text-card-foreground transition-colors hover:border-primary hover:text-primary"
                         >
                           {candidate}

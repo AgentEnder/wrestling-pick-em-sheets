@@ -46,7 +46,7 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, memo } from "react";
+import { useEffect, useMemo, useRef, useState, memo } from "react";
 
 function secondsToTimeDisplay(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
@@ -134,6 +134,7 @@ export const MatchEditor = memo(function MatchEditor({
     useMatchActions();
   const [isOpen, setIsOpen] = useState(true);
   const [newParticipant, setNewParticipant] = useState("");
+  const participantInputRef = useRef<HTMLInputElement>(null);
   const [newOptionInputs, setNewOptionInputs] = useState<
     Record<string, string>
   >({});
@@ -678,6 +679,7 @@ export const MatchEditor = memo(function MatchEditor({
               </div>
               <div className="flex gap-2">
                 <Input
+                  ref={participantInputRef}
                   placeholder="Add participant or team name..."
                   value={newParticipant}
                   onChange={(e) => setNewParticipant(e.target.value)}
@@ -713,7 +715,12 @@ export const MatchEditor = memo(function MatchEditor({
                         <button
                           key={candidate}
                           type="button"
-                          onClick={() => addParticipant(candidate)}
+                          onClick={() => {
+                            addParticipant(candidate);
+                            requestAnimationFrame(() => {
+                              participantInputRef.current?.focus();
+                            });
+                          }}
                           className="inline-flex items-center rounded-md border border-border bg-card px-2 py-1 text-xs text-card-foreground transition-colors hover:border-primary hover:text-primary"
                         >
                           {candidate}
