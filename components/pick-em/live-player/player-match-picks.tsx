@@ -82,6 +82,8 @@ function PlayerMatchPicksInner({
     locks.matchLocks[match.id] === true || locks.globalLocked;
   const battleRoyalEntrants = matchPick?.battleRoyalEntrants ?? [];
   const battleRoyalFieldKey = `battleRoyal:${match.id}`;
+  const isSurpriseEntrantsFull =
+    battleRoyalEntrants.length >= match.surpriseSlots;
   const normalizedBattleRoyalEntryInput = battleRoyalEntryInput
     .trim()
     .toLowerCase();
@@ -142,7 +144,10 @@ function PlayerMatchPicksInner({
 
         {match.isBattleRoyal ? (
           <div className="space-y-2">
-            <Label>Surprise Entrants</Label>
+            <Label>
+              Surprise Entrants ({battleRoyalEntrants.length}/
+              {match.surpriseSlots})
+            </Label>
             <div className="grid gap-2 md:grid-cols-[1fr_auto]">
               <Input
                 value={battleRoyalEntryInput}
@@ -162,10 +167,10 @@ function PlayerMatchPicksInner({
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") return;
                   event.preventDefault();
-                  if (isMatchLocked) return;
+                  if (isMatchLocked || isSurpriseEntrantsFull) return;
                   onAddBattleRoyalEntrant(match.id, battleRoyalEntryInput);
                 }}
-                disabled={isMatchLocked}
+                disabled={isMatchLocked || isSurpriseEntrantsFull}
                 placeholder="Add entrant"
               />
               <Button
@@ -174,7 +179,7 @@ function PlayerMatchPicksInner({
                 onClick={() =>
                   onAddBattleRoyalEntrant(match.id, battleRoyalEntryInput)
                 }
-                disabled={isMatchLocked}
+                disabled={isMatchLocked || isSurpriseEntrantsFull}
               >
                 <Plus className="mr-1 h-4 w-4" />
                 Add Entrant
@@ -199,7 +204,7 @@ function PlayerMatchPicksInner({
                         onClick={() =>
                           onAddBattleRoyalEntrant(match.id, candidate)
                         }
-                        disabled={isMatchLocked}
+                        disabled={isMatchLocked || isSurpriseEntrantsFull}
                         className="inline-flex items-center rounded-md border border-border bg-card px-2 py-1 text-xs text-card-foreground transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {candidate}
