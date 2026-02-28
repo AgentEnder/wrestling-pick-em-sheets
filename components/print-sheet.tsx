@@ -43,7 +43,7 @@ function formatPointsLabel(points: number): string {
 function shouldRenderCompactBattleRoyal(match: Match): boolean {
   if (!match.isBattleRoyal) return false;
 
-  const totalCompetitors = match.participants.length + match.surpriseSlots;
+  const totalCompetitors = match.participants.length;
   return (
     totalCompetitors > 0 && totalCompetitors <= BATTLE_ROYAL_CHECKBOX_THRESHOLD
   );
@@ -238,20 +238,6 @@ function BattleRoyalBlock({
                       <span>{participant}</span>
                     </label>
                   ))}
-                  {Array.from({ length: match.surpriseSlots }).map(
-                    (_, surpriseIndex) => (
-                      <label
-                        key={`surprise:${surpriseIndex}`}
-                        className="print-participant print-br-surprise-option"
-                      >
-                        <span className="print-checkbox" />
-                        <span className="print-br-surprise-option-label">
-                          Surprise {surpriseIndex + 1}:
-                        </span>
-                        <span className="print-write-line-inline print-br-surprise-option-line" />
-                      </label>
-                    ),
-                  )}
                 </div>
               </div>
             ) : (
@@ -277,11 +263,12 @@ function BattleRoyalBlock({
               <div className="print-br-surprises">
                 <span className="print-label-inline">
                   Surprise guesses ({formatPointsLabel(surpriseEntrantPoints)}{" "}
-                  each):
+                  each, check winner):
                 </span>
                 <div className="print-surprise-grid">
                   {Array.from({ length: match.surpriseSlots }).map((_, i) => (
                     <div key={i} className="print-surprise-line">
+                      <span className="print-checkbox" />
                       <span className="print-surprise-num">{i + 1}.</span>
                       <span className="print-write-line-inline" />
                     </div>
@@ -406,7 +393,7 @@ function getMatchLineUnits(match: Match): number {
     if (useCompactBattleRoyal) {
       const winnerOptionsUnits = Math.max(
         1,
-        Math.ceil((match.participants.length + match.surpriseSlots) / 4.5),
+        Math.ceil(match.participants.length / 4.5),
       );
       const surpriseUnits =
         match.surpriseSlots > 0 ? Math.ceil(match.surpriseSlots / 3) : 0;
