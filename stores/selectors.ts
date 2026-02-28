@@ -139,3 +139,92 @@ export function useHasEventName(): boolean {
 export function useSheetSnapshot() {
   return useAppStore(useShallow((s) => s.getSheetSnapshot()));
 }
+
+/* ── Live game ───────────────────────────────────────── */
+
+export function useLiveCard() {
+  return useAppStore((s) => s.liveCard);
+}
+
+export function useLivePayload() {
+  return useAppStore((s) => s.livePayload);
+}
+
+export function useLiveGameState() {
+  return useAppStore((s) => s.liveGameState);
+}
+
+export function useLiveLockState() {
+  return useAppStore((s) => s.lockState);
+}
+
+export function useLiveGames() {
+  return useAppStore((s) => s.games);
+}
+
+export function useBattleRoyalEntryInputByMatchId() {
+  return useAppStore((s) => s.battleRoyalEntryInputByMatchId);
+}
+
+export function useLiveUi() {
+  return useAppStore(
+    useShallow((s) => ({ ...s.liveUi })),
+  );
+}
+
+export function useLivePayloadActions() {
+  return useAppStore(
+    useShallow((s) => ({
+      liveSetMatchWinner: s.liveSetMatchWinner,
+      liveAddBattleRoyalEntrant: s.liveAddBattleRoyalEntrant,
+      liveRemoveBattleRoyalEntrant: s.liveRemoveBattleRoyalEntrant,
+      liveSetBattleRoyalEntryOrder: s.liveSetBattleRoyalEntryOrder,
+      liveSetMatchBonusAnswer: s.liveSetMatchBonusAnswer,
+      liveSetEventBonusAnswer: s.liveSetEventBonusAnswer,
+      setLiveTiebreakerAnswer: s.setLiveTiebreakerAnswer,
+      setLiveTiebreakerTimerId: s.setLiveTiebreakerTimerId,
+    })),
+  );
+}
+
+export function useLiveTimerActions() {
+  return useAppStore(
+    useShallow((s) => ({
+      liveUpdateTimer: s.liveUpdateTimer,
+      liveStartTimer: s.liveStartTimer,
+      liveStopTimer: s.liveStopTimer,
+      liveResetTimer: s.liveResetTimer,
+      liveAddCustomTimer: s.liveAddCustomTimer,
+      liveRemoveCustomTimer: s.liveRemoveCustomTimer,
+      liveSetTimerLabel: s.liveSetTimerLabel,
+    })),
+  );
+}
+
+export function useLiveSetterActions() {
+  return useAppStore(
+    useShallow((s) => ({
+      setLiveCard: s.setLiveCard,
+      setLivePayload: s.setLivePayload,
+      setLiveGameState: s.setLiveGameState,
+      setLockState: s.setLockState,
+      setGames: s.setGames,
+      setBattleRoyalEntryInput: s.setBattleRoyalEntryInput,
+      setLiveUi: s.setLiveUi,
+    })),
+  );
+}
+
+export function useLiveApiActions() {
+  return useAppStore(
+    useShallow((s) => ({
+      loadLiveKey: s.loadLiveKey,
+      syncLiveKey: s.syncLiveKey,
+      loadLiveGameKey: s.loadLiveGameKey,
+      syncLiveGameKey: s.syncLiveGameKey,
+      loadLiveGameState: s.loadLiveGameState,
+      _markLivePayloadSynced: s._markLivePayloadSynced,
+      _checkLiveDirty: s._checkLiveDirty,
+    })),
+  );
+}
