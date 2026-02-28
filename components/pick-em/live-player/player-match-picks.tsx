@@ -80,6 +80,14 @@ function PlayerMatchPicksInner({
   const matchPick = findMatchPick(picks, match.id);
   const isMatchLocked =
     locks.matchLocks[match.id] === true || locks.globalLocked;
+  const winnerInParticipants = match.participants.some(
+    (p) => p === matchPick?.winnerName,
+  );
+  const winnerSelectValue = matchPick?.winnerName
+    ? winnerInParticipants
+      ? matchPick.winnerName
+      : "__custom__"
+    : "__none__";
   const battleRoyalEntrants = matchPick?.battleRoyalEntrants ?? [];
   const battleRoyalFieldKey = `battleRoyal:${match.id}`;
   const isSurpriseEntrantsFull =
@@ -123,10 +131,22 @@ function PlayerMatchPicksInner({
       <div className="space-y-2">
         <Label>Winner</Label>
         <Select
-          value={matchPick?.winnerName || "__none__"}
-          onValueChange={(value) =>
-            onSetMatchWinner(match.id, value === "__none__" ? "" : value)
-          }
+          value={winnerSelectValue}
+          onValueChange={(value) => {
+            if (value === "__none__") {
+              onSetMatchWinner(match.id, "");
+              return;
+            }
+            if (value === "__custom__") {
+              const current =
+                matchPick?.winnerName && !winnerInParticipants
+                  ? matchPick.winnerName
+                  : "";
+              onSetMatchWinner(match.id, current);
+              return;
+            }
+            onSetMatchWinner(match.id, value);
+          }}
           disabled={isMatchLocked}
         >
           <SelectTrigger className="w-full">
@@ -139,8 +159,26 @@ function PlayerMatchPicksInner({
                 {participant}
               </SelectItem>
             ))}
+            {match.isBattleRoyal ? (
+              <SelectItem value="__custom__">
+                Other (type name)...
+              </SelectItem>
+            ) : null}
           </SelectContent>
         </Select>
+        {winnerSelectValue === "__custom__" ? (
+          <div className="space-y-1">
+            <Label>Custom winner</Label>
+            <Input
+              value={matchPick?.winnerName ?? ""}
+              onChange={(event) =>
+                onSetMatchWinner(match.id, event.target.value)
+              }
+              disabled={isMatchLocked}
+              placeholder="Type winner name"
+            />
+          </div>
+        ) : null}
 
         {match.isBattleRoyal ? (
           <div className="space-y-2">
