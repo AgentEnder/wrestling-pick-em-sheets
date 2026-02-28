@@ -12,7 +12,7 @@ interface ActiveGameViewProps {
 
 function ActiveGameViewInner({ state }: ActiveGameViewProps) {
   return (
-    <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+    <div className="grid h-full gap-5 lg:grid-cols-[2fr_1fr]">
       <section className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-xl shadow-black/25 backdrop-blur">
         <LeaderboardPanel
           leaderboard={state.leaderboard}

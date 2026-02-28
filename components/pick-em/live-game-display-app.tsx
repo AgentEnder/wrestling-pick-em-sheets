@@ -427,7 +427,7 @@ export function LiveGameDisplayApp({
 
   /* ---- Render ---- */
   return (
-    <div className="min-h-screen px-6 py-6">
+    <div className="flex h-dvh flex-col overflow-hidden px-6 py-6">
       {isRefreshStale ? (
         <div className="fixed bottom-4 right-4 z-40">
           <button
@@ -463,15 +463,17 @@ export function LiveGameDisplayApp({
         lobbyStartAtLabel={lobbyStartAtLabel}
       />
 
-      {state.game.status === "lobby" ? (
-        <LobbyView
-          state={state}
-          joinQrCodeDataUrl={joinQrCodeDataUrl}
-          joinBaseOrigin={joinBaseOrigin}
-        />
-      ) : (
-        <ActiveGameView state={state} />
-      )}
+      <div className="min-h-0 flex-1">
+        {state.game.status === "lobby" ? (
+          <LobbyView
+            state={state}
+            joinQrCodeDataUrl={joinQrCodeDataUrl}
+            joinBaseOrigin={joinBaseOrigin}
+          />
+        ) : (
+          <ActiveGameView state={state} />
+        )}
+      </div>
     </div>
   );
 }

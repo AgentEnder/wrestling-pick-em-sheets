@@ -33,7 +33,7 @@ function LobbyViewInner({
   joinBaseOrigin,
 }: LobbyViewProps) {
   return (
-    <div className="grid gap-5 lg:grid-cols-[1.1fr_1.4fr] lg:items-start">
+    <div className="grid h-full gap-5 lg:grid-cols-[1.1fr_1.4fr] lg:items-start">
       <section className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-xl shadow-black/25 backdrop-blur">
         <h2 className="text-base uppercase tracking-wide text-muted-foreground">
           Scan To Join
