@@ -15,8 +15,6 @@ interface LeaderboardEntry {
 interface LeaderboardPanelProps {
   leaderboard: LeaderboardEntry[];
   maxItems?: number;
-  /** Highlight a specific player nickname (e.g. the current user) */
-  myNickname?: string;
   /** Variant controls visual density: "display" for TV-style, "compact" for player sidebar */
   variant?: "display" | "compact";
 }
@@ -24,7 +22,6 @@ interface LeaderboardPanelProps {
 function LeaderboardPanelInner({
   leaderboard,
   maxItems,
-  myNickname,
   variant = "compact",
 }: LeaderboardPanelProps) {
   const entries = maxItems ? leaderboard.slice(0, maxItems) : leaderboard;

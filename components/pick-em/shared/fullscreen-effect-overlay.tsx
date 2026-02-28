@@ -7,7 +7,6 @@ import { Sparkles, Trophy } from "lucide-react";
 import type {
   FullscreenEffect,
 } from "@/hooks/use-fullscreen-effects";
-import type { LiveGameLeaderboardEntry } from "@/lib/types";
 import { formatEventTypeLabel } from "@/lib/pick-em/text-utils";
 import { cn } from "@/lib/utils";
 

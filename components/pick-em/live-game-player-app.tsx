@@ -772,7 +772,6 @@ export function LiveGamePlayerApp({
             <LeaderboardPanel
               leaderboard={state.leaderboard}
               maxItems={12}
-              myNickname={me.player.nickname}
               variant="compact"
             />
           </div>
