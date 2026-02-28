@@ -25,7 +25,7 @@ const bonusQuestionSchema = z.object({
   id: z.string().uuid(),
   question: boundedText(200),
   points: z.number().int().min(1).max(100).nullable(),
-  answerType: z.enum(["write-in", "multiple-choice"]),
+  answerType: z.enum(["write-in", "multiple-choice", "threshold"]),
   options: z.array(shortName).max(MAX_OPTIONS),
   valueType: z
     .enum(["string", "numerical", "time", "rosterMember"])
@@ -35,6 +35,10 @@ const bonusQuestionSchema = z.object({
     .enum(["exact", "closest", "atOrAbove", "atOrBelow"])
     .optional()
     .default("exact"),
+  thresholdValue: z.number().optional(),
+  thresholdLabels: z
+    .tuple([z.string().trim().max(60), z.string().trim().max(60)])
+    .optional(),
 });
 
 const normalizedMatchSchema = z
