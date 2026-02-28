@@ -218,7 +218,7 @@ export function EditorView() {
 
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold uppercase tracking-wide text-primary">
+          <h2 className="font-heading text-xl font-bold uppercase tracking-wide text-primary">
             Match Card
           </h2>
           <span className="text-sm text-muted-foreground">
@@ -254,7 +254,7 @@ export function EditorView() {
 
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold uppercase tracking-wide text-primary">
+          <h2 className="font-heading text-xl font-bold uppercase tracking-wide text-primary">
             Event Bonus Questions
           </h2>
           <span className="text-sm text-muted-foreground">

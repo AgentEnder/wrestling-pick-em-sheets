@@ -746,7 +746,7 @@ export function BonusQuestionAdminScreen() {
       <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:py-8">
         <section className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold uppercase tracking-wide text-foreground">
+            <h1 className="font-heading text-3xl font-bold uppercase tracking-wide text-foreground">
               Admin Configuration
             </h1>
             <p className="text-sm text-muted-foreground">

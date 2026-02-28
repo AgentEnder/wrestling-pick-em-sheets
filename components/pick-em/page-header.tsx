@@ -85,7 +85,7 @@ export function PageHeader({
   }, [getSheetSnapshot]);
 
   return (
-    <header className="no-print sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
+    <header className="no-print sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-backdrop-filter:bg-background/70">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <Link
           href="/"
@@ -95,7 +95,7 @@ export function PageHeader({
             <Swords className="h-4 w-4 text-primary-foreground" />
           </div>
           <div className="min-w-0">
-            <h1 className="font-[family-name:var(--font-heading)] text-xl font-bold uppercase tracking-wider text-foreground leading-tight">
+            <h1 className="font-heading text-xl font-bold uppercase tracking-wider text-foreground leading-tight">
               Pick Em Generator
             </h1>
             <p className="text-sm text-muted-foreground leading-tight">

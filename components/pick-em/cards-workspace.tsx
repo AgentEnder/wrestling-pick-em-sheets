@@ -228,7 +228,7 @@ export function CardsWorkspace() {
   return (
     <div className="relative min-h-screen overflow-x-clip bg-background">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(230,170,60,0.20),transparent_35%),radial-gradient(circle_at_90%_20%,rgba(130,160,255,0.12),transparent_35%),linear-gradient(to_bottom,rgba(255,255,255,0.02),transparent_35%)]" />
-      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
+      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-backdrop-filter:bg-background/70">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <Link
             href="/"
@@ -238,7 +238,7 @@ export function CardsWorkspace() {
               <Swords className="h-4 w-4 text-primary-foreground" />
             </div>
             <div className="min-w-0">
-              <h1 className="font-[family-name:var(--font-heading)] text-xl font-bold uppercase tracking-wider text-foreground leading-tight">
+              <h1 className="font-heading text-xl font-bold uppercase tracking-wider text-foreground leading-tight">
                 Pick Em Workspace
               </h1>
               <p className="text-sm text-muted-foreground leading-tight">

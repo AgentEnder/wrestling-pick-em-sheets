@@ -376,7 +376,7 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
                   </Link>
                 </Button>
               </div>
-              <div className="w-full rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-xs text-muted-foreground sm:w-auto sm:max-w-[28rem]">
+              <div className="w-full rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-xs text-muted-foreground sm:w-auto sm:max-w-md">
                 <p>
                   {isSyncingOverrides
                     ? "Syncing event settings to card overrides..."

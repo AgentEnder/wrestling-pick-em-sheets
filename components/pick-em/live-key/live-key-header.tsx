@@ -26,7 +26,7 @@ export function LiveKeyHeader({
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
+      <header className="sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-backdrop-filter:bg-background/70">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3">
           <div className="flex items-center gap-3">
             <Button asChild size="sm" variant="outline">
@@ -36,7 +36,7 @@ export function LiveKeyHeader({
               </Link>
             </Button>
             <div>
-              <h1 className="font-[family-name:var(--font-heading)] text-xl font-bold uppercase tracking-wider text-foreground">
+              <h1 className="font-heading text-xl font-bold uppercase tracking-wider text-foreground">
                 Live Key Tracking
               </h1>
               <p className="text-xs text-muted-foreground">

@@ -28,9 +28,7 @@ function DisplayHeaderInner({
       <div className="lg:flex lg:items-end lg:justify-between lg:gap-6">
         <div>
           <p className="text-lg uppercase tracking-widest text-primary">
-            {state.game.status === "lobby"
-              ? "Live Lobby"
-              : "Live Leaderboard"}
+            {state.game.status === "lobby" ? "Live Lobby" : "Live Leaderboard"}
           </p>
           <h1 className="text-6xl font-heading font-semibold leading-tight">
             {state.card.eventName || "Untitled Event"}
@@ -49,7 +47,7 @@ function DisplayHeaderInner({
             </p>
           ) : null}
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-2 text-sm text-muted-foreground sm:mt-4 sm:max-w-xl lg:mt-0 lg:min-w-[460px]">
+        <div className="mt-3 grid grid-cols-3 gap-2 text-sm text-muted-foreground sm:mt-4 sm:max-w-xl lg:mt-0 lg:min-w-115">
           <div className="rounded-lg border border-border/70 bg-background/50 px-3 py-2 text-center">
             <p className="text-base uppercase tracking-wide">Players</p>
             <p className="text-3xl font-semibold text-foreground">

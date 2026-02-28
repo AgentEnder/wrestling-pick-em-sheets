@@ -1,7 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
   ArrowRight,
   BarChart3,
@@ -10,6 +8,8 @@ import {
   Swords,
   Trophy,
 } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
@@ -30,12 +30,12 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import {
-  useAuth,
-  useUser,
   SignedIn,
   SignedOut,
   SignInButton,
+  useAuth,
   UserButton,
+  useUser,
 } from "@/lib/client/clerk-test-mode";
 import {
   fetchMyGames,
@@ -105,12 +105,12 @@ export function MyGamesPage() {
       />
 
       {/* Sticky header */}
-      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
+      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-backdrop-filter:bg-background/70">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2">
               <Swords className="h-5 w-5 text-primary" />
-              <span className="font-[family-name:var(--font-heading)] text-lg font-bold tracking-wide">
+              <span className="font-heading text-lg font-bold tracking-wide">
                 Pick Em Sheets
               </span>
             </Link>
@@ -134,7 +134,7 @@ export function MyGamesPage() {
       <main className="relative z-10 mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 lg:py-8">
         <div className="flex items-center gap-3">
           <Trophy className="h-6 w-6 text-primary" />
-          <h1 className="font-[family-name:var(--font-heading)] text-2xl font-bold tracking-wide">
+          <h1 className="font-heading text-2xl font-bold tracking-wide">
             My Games
           </h1>
         </div>
@@ -243,7 +243,7 @@ function TrendChart({ data }: { data: MyGamesStats["trendData"] }) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={trendChartConfig} className="h-[200px] w-full">
+        <ChartContainer config={trendChartConfig} className="h-50 w-full">
           <AreaChart
             data={data}
             margin={{ top: 5, right: 5, bottom: 5, left: 5 }}

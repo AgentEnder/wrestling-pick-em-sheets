@@ -193,7 +193,7 @@ export function EventSettings() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="font-[family-name:var(--font-heading)] text-xl font-bold uppercase tracking-wide text-primary">
+      <h2 className="font-heading text-xl font-bold uppercase tracking-wide text-primary">
         Event Details
       </h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
