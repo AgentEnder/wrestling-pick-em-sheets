@@ -17,6 +17,7 @@ import {
   useEditorUi,
   useEditorActions,
   useHasMatches,
+  useSheetSnapshot,
 } from "@/stores/selectors";
 
 const AUTOSAVE_DEBOUNCE_MS = 900;
@@ -328,7 +329,7 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     return isDraftDirty ? "Unsaved local edits." : "All sheet edits are saved.";
   })();
 
-  const sheetForPrint = useAppStore((s) => s.getSheetSnapshot());
+  const sheetForPrint = useSheetSnapshot();
 
   return (
     <div className="relative min-h-screen overflow-x-clip bg-background print:bg-white">
