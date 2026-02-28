@@ -16,13 +16,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useAppStore } from "@/stores/app-store";
+import {
+  useMatchById,
+  useMatchActions,
+  useMatchCount,
+  useSuggestions,
+} from "@/stores/selectors";
 import { getRosterSuggestions } from "@/lib/client/roster-api";
 import { getMatchTypeName } from "@/lib/match-types";
 import type {
   BonusQuestion,
-  BonusQuestionPool,
   Match,
-  MatchType,
 } from "@/lib/types";
 import {
   ArrowDown,
@@ -41,7 +46,7 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, memo } from "react";
 
 function secondsToTimeDisplay(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
@@ -106,38 +111,27 @@ function ThresholdTimeInput({
 }
 
 interface MatchEditorProps {
-  match: Match;
+  matchId: string;
   index: number;
-  totalMatches: number;
-  defaultPoints: number;
-  promotionName: string;
-  participantSuggestions: string[];
-  isLoadingParticipantSuggestions: boolean;
-  bonusQuestionPools: BonusQuestionPool[];
-  matchTypes: MatchType[];
-  isLoadingBonusQuestionPools: boolean;
-  onChange: (match: Match) => void;
-  onRemove: () => void;
-  onDuplicate: () => void;
-  onMove: (direction: "up" | "down") => void;
 }
 
-export function MatchEditor({
-  match,
+export const MatchEditor = memo(function MatchEditor({
+  matchId,
   index,
-  totalMatches,
-  defaultPoints,
-  promotionName,
-  participantSuggestions,
-  isLoadingParticipantSuggestions,
-  bonusQuestionPools,
-  matchTypes,
-  isLoadingBonusQuestionPools,
-  onChange,
-  onRemove,
-  onDuplicate,
-  onMove,
 }: MatchEditorProps) {
+  const match = useMatchById(matchId);
+  const totalMatches = useMatchCount();
+  const defaultPoints = useAppStore((s) => s.defaultPoints);
+  const promotionName = useAppStore((s) => s.promotionName);
+  const {
+    participantSuggestions,
+    isLoadingParticipantSuggestions,
+    bonusQuestionPools,
+    isLoadingBonusQuestionPools,
+    matchTypes,
+  } = useSuggestions();
+  const { replaceMatch, removeMatch, duplicateMatch, moveMatch } =
+    useMatchActions();
   const [isOpen, setIsOpen] = useState(true);
   const [newParticipant, setNewParticipant] = useState("");
   const [newOptionInputs, setNewOptionInputs] = useState<
@@ -149,30 +143,32 @@ export function MatchEditor({
   const [isLoadingQuerySuggestions, setIsLoadingQuerySuggestions] =
     useState(false);
 
-  const effectivePoints = match.points ?? defaultPoints;
+  const matchType = match?.type ?? "";
+  const effectivePoints = (match?.points ?? null) ?? defaultPoints;
   const matchTypeOptions = useMemo(() => {
-    if (matchTypes.some((matchType) => matchType.id === match.type)) {
+    if (!matchType) return matchTypes;
+    if (matchTypes.some((mt) => mt.id === matchType)) {
       return matchTypes;
     }
 
     return [
       {
-        id: match.type,
-        name: getMatchTypeName(match.type, matchTypes),
+        id: matchType,
+        name: getMatchTypeName(matchType, matchTypes),
         sortOrder: 0,
         isActive: true,
         defaultRuleSetIds: [],
       },
       ...matchTypes,
     ];
-  }, [match.type, matchTypes]);
-  const participants = match.participants;
+  }, [matchType, matchTypes]);
+  const participants = match?.participants ?? [];
   const participantCount = participants.length;
   const matchTypeLabel =
-    match.typeLabelOverride.trim() || getMatchTypeName(match.type, matchTypes);
+    (match?.typeLabelOverride ?? "").trim() || getMatchTypeName(matchType, matchTypes);
   const rulesLabel = [
-    match.isBattleRoyal ? "Timed Entry Rules" : null,
-    match.isEliminationStyle ? "Elimination Rules" : null,
+    match?.isBattleRoyal ? "Timed Entry Rules" : null,
+    match?.isEliminationStyle ? "Elimination Rules" : null,
   ]
     .filter((value): value is string => value !== null)
     .join(" • ");
@@ -181,6 +177,7 @@ export function MatchEditor({
   const hasPromotion = promotionName.trim().length > 0;
 
   function addParticipant(participantName?: string) {
+    if (!match) return;
     const name = (participantName ?? newParticipant).trim();
     if (!name) return;
 
@@ -193,18 +190,20 @@ export function MatchEditor({
       return;
     }
 
-    onChange({ ...match, participants: [...match.participants, name] });
+    replaceMatch(index, { ...match, participants: [...match.participants, name] });
     setNewParticipant("");
   }
 
   function removeParticipant(idx: number) {
-    onChange({
+    if (!match) return;
+    replaceMatch(index, {
       ...match,
       participants: match.participants.filter((_, i) => i !== idx),
     });
   }
 
   function addBonusQuestion() {
+    if (!match) return;
     const q: BonusQuestion = {
       id: crypto.randomUUID(),
       question: "",
@@ -214,11 +213,11 @@ export function MatchEditor({
       valueType: "string",
       gradingRule: "exact",
     };
-    onChange({ ...match, bonusQuestions: [...match.bonusQuestions, q] });
+    replaceMatch(index, { ...match, bonusQuestions: [...match.bonusQuestions, q] });
   }
 
   function interpolateQuestionTemplate(questionTemplate: string): string {
-    const title = match.title.trim() || "this match";
+    const title = (match?.title ?? "").trim() || "this match";
     const replacements: Record<string, string> = {
       matchTitle: title,
       promotionName: promotionName.trim(),
@@ -258,27 +257,31 @@ export function MatchEditor({
       gradingRule: template.gradingRule ?? "exact",
     };
 
-    onChange({ ...match, bonusQuestions: [...match.bonusQuestions, q] });
+    if (!match) return;
+    replaceMatch(index, { ...match, bonusQuestions: [...match.bonusQuestions, q] });
   }
 
   function updateBonusQuestion(
     qIndex: number,
     updates: Partial<BonusQuestion>,
   ) {
+    if (!match) return;
     const updated = match.bonusQuestions.map((q, i) =>
       i === qIndex ? { ...q, ...updates } : q,
     );
-    onChange({ ...match, bonusQuestions: updated });
+    replaceMatch(index, { ...match, bonusQuestions: updated });
   }
 
   function removeBonusQuestion(qIndex: number) {
-    onChange({
+    if (!match) return;
+    replaceMatch(index, {
       ...match,
       bonusQuestions: match.bonusQuestions.filter((_, i) => i !== qIndex),
     });
   }
 
   function addOption(qIndex: number) {
+    if (!match) return;
     const q = match.bonusQuestions[qIndex];
     const val = (newOptionInputs[q.id] || "").trim();
     if (!val) return;
@@ -287,6 +290,7 @@ export function MatchEditor({
   }
 
   function removeOption(qIndex: number, optIndex: number) {
+    if (!match) return;
     const q = match.bonusQuestions[qIndex];
     updateBonusQuestion(qIndex, {
       options: q.options.filter((_, i) => i !== optIndex),
@@ -319,10 +323,12 @@ export function MatchEditor({
       .slice(0, 8);
   }, [combinedSuggestions, normalizedInput, participants]);
 
+  const isBattleRoyal = match?.isBattleRoyal ?? false;
+  const isEliminationStyle = match?.isEliminationStyle ?? false;
   const bonusQuestionPoolsWithTemplates = useMemo(() => {
     const activeRuleSetIds = [
-      match.isBattleRoyal ? "timed-entry" : null,
-      match.isEliminationStyle ? "elimination" : null,
+      isBattleRoyal ? "timed-entry" : null,
+      isEliminationStyle ? "elimination" : null,
     ].filter((value): value is "timed-entry" | "elimination" => value !== null);
 
     return bonusQuestionPools
@@ -332,7 +338,7 @@ export function MatchEditor({
           (template) => template.defaultSection === "match",
         ),
         isRecommended:
-          pool.matchTypeIds.includes(match.type) ||
+          pool.matchTypeIds.includes(matchType) ||
           pool.ruleSetIds.some((ruleSetId) =>
             activeRuleSetIds.includes(ruleSetId),
           ),
@@ -351,9 +357,9 @@ export function MatchEditor({
       });
   }, [
     bonusQuestionPools,
-    match.isBattleRoyal,
-    match.isEliminationStyle,
-    match.type,
+    isBattleRoyal,
+    isEliminationStyle,
+    matchType,
   ]);
 
   const selectedPool =
@@ -424,6 +430,8 @@ export function MatchEditor({
     selectedTemplateId,
   ]);
 
+  if (!match) return null;
+
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <div className="rounded-lg border border-border bg-card">
@@ -432,7 +440,7 @@ export function MatchEditor({
             <button
               type="button"
               disabled={index === 0}
-              onClick={() => onMove("up")}
+              onClick={() => moveMatch(matchId, "up")}
               className="px-1.5 py-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25 transition-colors"
               aria-label="Move match up"
             >
@@ -441,7 +449,7 @@ export function MatchEditor({
             <button
               type="button"
               disabled={index === totalMatches - 1}
-              onClick={() => onMove("down")}
+              onClick={() => moveMatch(matchId, "down")}
               className="px-1.5 py-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25 transition-colors"
               aria-label="Move match down"
             >
@@ -493,7 +501,7 @@ export function MatchEditor({
                     placeholder="e.g. World Heavyweight Championship"
                     value={match.title}
                     onChange={(e) =>
-                      onChange({ ...match, title: e.target.value })
+                      replaceMatch(index, { ...match, title: e.target.value })
                     }
                   />
                 </div>
@@ -512,7 +520,7 @@ export function MatchEditor({
                     value={match.points ?? ""}
                     onChange={(e) => {
                       const val = e.target.value;
-                      onChange({
+                      replaceMatch(index, {
                         ...match,
                         points:
                           val === "" ? null : Math.max(1, parseInt(val) || 1),
@@ -531,20 +539,20 @@ export function MatchEditor({
                     );
                     const defaultRuleSetIds =
                       selectedMatchType?.defaultRuleSetIds ?? [];
-                    const isBattleRoyal =
+                    const newIsBattleRoyal =
                       defaultRuleSetIds.includes("timed-entry");
-                    const isEliminationStyle =
+                    const newIsEliminationStyle =
                       defaultRuleSetIds.includes("elimination");
 
-                    onChange({
+                    replaceMatch(index, {
                       ...match,
                       type: value,
-                      isBattleRoyal,
-                      isEliminationStyle,
-                      surpriseSlots: isBattleRoyal
+                      isBattleRoyal: newIsBattleRoyal,
+                      isEliminationStyle: newIsEliminationStyle,
+                      surpriseSlots: newIsBattleRoyal
                         ? Math.max(match.surpriseSlots, 5)
                         : 0,
-                      surpriseEntrantPoints: isBattleRoyal
+                      surpriseEntrantPoints: newIsBattleRoyal
                         ? match.surpriseEntrantPoints
                         : null,
                     });
@@ -573,7 +581,7 @@ export function MatchEditor({
                   placeholder={getMatchTypeName(match.type, matchTypes)}
                   value={match.typeLabelOverride}
                   onChange={(e) =>
-                    onChange({ ...match, typeLabelOverride: e.target.value })
+                    replaceMatch(index, { ...match, typeLabelOverride: e.target.value })
                   }
                 />
               </div>
@@ -583,7 +591,7 @@ export function MatchEditor({
                   <button
                     type="button"
                     onClick={() =>
-                      onChange({
+                      replaceMatch(index, {
                         ...match,
                         isBattleRoyal: !match.isBattleRoyal,
                         surpriseSlots: !match.isBattleRoyal
@@ -605,7 +613,7 @@ export function MatchEditor({
                   <button
                     type="button"
                     onClick={() =>
-                      onChange({
+                      replaceMatch(index, {
                         ...match,
                         isEliminationStyle: !match.isEliminationStyle,
                       })
@@ -636,7 +644,7 @@ export function MatchEditor({
                   placeholder="e.g. Tables, Ladders & Chairs -- first to retrieve the briefcase wins"
                   value={match.description}
                   onChange={(e) =>
-                    onChange({ ...match, description: e.target.value })
+                    replaceMatch(index, { ...match, description: e.target.value })
                   }
                   rows={3}
                   className="min-h-24 resize-y"
@@ -734,7 +742,7 @@ export function MatchEditor({
                       className="w-full"
                       value={match.surpriseSlots}
                       onChange={(e) =>
-                        onChange({
+                        replaceMatch(index, {
                           ...match,
                           surpriseSlots: Math.max(
                             0,
@@ -759,7 +767,7 @@ export function MatchEditor({
                       value={match.surpriseEntrantPoints ?? ""}
                       onChange={(e) => {
                         const value = e.target.value;
-                        onChange({
+                        replaceMatch(index, {
                           ...match,
                           surpriseEntrantPoints:
                             value === ""
@@ -1201,7 +1209,7 @@ export function MatchEditor({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={onDuplicate}
+                onClick={() => duplicateMatch(matchId)}
                 className="text-muted-foreground hover:text-foreground"
               >
                 <Copy className="h-4 w-4 mr-1" />
@@ -1211,7 +1219,7 @@ export function MatchEditor({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={onRemove}
+                onClick={() => removeMatch(matchId)}
                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
               >
                 <Trash2 className="h-4 w-4 mr-1" />
@@ -1223,4 +1231,4 @@ export function MatchEditor({
       </div>
     </Collapsible>
   );
-}
+});

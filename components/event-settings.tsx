@@ -17,14 +17,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
-import type { PickEmSheet } from "@/lib/types";
+import { useEventSettings, useEventSettingsActions } from "@/stores/selectors";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-
-interface EventSettingsProps {
-  sheet: PickEmSheet;
-  onChange: (sheet: PickEmSheet) => void;
-}
 
 const TIMEZONE_FALLBACK = [
   "UTC",
@@ -154,16 +149,19 @@ function getTimeZoneShortLabel(timeZone: string, instant: Date): string {
   return parts.find((part) => part.type === "timeZoneName")?.value ?? timeZone;
 }
 
-export function EventSettings({ sheet, onChange }: EventSettingsProps) {
+export function EventSettings() {
+  const { eventName, promotionName, eventDate, eventTagline, defaultPoints, tiebreakerLabel, tiebreakerIsTimeBased } = useEventSettings();
+  const { setEventName: onEventNameChange, setPromotionName: onPromotionNameChange, setEventDate: onEventDateChange, setEventTagline: onEventTaglineChange, setDefaultPoints: onDefaultPointsChange, setTiebreakerLabel: onTiebreakerLabelChange, setTiebreakerIsTimeBased: onTiebreakerIsTimeBasedChange } = useEventSettingsActions();
   const browserTimeZone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     [],
   );
   const [selectedTimeZone, setSelectedTimeZone] = useState(browserTimeZone);
   const [eventStartInput, setEventStartInput] = useState(() =>
-    eventDateToInputValue(sheet.eventDate, browserTimeZone),
+    eventDateToInputValue(eventDate, browserTimeZone),
   );
   const [isTimezoneOpen, setIsTimezoneOpen] = useState(false);
+
   const selectedTimeZoneLabel = useMemo(
     () => getTimeZoneShortLabel(selectedTimeZone, new Date()),
     [selectedTimeZone],
@@ -178,11 +176,20 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
     return all;
   }, []);
 
+  const nowRef = useMemo(() => new Date(), [isTimezoneOpen]);
+  const timeZoneLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const tz of availableTimeZones) {
+      labels.set(tz, getTimeZoneShortLabel(tz, nowRef));
+    }
+    return labels;
+  }, [availableTimeZones, nowRef]);
+
   useEffect(() => {
     setEventStartInput(
-      eventDateToInputValue(sheet.eventDate, selectedTimeZone),
+      eventDateToInputValue(eventDate, selectedTimeZone),
     );
-  }, [sheet.eventDate]);
+  }, [eventDate, selectedTimeZone]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -195,8 +202,8 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
           <Input
             id="event-name"
             placeholder="e.g. WrestleMania 42"
-            value={sheet.eventName}
-            onChange={(e) => onChange({ ...sheet, eventName: e.target.value })}
+            value={eventName}
+            onChange={(e) => onEventNameChange(e.target.value)}
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -204,10 +211,8 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
           <Input
             id="promotion-name"
             placeholder="e.g. WWE, AEW, NJPW"
-            value={sheet.promotionName}
-            onChange={(e) =>
-              onChange({ ...sheet, promotionName: e.target.value })
-            }
+            value={promotionName}
+            onChange={(e) => onPromotionNameChange(e.target.value)}
           />
         </div>
       </div>
@@ -226,10 +231,7 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
               onChange={(e) => {
                 const nextInput = e.target.value;
                 setEventStartInput(nextInput);
-                onChange({
-                  ...sheet,
-                  eventDate: zonedLocalInputToIso(nextInput, selectedTimeZone),
-                });
+                onEventDateChange(zonedLocalInputToIso(nextInput, selectedTimeZone));
               }}
             />
             <Popover open={isTimezoneOpen} onOpenChange={setIsTimezoneOpen}>
@@ -253,16 +255,14 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
                       {availableTimeZones.map((timeZone) => (
                         <CommandItem
                           key={timeZone}
-                          value={`${timeZone} ${getTimeZoneShortLabel(timeZone, new Date())}`}
+                          value={`${timeZone} ${timeZoneLabels.get(timeZone)}`}
                           onSelect={() => {
+                            const newDate = zonedLocalInputToIso(
+                              eventStartInput,
+                              timeZone,
+                            );
                             setSelectedTimeZone(timeZone);
-                            onChange({
-                              ...sheet,
-                              eventDate: zonedLocalInputToIso(
-                                eventStartInput,
-                                timeZone,
-                              ),
-                            });
+                            onEventDateChange(newDate);
                             setIsTimezoneOpen(false);
                           }}
                         >
@@ -271,7 +271,7 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
                           />
                           <span className="flex-1 truncate">{timeZone}</span>
                           <span className="text-xs text-muted-foreground">
-                            {getTimeZoneShortLabel(timeZone, new Date())}
+                            {timeZoneLabels.get(timeZone)}
                           </span>
                         </CommandItem>
                       ))}
@@ -290,10 +290,8 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
           <Input
             id="event-tagline"
             placeholder="e.g. The Showcase of the Immortals"
-            value={sheet.eventTagline}
-            onChange={(e) =>
-              onChange({ ...sheet, eventTagline: e.target.value })
-            }
+            value={eventTagline}
+            onChange={(e) => onEventTaglineChange(e.target.value)}
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -304,26 +302,21 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
             id="default-points"
             type="number"
             min={1}
-            value={sheet.defaultPoints}
+            value={defaultPoints}
             onChange={(e) =>
-              onChange({
-                ...sheet,
-                defaultPoints: Math.max(1, parseInt(e.target.value) || 1),
-              })
+              onDefaultPointsChange(Math.max(1, parseInt(e.target.value) || 1))
             }
           />
         </div>
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="tiebreaker-label">Tiebreaker Question</Label>
-        <Input
-          id="tiebreaker-label"
-          placeholder="e.g. Main event total match time (mins)"
-          value={sheet.tiebreakerLabel}
-          onChange={(e) =>
-            onChange({ ...sheet, tiebreakerLabel: e.target.value })
-          }
-        />
+          <Input
+            id="tiebreaker-label"
+            placeholder="e.g. Main event total match time (mins)"
+            value={tiebreakerLabel}
+            onChange={(e) => onTiebreakerLabelChange(e.target.value)}
+          />
         <p className="text-xs text-muted-foreground">
           Leave blank to hide the tiebreaker from the printed sheet.
         </p>
@@ -338,10 +331,8 @@ export function EventSettings({ sheet, onChange }: EventSettingsProps) {
         </div>
         <Switch
           id="tiebreaker-time-based"
-          checked={sheet.tiebreakerIsTimeBased}
-          onCheckedChange={(checked) =>
-            onChange({ ...sheet, tiebreakerIsTimeBased: checked })
-          }
+          checked={tiebreakerIsTimeBased}
+          onCheckedChange={onTiebreakerIsTimeBasedChange}
         />
       </div>
     </div>

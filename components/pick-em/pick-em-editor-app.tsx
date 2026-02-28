@@ -455,6 +455,8 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
 
             <TabsContent value="preview" className="mt-0">
               <PreviewView
+                sheet={sheetForPrint}
+                hasMatches={hasMatches}
                 printRef={printRef}
                 onPrint={handlePrint}
               />

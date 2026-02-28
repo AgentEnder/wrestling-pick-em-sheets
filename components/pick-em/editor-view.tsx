@@ -13,17 +13,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { listBonusQuestionPools } from "@/lib/client/bonus-question-pools-api";
-import { listMatchTypes } from "@/lib/client/match-types-api";
-import { DEFAULT_MATCH_TYPE_ID } from "@/lib/match-types";
-import { getRosterSuggestions } from "@/lib/client/roster-api";
-import type {
-  BonusQuestion,
-  BonusQuestionPool,
-  Match,
-  MatchType,
-  PickEmSheet,
-} from "@/lib/types";
+import { useAppStore } from "@/stores/app-store";
+import {
+  useMatchIds,
+  useMatchActions,
+  useEventBonusQuestions,
+  useEventBonusQuestionsAction,
+  useSuggestions,
+  useEditorActions,
+  useHasMatches,
+} from "@/stores/selectors";
+import type { BonusQuestion } from "@/lib/types";
 import {
   HelpCircle,
   ListChecks,
@@ -33,17 +33,6 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-
-interface EditorViewProps {
-  sheet: PickEmSheet;
-  hasMatches: boolean;
-  onSheetChange: (sheet: PickEmSheet) => void;
-  onAddMatch: () => void;
-  onUpdateMatch: (index: number, updated: Match) => void;
-  onRemoveMatch: (index: number) => void;
-  onDuplicateMatch: (index: number) => void;
-  onMoveMatch: (index: number, direction: "up" | "down") => void;
-}
 
 function createEmptyBonusQuestion(): BonusQuestion {
   return {
@@ -57,36 +46,25 @@ function createEmptyBonusQuestion(): BonusQuestion {
   };
 }
 
-const FALLBACK_MATCH_TYPES: MatchType[] = [
-  {
-    id: DEFAULT_MATCH_TYPE_ID,
-    name: "Singles Match",
-    sortOrder: 0,
-    isActive: true,
-    defaultRuleSetIds: [],
-  },
-];
+export function EditorView() {
+  const promotionName = useAppStore((s) => s.promotionName);
+  const eventName = useAppStore((s) => s.eventName);
+  const defaultPoints = useAppStore((s) => s.defaultPoints);
 
-export function EditorView({
-  sheet,
-  hasMatches,
-  onSheetChange,
-  onAddMatch,
-  onUpdateMatch,
-  onRemoveMatch,
-  onDuplicateMatch,
-  onMoveMatch,
-}: EditorViewProps) {
-  const [participantSuggestions, setParticipantSuggestions] = useState<
-    string[]
-  >([]);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [bonusQuestionPools, setBonusQuestionPools] = useState<
-    BonusQuestionPool[]
-  >([]);
-  const [isLoadingBonusQuestionPools, setIsLoadingBonusQuestionPools] =
-    useState(false);
-  const [matchTypes, setMatchTypes] = useState<MatchType[]>([]);
+  const matchIds = useMatchIds();
+  const hasMatches = useHasMatches();
+  const { addMatch } = useMatchActions();
+
+  const eventBonusQuestions = useEventBonusQuestions();
+  const setEventBonusQuestions = useEventBonusQuestionsAction();
+
+  const {
+    isLoadingBonusQuestionPools,
+    bonusQuestionPools,
+  } = useSuggestions();
+  const { loadSuggestions, loadBonusQuestionPools, loadMatchTypes } =
+    useEditorActions();
+
   const [selectedEventPoolId, setSelectedEventPoolId] = useState("");
   const [selectedEventTemplateId, setSelectedEventTemplateId] = useState("");
   const [eventOptionInputs, setEventOptionInputs] = useState<
@@ -109,92 +87,27 @@ export function EditorView({
   const selectedEventPool =
     eventBonusPools.find((pool) => pool.id === selectedEventPoolId) ?? null;
   const selectedEventTemplates = selectedEventPool?.templates ?? [];
-  const availableMatchTypes =
-    matchTypes.length > 0 ? matchTypes : FALLBACK_MATCH_TYPES;
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadPools() {
-      setIsLoadingBonusQuestionPools(true);
-      try {
-        const pools = await listBonusQuestionPools();
-        if (!cancelled) {
-          setBonusQuestionPools(pools);
-        }
-      } catch {
-        if (!cancelled) {
-          setBonusQuestionPools([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingBonusQuestionPools(false);
-        }
-      }
-    }
-
-    void loadPools();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void loadBonusQuestionPools();
+  }, [loadBonusQuestionPools]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadMatchTypes() {
-      try {
-        const loadedMatchTypes = await listMatchTypes();
-        if (!cancelled) {
-          setMatchTypes(loadedMatchTypes);
-        }
-      } catch {
-        if (!cancelled) {
-          setMatchTypes([]);
-        }
-      }
-    }
-
     void loadMatchTypes();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [loadMatchTypes]);
 
   useEffect(() => {
-    const promotionName = sheet.promotionName.trim();
-    if (!promotionName) {
-      setParticipantSuggestions([]);
-      setIsLoadingSuggestions(false);
-      return;
-    }
+    const trimmed = promotionName.trim();
+    if (!trimmed) return;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(async () => {
-      setIsLoadingSuggestions(true);
-
-      try {
-        const response = await getRosterSuggestions(promotionName);
-        if (controller.signal.aborted) return;
-        setParticipantSuggestions(response.names);
-      } catch {
-        if (!controller.signal.aborted) {
-          setParticipantSuggestions([]);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoadingSuggestions(false);
-        }
-      }
+    const timeoutId = setTimeout(() => {
+      void loadSuggestions(trimmed);
     }, 300);
 
     return () => {
-      controller.abort();
       clearTimeout(timeoutId);
     };
-  }, [sheet.promotionName]);
+  }, [promotionName, loadSuggestions]);
 
   useEffect(() => {
     if (eventBonusPools.length === 0) {
@@ -230,37 +143,30 @@ export function EditorView({
     index: number,
     updates: Partial<BonusQuestion>,
   ) {
-    const updated = sheet.eventBonusQuestions.map((question, questionIndex) =>
+    const updated = eventBonusQuestions.map((question, questionIndex) =>
       questionIndex === index ? { ...question, ...updates } : question,
     );
 
-    onSheetChange({
-      ...sheet,
-      eventBonusQuestions: updated,
-    });
+    setEventBonusQuestions(updated);
   }
 
   function removeEventBonusQuestion(index: number) {
-    onSheetChange({
-      ...sheet,
-      eventBonusQuestions: sheet.eventBonusQuestions.filter(
+    setEventBonusQuestions(
+      eventBonusQuestions.filter(
         (_, questionIndex) => questionIndex !== index,
       ),
-    });
+    );
   }
 
   function addEventBonusQuestion() {
-    onSheetChange({
-      ...sheet,
-      eventBonusQuestions: [
-        ...sheet.eventBonusQuestions,
-        createEmptyBonusQuestion(),
-      ],
-    });
+    setEventBonusQuestions([
+      ...eventBonusQuestions,
+      createEmptyBonusQuestion(),
+    ]);
   }
 
   function addEventOption(questionIndex: number) {
-    const question = sheet.eventBonusQuestions[questionIndex];
+    const question = eventBonusQuestions[questionIndex];
     const value = (eventOptionInputs[question.id] || "").trim();
     if (!value) return;
 
@@ -272,7 +178,7 @@ export function EditorView({
   }
 
   function removeEventOption(questionIndex: number, optionIndex: number) {
-    const question = sheet.eventBonusQuestions[questionIndex];
+    const question = eventBonusQuestions[questionIndex];
     updateEventBonusQuestion(questionIndex, {
       options: question.options.filter((_, index) => index !== optionIndex),
     });
@@ -280,8 +186,8 @@ export function EditorView({
 
   function interpolateEventTemplate(templateText: string): string {
     return templateText
-      .replace(/\{\{\s*promotionName\s*\}\}/g, sheet.promotionName.trim())
-      .replace(/\{\{\s*eventName\s*\}\}/g, sheet.eventName.trim());
+      .replace(/\{\{\s*promotionName\s*\}\}/g, promotionName.trim())
+      .replace(/\{\{\s*eventName\s*\}\}/g, eventName.trim());
   }
 
   function addEventBonusFromTemplate() {
@@ -301,16 +207,13 @@ export function EditorView({
       gradingRule: template.gradingRule ?? "exact",
     };
 
-    onSheetChange({
-      ...sheet,
-      eventBonusQuestions: [...sheet.eventBonusQuestions, question],
-    });
+    setEventBonusQuestions([...eventBonusQuestions, question]);
   }
 
   return (
     <div className="flex flex-col gap-6">
       <section className="rounded-lg border border-border bg-card p-4">
-        <EventSettings sheet={sheet} onChange={onSheetChange} />
+        <EventSettings />
       </section>
 
       <section className="flex flex-col gap-3">
@@ -319,34 +222,18 @@ export function EditorView({
             Match Card
           </h2>
           <span className="text-sm text-muted-foreground">
-            {sheet.matches.length} match{sheet.matches.length !== 1 ? "es" : ""}
+            {matchIds.length} match{matchIds.length !== 1 ? "es" : ""}
           </span>
         </div>
 
-        {sheet.matches.map((match, i) => (
-          <MatchEditor
-            key={match.id}
-            match={match}
-            index={i}
-            totalMatches={sheet.matches.length}
-            defaultPoints={sheet.defaultPoints}
-            promotionName={sheet.promotionName}
-            participantSuggestions={participantSuggestions}
-            isLoadingParticipantSuggestions={isLoadingSuggestions}
-            bonusQuestionPools={bonusQuestionPools}
-            matchTypes={availableMatchTypes}
-            isLoadingBonusQuestionPools={isLoadingBonusQuestionPools}
-            onChange={(updated) => onUpdateMatch(i, updated)}
-            onRemove={() => onRemoveMatch(i)}
-            onDuplicate={() => onDuplicateMatch(i)}
-            onMove={(direction) => onMoveMatch(i, direction)}
-          />
+        {matchIds.map((id, i) => (
+          <MatchEditor key={id} matchId={id} index={i} />
         ))}
 
         <div className="pt-2">
           <Button
             variant="outline"
-            onClick={onAddMatch}
+            onClick={() => addMatch()}
             className="border-dashed border-border hover:border-primary hover:text-primary"
           >
             <Swords className="h-4 w-4 mr-2" />
@@ -371,8 +258,8 @@ export function EditorView({
             Event Bonus Questions
           </h2>
           <span className="text-sm text-muted-foreground">
-            {sheet.eventBonusQuestions.length} question
-            {sheet.eventBonusQuestions.length === 1 ? "" : "s"}
+            {eventBonusQuestions.length} question
+            {eventBonusQuestions.length === 1 ? "" : "s"}
           </span>
         </div>
 
@@ -445,7 +332,7 @@ export function EditorView({
             )}
           </div>
 
-          {sheet.eventBonusQuestions.map((question, questionIndex) => (
+          {eventBonusQuestions.map((question, questionIndex) => (
             <div
               key={question.id}
               className="rounded-md border border-border bg-secondary/30 p-3 flex flex-col gap-2"
@@ -464,7 +351,7 @@ export function EditorView({
                 <Input
                   type="number"
                   min={1}
-                  placeholder={String(sheet.defaultPoints)}
+                  placeholder={String(defaultPoints)}
                   value={question.points ?? ""}
                   onChange={(event) => {
                     const value = event.target.value;
