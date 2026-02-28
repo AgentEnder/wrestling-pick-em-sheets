@@ -436,7 +436,7 @@ function getEventBonusLineUnits(sheet: PickEmSheet): number {
 }
 
 function getSparseExpansionVars(sheet: PickEmSheet): CSSProperties {
-  const sheetHeightPx = 10.4 * 96;
+  const sheetHeightPx = 10.2 * 96;
   const matchCount = Math.max(1, sheet.matches.length);
   const lineUnits = sheet.matches.reduce(
     (sum, match) => sum + getMatchLineUnits(match),
