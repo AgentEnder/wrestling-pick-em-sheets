@@ -108,6 +108,12 @@ function HostMatchSectionInner({
   const matchResult = findMatchResult(payload, match.id);
   const participants = match.participants;
   const winnerName = matchResult?.winnerName ?? "";
+  const winnerInList = participants.some((name) => name === winnerName);
+  const winnerSelectValue = winnerName
+    ? winnerInList
+      ? winnerName
+      : "__custom__"
+    : "__none__";
 
   /* Timer state */
   const matchTimerId = toMatchTimerId(match.id);
@@ -378,10 +384,20 @@ function HostMatchSectionInner({
         <div className="space-y-2">
           <Label>Winner</Label>
           <Select
-            value={winnerName || "__none__"}
-            onValueChange={(value) =>
-              liveSetMatchWinner(match.id, value === "__none__" ? "" : value)
-            }
+            value={winnerSelectValue}
+            onValueChange={(value) => {
+              if (value === "__none__") {
+                liveSetMatchWinner(match.id, "");
+                return;
+              }
+              if (value === "__custom__") {
+                const current =
+                  winnerName && !winnerInList ? winnerName : "";
+                liveSetMatchWinner(match.id, current);
+                return;
+              }
+              liveSetMatchWinner(match.id, value);
+            }}
           >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select winner" />
@@ -393,8 +409,21 @@ function HostMatchSectionInner({
                   {participant}
                 </SelectItem>
               ))}
+              <SelectItem value="__custom__">Custom winner...</SelectItem>
             </SelectContent>
           </Select>
+          {winnerSelectValue === "__custom__" ? (
+            <div className="space-y-1.5">
+              <Label>Custom winner</Label>
+              <Input
+                placeholder="Type winner name"
+                value={winnerName}
+                onChange={(event) =>
+                  liveSetMatchWinner(match.id, event.target.value)
+                }
+              />
+            </div>
+          ) : null}
           {gameState?.playerAnswerSummaries && winnerName.trim() ? (
             <FuzzyReviewPanel
               candidates={computeFuzzyCandidatesForAnswer(
