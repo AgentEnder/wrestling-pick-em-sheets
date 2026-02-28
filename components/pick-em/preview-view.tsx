@@ -2,23 +2,19 @@
 
 import { PrintSheet } from "@/components/print-sheet";
 import { Button } from "@/components/ui/button";
-import type { PickEmSheet } from "@/lib/types";
+import { useSheetSnapshot, useHasMatches } from "@/stores/selectors";
 import { Printer } from "lucide-react";
 import type { RefObject } from "react";
 
 interface PreviewViewProps {
-  sheet: PickEmSheet;
-  hasMatches: boolean;
   printRef: RefObject<HTMLDivElement | null>;
   onPrint: () => void;
 }
 
-export function PreviewView({
-  sheet,
-  hasMatches,
-  printRef,
-  onPrint,
-}: PreviewViewProps) {
+export function PreviewView({ printRef, onPrint }: PreviewViewProps) {
+  const sheet = useSheetSnapshot();
+  const hasMatches = useHasMatches();
+
   if (!hasMatches) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">

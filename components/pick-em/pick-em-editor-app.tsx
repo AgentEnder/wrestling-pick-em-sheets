@@ -17,7 +17,6 @@ import {
   useEditorUi,
   useEditorActions,
   useHasMatches,
-  useHasEventName,
 } from "@/stores/selectors";
 
 const AUTOSAVE_DEBOUNCE_MS = 900;
@@ -63,12 +62,10 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     syncOverrides,
     hydrateFromDraft,
     persistDraft,
-    resetToServer,
     importSheet,
   } = useEditorActions();
 
   const hasMatches = useHasMatches();
-  const hasEventName = useHasEventName();
 
   const [isEditableFieldFocused, setIsEditableFieldFocused] = useState(false);
 
@@ -271,35 +268,6 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     window.print();
   }, []);
 
-  const handleReset = useCallback(() => {
-    resetToServer();
-  }, [resetToServer]);
-
-  const handleExport = useCallback(() => {
-    const sheet = getSheetSnapshot();
-    const json = JSON.stringify(sheet, null, 2);
-    const bytes = new TextEncoder().encode(json);
-    let binary = "";
-
-    bytes.forEach((byte) => {
-      binary += String.fromCharCode(byte);
-    });
-
-    const encoded = btoa(binary);
-    const blob = new Blob([encoded], { type: "application/octet-stream" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-
-    const safeName = (sheet.eventName.trim() || "pick-em-sheet")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-");
-
-    anchor.download = `${safeName}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }, [getSheetSnapshot]);
-
   const handleImportClick = useCallback(() => {
     importInputRef.current?.click();
   }, []);
@@ -330,16 +298,6 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     },
     [importSheet],
   );
-
-  async function handleSaveSheet() {
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-      autoSaveTimeoutRef.current = null;
-      useAppStore.setState({ hasPendingAutoSave: false });
-    }
-
-    await saveSheet(cardId, "manual");
-  }
 
   const draftStatusMessage = (() => {
     if (!isAuthLoaded) {
@@ -377,17 +335,10 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     <div className="relative min-h-screen overflow-x-clip bg-background print:bg-white">
       <div className="no-print pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(230,170,60,0.20),transparent_35%),radial-gradient(circle_at_90%_20%,rgba(130,160,255,0.12),transparent_35%),linear-gradient(to_bottom,rgba(255,255,255,0.02),transparent_35%)]" />
       <PageHeader
-        hasMatches={hasMatches}
-        hasEventName={hasEventName}
-        onImportClick={handleImportClick}
-        onExport={handleExport}
-        onReset={handleReset}
-        onPrint={handlePrint}
-        onSave={() => {
-          void handleSaveSheet();
-        }}
-        isSaving={isSavingSheet || isAutoSavingSheet}
+        cardId={cardId}
         canSave={isAuthLoaded && Boolean(userId)}
+        onImportClick={handleImportClick}
+        onPrint={handlePrint}
       />
 
       <input
@@ -455,8 +406,6 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
 
             <TabsContent value="preview" className="mt-0">
               <PreviewView
-                sheet={sheetForPrint}
-                hasMatches={hasMatches}
                 printRef={printRef}
                 onPrint={handlePrint}
               />

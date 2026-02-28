@@ -15,7 +15,12 @@ import {
   UserButton,
 } from "@/lib/client/clerk-test-mode";
 import {
-  ChevronLeft,
+  useHasMatches,
+  useHasEventName,
+  useEditorUi,
+  useEditorActions,
+} from "@/stores/selectors";
+import {
   Download,
   EllipsisVertical,
   Printer,
@@ -25,34 +30,60 @@ import {
   Upload,
 } from "lucide-react";
 import Link from "next/link";
+import { useCallback } from "react";
 
 interface PageHeaderProps {
-  hasMatches: boolean;
-  hasEventName: boolean;
-  onImportClick: () => void;
-  onExport: () => void;
-  onReset: () => void;
-  onPrint: () => void;
-  onSave: () => void;
-  isSaving: boolean;
+  cardId: string;
   canSave: boolean;
-  backHref?: string;
-  backLabel?: string;
+  onImportClick: () => void;
+  onPrint: () => void;
 }
 
 export function PageHeader({
-  hasMatches,
-  hasEventName,
-  onImportClick,
-  onExport,
-  onReset,
-  onPrint,
-  onSave,
-  isSaving,
+  cardId,
   canSave,
-  backHref,
-  backLabel = "Back",
+  onImportClick,
+  onPrint,
 }: PageHeaderProps) {
+  const hasMatches = useHasMatches();
+  const hasEventName = useHasEventName();
+  const { isSavingSheet, isAutoSavingSheet } = useEditorUi();
+  const { saveSheet, resetToServer, getSheetSnapshot } = useEditorActions();
+  const isSaving = isSavingSheet || isAutoSavingSheet;
+
+  const handleSave = useCallback(() => {
+    void saveSheet(cardId, "manual");
+  }, [saveSheet, cardId]);
+
+  const handleReset = useCallback(() => {
+    resetToServer();
+  }, [resetToServer]);
+
+  const handleExport = useCallback(() => {
+    const sheet = getSheetSnapshot();
+    const json = JSON.stringify(sheet, null, 2);
+    const bytes = new TextEncoder().encode(json);
+    let binary = "";
+
+    bytes.forEach((byte) => {
+      binary += String.fromCharCode(byte);
+    });
+
+    const encoded = btoa(binary);
+    const blob = new Blob([encoded], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+
+    const safeName = (sheet.eventName.trim() || "pick-em-sheet")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-");
+
+    anchor.download = `${safeName}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [getSheetSnapshot]);
+
   return (
     <header className="no-print sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -75,14 +106,6 @@ export function PageHeader({
 
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
           <AppNavbar />
-          {backHref ? (
-            <Button asChild size="sm" variant="outline">
-              <Link href={backHref}>
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                {backLabel}
-              </Link>
-            </Button>
-          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -99,11 +122,11 @@ export function PageHeader({
                 <Upload className="h-4 w-4" />
                 Import
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={onExport}>
+              <DropdownMenuItem onClick={handleExport}>
                 <Download className="h-4 w-4" />
                 Export
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={onReset}>
+              <DropdownMenuItem onClick={handleReset}>
                 <RotateCcw className="h-4 w-4" />
                 Reset
               </DropdownMenuItem>
@@ -113,7 +136,7 @@ export function PageHeader({
           <Button
             size="sm"
             variant="outline"
-            onClick={onSave}
+            onClick={handleSave}
             disabled={isSaving || !canSave}
           >
             <Save className="h-4 w-4 mr-1" />
