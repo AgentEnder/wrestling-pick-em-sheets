@@ -29,7 +29,7 @@ function LeaderboardPanelInner({
   if (variant === "display") {
     return (
       <>
-        <div className="grid grid-cols-[72px_1fr_170px_90px] gap-2 border-b border-border/70 pb-2 text-xs uppercase tracking-wide text-muted-foreground">
+        <div className="grid grid-cols-[72px_1fr_170px_90px] gap-2 border-b border-border/70 pb-2 text-sm uppercase tracking-wide text-muted-foreground">
           <span>Rank</span>
           <span>Player</span>
           <span>Status</span>
@@ -57,11 +57,11 @@ function LeaderboardPanelInner({
                       Leader
                     </div>
                   ) : null}
-                  <span className="font-mono text-xl font-semibold">
+                  <span className="font-mono text-2xl font-semibold">
                     #{entry.rank}
                   </span>
-                  <span className="truncate text-lg">{entry.nickname}</span>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="truncate text-xl">{entry.nickname}</span>
+                  <div className="flex items-center gap-2 text-base text-muted-foreground">
                     <span
                       className={`h-2.5 w-2.5 rounded-full ${dotClass}`}
                     />
@@ -69,7 +69,7 @@ function LeaderboardPanelInner({
                     <span>{presence.ageLabel}</span>
                   </div>
                   <div className="text-right">
-                    <span className="font-mono text-2xl font-semibold">
+                    <span className="font-mono text-3xl font-semibold">
                       {entry.score}
                     </span>
                   </div>

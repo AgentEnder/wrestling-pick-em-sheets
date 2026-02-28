@@ -37,7 +37,7 @@ function FullscreenEffectOverlayInner({
         <div className="lg-fullscreen-effect-panel">
           <div className="lg-fullscreen-effect-title">
             <Sparkles className="h-6 w-6" />
-            <span className="font-heading text-2xl uppercase tracking-wide">
+            <span className="font-heading text-3xl uppercase tracking-wide">
               Live Results
             </span>
           </div>
@@ -48,10 +48,10 @@ function FullscreenEffectOverlayInner({
                 className="lg-fullscreen-event-item"
                 style={{ animationDelay: `${index * 110}ms` }}
               >
-                <p className="text-xs uppercase tracking-wide text-primary/90">
+                <p className="text-sm uppercase tracking-wide text-primary/90">
                   {formatEventTypeLabel(event.type)}
                 </p>
-                <p className="text-base text-foreground">{event.message}</p>
+                <p className="text-lg text-foreground">{event.message}</p>
               </div>
             ))}
           </div>
@@ -90,7 +90,7 @@ function LeaderboardShiftPanel({
     <div className="lg-fullscreen-effect-panel">
       <div className="lg-fullscreen-effect-title">
         <Trophy className="h-6 w-6" />
-        <span className="font-heading text-2xl uppercase tracking-wide">
+        <span className="font-heading text-3xl uppercase tracking-wide">
           Leaderboard Shift
         </span>
       </div>
@@ -120,7 +120,7 @@ function LeaderboardShiftPanel({
                 }}
               >
                 <div className="min-w-0">
-                  <p className="truncate text-base font-semibold">
+                  <p className="truncate text-lg font-semibold">
                     #{entry.rank} {entry.nickname}
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -130,7 +130,7 @@ function LeaderboardShiftPanel({
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-mono text-lg font-semibold">
+                  <p className="font-mono text-xl font-semibold">
                     {entry.score}
                   </p>
                   {rankDelta > 0 ? (

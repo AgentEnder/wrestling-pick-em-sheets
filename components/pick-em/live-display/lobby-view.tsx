@@ -35,7 +35,7 @@ function LobbyViewInner({
   return (
     <div className="grid gap-5 lg:grid-cols-[1.1fr_1.4fr] lg:items-start">
       <section className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-xl shadow-black/25 backdrop-blur">
-        <h2 className="text-sm uppercase tracking-wide text-muted-foreground">
+        <h2 className="text-base uppercase tracking-wide text-muted-foreground">
           Scan To Join
         </h2>
         <div className="mt-3 flex justify-center rounded-xl border border-border/70 bg-background/45 p-5">
@@ -51,7 +51,7 @@ function LobbyViewInner({
             </p>
           )}
         </div>
-        <p className="mt-3 text-center text-xs text-muted-foreground">
+        <p className="mt-3 text-center text-sm text-muted-foreground">
           Open{" "}
           <span className="font-mono text-foreground">
             {joinBaseOrigin ? `${joinBaseOrigin}/join` : ".../join"}
@@ -97,7 +97,7 @@ function LobbyViewInner({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-base font-semibold">
+                      <p className="truncate text-lg font-semibold">
                         <UserRound className="mr-1 inline h-4 w-4" />
                         {player.nickname}
                       </p>
