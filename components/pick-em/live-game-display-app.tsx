@@ -49,6 +49,10 @@ const FULLSCREEN_HIDDEN_EVENT_TYPES = new Set([
   "player.submitted",
   "player.pending",
   "player.denied",
+  "lock.global",
+  "lock.match",
+  "lock.matchBonus",
+  "lock.eventBonus",
 ]);
 
 const JOIN_OVERLAY_EVENT_TYPES = new Set([

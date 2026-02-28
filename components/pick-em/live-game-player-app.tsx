@@ -71,6 +71,10 @@ const PLAYER_FULLSCREEN_HIDDEN_EVENT_TYPES = new Set([
   "player.denied",
   "player.joined",
   "player.approved",
+  "lock.global",
+  "lock.match",
+  "lock.matchBonus",
+  "lock.eventBonus",
 ]);
 
 function getPushPromptStorageKey(gameId: string, playerId: string): string {
