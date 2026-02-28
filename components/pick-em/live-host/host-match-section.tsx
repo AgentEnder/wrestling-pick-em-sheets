@@ -117,6 +117,15 @@ function HostMatchSectionInner({
   const winnerName = matchResult?.winnerName ?? "";
   const [winnerComboboxOpen, setWinnerComboboxOpen] = React.useState(false);
 
+  /* Build deduped winner candidates: participants + keyed entrants + player guesses */
+  const winnerCandidates = useMemo(() => {
+    const entryOrder = matchResult?.battleRoyalEntryOrder ?? [];
+    const playerGuesses = (gameState?.playerAnswerSummaries ?? [])
+      .map((p) => p.matchPicks.find((mp) => mp.matchId === match.id)?.winnerName)
+      .filter((name): name is string => !!name && name.trim().length > 0);
+    return Array.from(new Set([...participants, ...entryOrder, ...playerGuesses]));
+  }, [participants, matchResult?.battleRoyalEntryOrder, gameState?.playerAnswerSummaries, match.id]);
+
   /* Timer state */
   const matchTimerId = toMatchTimerId(match.id);
   const hasRunningTimers = useMemo(
@@ -421,22 +430,22 @@ function HostMatchSectionInner({
                       />
                       Unanswered
                     </CommandItem>
-                    {participants.map((participant) => (
+                    {winnerCandidates.map((candidate) => (
                       <CommandItem
-                        key={participant}
-                        value={participant}
+                        key={candidate}
+                        value={candidate}
                         onSelect={() => {
-                          liveSetMatchWinner(match.id, participant);
+                          liveSetMatchWinner(match.id, candidate);
                           setWinnerComboboxOpen(false);
                         }}
                       >
                         <Check
                           className={cn(
                             "mr-2 h-4 w-4",
-                            winnerName === participant ? "opacity-100" : "opacity-0",
+                            winnerName === candidate ? "opacity-100" : "opacity-0",
                           )}
                         />
-                        {participant}
+                        {candidate}
                       </CommandItem>
                     ))}
                   </CommandGroup>
