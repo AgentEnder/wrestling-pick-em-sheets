@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Reorder } from "motion/react";
+import { RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,15 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   getLiveGameMe,
   getLiveGameState,
@@ -30,7 +20,6 @@ import {
   type LiveGameMeResponse,
   type LiveGameStateResponse,
 } from "@/lib/client/live-games-api";
-import { getConnectionStatus } from "@/lib/client/connection-status";
 import {
   createScreenWakeLockManager,
   getNotificationPermission,
@@ -44,35 +33,27 @@ import {
   type WakeLockManager,
 } from "@/lib/client/live-game-pwa";
 import type {
-  LivePlayerAnswer,
   LivePlayerMatchPick,
   LivePlayerPicksPayload,
 } from "@/lib/types";
-import { cn } from "@/lib/utils";
-import { formatEventTypeLabel, filterRosterMemberSuggestions, normalizeText } from "@/lib/pick-em/text-utils";
-import { hasLeaderboardChanged, buildBubbleSortSteps } from "@/lib/pick-em/leaderboard-utils";
+import {
+  hasLeaderboardChanged,
+  buildBubbleSortSteps,
+} from "@/lib/pick-em/leaderboard-utils";
 import { useRosterSuggestions } from "@/hooks/use-roster-suggestions";
 import {
   useFullscreenEffects,
   type FullscreenEffect,
-  type FullscreenEventsEffect,
-  type FullscreenLeaderboardEffect,
 } from "@/hooks/use-fullscreen-effects";
-import {
-  Bell,
-  BellOff,
-  Maximize2,
-  Minimize2,
-  Plus,
-  RefreshCcw,
-  Save,
-  Sparkles,
-  Trash2,
-  Trophy,
-  Tv,
-  Zap,
-} from "lucide-react";
 import { toast } from "sonner";
+
+import { FullscreenEffectOverlay } from "./shared/fullscreen-effect-overlay";
+import { LeaderboardPanel } from "./shared/leaderboard-panel";
+import { UpdatesFeed } from "./shared/updates-feed";
+import { PlayerHeader } from "./live-player/player-header";
+import { PlayerMatchPicks } from "./live-player/player-match-picks";
+import { PlayerEventBonusPicks } from "./live-player/player-event-bonus-picks";
+import { PlayerTiebreakerInput } from "./live-player/player-tiebreaker-input";
 
 interface LiveGamePlayerAppProps {
   gameId: string;
@@ -81,10 +62,7 @@ interface LiveGamePlayerAppProps {
 
 const POLL_INTERVAL_MS = 10_000;
 const REFRESH_STALE_THRESHOLD_MS = POLL_INTERVAL_MS * 5;
-const FULLSCREEN_EFFECT_DURATION_MS = 15_000;
 const FULLSCREEN_LEADERBOARD_LIMIT = 8;
-const LEADERBOARD_SWAP_DURATION_MS = 1_000;
-const LEADERBOARD_FINAL_PAUSE_MS = 5_000;
 const UPDATE_VIBRATE_PATTERN = [110, 60, 110];
 
 const PLAYER_FULLSCREEN_HIDDEN_EVENT_TYPES = new Set([
@@ -99,63 +77,36 @@ function getPushPromptStorageKey(gameId: string, playerId: string): string {
   return `live-game-push-prompted:${gameId}:${playerId}`;
 }
 
-function getFullscreenEffectDurationMs(effect: FullscreenEffect): number {
-  if (effect.kind === "events") return FULLSCREEN_EFFECT_DURATION_MS;
-  return (
-    effect.swapCount * LEADERBOARD_SWAP_DURATION_MS + LEADERBOARD_FINAL_PAUSE_MS
-  );
-}
-
-function formatCountdown(msRemaining: number): string {
-  const totalMinutes = Math.max(0, Math.floor(msRemaining / 60_000));
-  const days = Math.floor(totalMinutes / (60 * 24));
-  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
-  const minutes = totalMinutes % 60;
-  return `${days} days, ${hours} hours, ${minutes} minutes`;
-}
-
-function findMatchPick(
-  picks: LivePlayerPicksPayload,
-  matchId: string,
-): LivePlayerMatchPick | null {
-  return picks.matchPicks.find((pick) => pick.matchId === matchId) ?? null;
-}
-
-function findAnswer(
-  answers: LivePlayerAnswer[],
-  questionId: string,
-): LivePlayerAnswer | null {
-  return answers.find((answer) => answer.questionId === questionId) ?? null;
-}
-
-function toLockKey(matchId: string, questionId: string): string {
-  return `${matchId}:${questionId}`;
-}
-
 export function LiveGamePlayerApp({
   gameId,
   joinCodeFromUrl,
 }: LiveGamePlayerAppProps) {
+  /* ---- Local state ---- */
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [me, setMe] = useState<LiveGameMeResponse | null>(null);
   const [state, setState] = useState<LiveGameStateResponse | null>(null);
   const [picks, setPicks] = useState<LivePlayerPicksPayload | null>(null);
-  const roster = useRosterSuggestions({ promotionName: state?.card.promotionName });
+  const roster = useRosterSuggestions({
+    promotionName: state?.card.promotionName,
+  });
   const [battleRoyalEntryInputByMatchId, setBattleRoyalEntryInputByMatchId] =
     useState<Record<string, string>>({});
-  const [fullscreenEffectQueue, setFullscreenEffectQueue] = useState<
-    FullscreenEffect[]
-  >([]);
-  const [activeFullscreenEffect, setActiveFullscreenEffect] =
-    useState<FullscreenEffect | null>(null);
-  const [animatedLeaderboardOrder, setAnimatedLeaderboardOrder] = useState<
-    string[]
-  >([]);
+
+  /* Fullscreen effects hook */
+  const { activeEffect, animatedLeaderboardOrder, queueEffects, dismiss } =
+    useFullscreenEffects();
+
+  /* Page fullscreen state */
   const [isPageFullscreen, setIsPageFullscreen] = useState(false);
+
+  /* Wake lock */
   const [isWakeLockActive, setIsWakeLockActive] = useState(false);
   const [wakeLockSupported, setWakeLockSupported] = useState(false);
+  const wakeLockManagerRef = useRef<WakeLockManager | null>(null);
+
+  /* Push notifications */
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | "unsupported"
   >("unsupported");
@@ -163,90 +114,47 @@ export function LiveGamePlayerApp({
   const [isPushPromptOpen, setIsPushPromptOpen] = useState(false);
   const [isPushSubscribed, setIsPushSubscribed] = useState(false);
   const [isPushSubscribing, setIsPushSubscribing] = useState(false);
+
+  /* Refresh staleness */
   const [lastRefreshAtMs, setLastRefreshAtMs] = useState<number | null>(null);
   const [nowTickMs, setNowTickMs] = useState(Date.now());
+
+  /* Refs */
   const previousStateRef = useRef<LiveGameStateResponse | null>(null);
-  const fullscreenEffectTimeoutRef = useRef<number | null>(null);
-  const leaderboardStepIntervalRef = useRef<number | null>(null);
   const hasHydratedInitialStateRef = useRef(false);
-  const wakeLockManagerRef = useRef<WakeLockManager | null>(null);
 
-  function queueFullscreenEffects(effects: FullscreenEffect[]) {
-    if (effects.length === 0) return;
-    setFullscreenEffectQueue((previous) => [...previous, ...effects]);
-  }
+  /* ---- Derived values ---- */
+  const isRefreshStale =
+    lastRefreshAtMs !== null &&
+    nowTickMs - lastRefreshAtMs > REFRESH_STALE_THRESHOLD_MS;
 
-  function dismissActiveFullscreenEffect() {
-    if (fullscreenEffectTimeoutRef.current) {
-      window.clearTimeout(fullscreenEffectTimeoutRef.current);
-      fullscreenEffectTimeoutRef.current = null;
-    }
-    if (leaderboardStepIntervalRef.current) {
-      window.clearInterval(leaderboardStepIntervalRef.current);
-      leaderboardStepIntervalRef.current = null;
-    }
-    setAnimatedLeaderboardOrder([]);
-    setActiveFullscreenEffect(null);
-  }
+  const lobbyCountdownMs = useMemo(() => {
+    if (state?.game.status !== "lobby") return null;
+    if (!state.card.eventDate) return null;
+    const targetMs = new Date(state.card.eventDate).getTime();
+    if (!Number.isFinite(targetMs)) return null;
+    return Math.max(0, targetMs - nowTickMs);
+  }, [nowTickMs, state?.card.eventDate, state?.game.status]);
 
-  useEffect(() => {
-    if (activeFullscreenEffect || fullscreenEffectQueue.length === 0) return;
+  const lobbyStartAtLabel = useMemo(() => {
+    if (state?.game.status !== "lobby") return null;
+    if (!state.card.eventDate) return null;
+    const parsed = new Date(state.card.eventDate);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toLocaleString();
+  }, [state?.card.eventDate, state?.game.status]);
 
-    const [nextEffect, ...remaining] = fullscreenEffectQueue;
-    setFullscreenEffectQueue(remaining);
-    setActiveFullscreenEffect(nextEffect);
+  const myRank = useMemo(
+    () =>
+      state?.leaderboard.find(
+        (entry) => entry.nickname === me?.player.nickname,
+      ) ?? null,
+    [state?.leaderboard, me?.player.nickname],
+  );
 
-    if (fullscreenEffectTimeoutRef.current) {
-      window.clearTimeout(fullscreenEffectTimeoutRef.current);
-    }
-    fullscreenEffectTimeoutRef.current = window.setTimeout(() => {
-      setActiveFullscreenEffect(null);
-    }, getFullscreenEffectDurationMs(nextEffect));
-  }, [activeFullscreenEffect, fullscreenEffectQueue]);
+  const lockSnapshot = me?.locks;
 
-  useEffect(() => {
-    if (leaderboardStepIntervalRef.current) {
-      window.clearInterval(leaderboardStepIntervalRef.current);
-      leaderboardStepIntervalRef.current = null;
-    }
-
-    if (
-      !activeFullscreenEffect ||
-      activeFullscreenEffect.kind !== "leaderboard"
-    ) {
-      setAnimatedLeaderboardOrder([]);
-      return;
-    }
-
-    const steps = buildBubbleSortSteps(
-      activeFullscreenEffect.previous.map((entry) => entry.nickname),
-      activeFullscreenEffect.current.map((entry) => entry.nickname),
-    );
-    setAnimatedLeaderboardOrder(steps[0] ?? []);
-
-    if (steps.length > 1) {
-      let stepIndex = 0;
-      leaderboardStepIntervalRef.current = window.setInterval(() => {
-        stepIndex += 1;
-        if (stepIndex >= steps.length) {
-          if (leaderboardStepIntervalRef.current) {
-            window.clearInterval(leaderboardStepIntervalRef.current);
-            leaderboardStepIntervalRef.current = null;
-          }
-          return;
-        }
-        setAnimatedLeaderboardOrder(steps[stepIndex]);
-      }, LEADERBOARD_SWAP_DURATION_MS);
-    }
-
-    return () => {
-      if (leaderboardStepIntervalRef.current) {
-        window.clearInterval(leaderboardStepIntervalRef.current);
-        leaderboardStepIntervalRef.current = null;
-      }
-    };
-  }, [activeFullscreenEffect]);
-
+  /* ---- Core data loading ---- */
   const applyGameUpdate = useCallback(
     (
       nextState: LiveGameStateResponse,
@@ -321,7 +229,7 @@ export function LiveGamePlayerApp({
           swapCount: Math.max(1, bubbleSteps.length - 1),
         });
       }
-      queueFullscreenEffects(queuedFullscreenEffects);
+      queueEffects(queuedFullscreenEffects);
 
       setState(nextState);
       setMe((current) => {
@@ -343,7 +251,7 @@ export function LiveGamePlayerApp({
         hasHydratedInitialStateRef.current = true;
       }
     },
-    [],
+    [queueEffects],
   );
 
   const load = useCallback(async () => {
@@ -353,7 +261,6 @@ export function LiveGamePlayerApp({
         getLiveGameMe(gameId),
         getLiveGameState(gameId, joinCodeFromUrl ?? undefined),
       ]);
-
       applyGameUpdate(loadedState, loadedMe, false);
       setLastRefreshAtMs(Date.now());
     } catch (error) {
@@ -365,6 +272,7 @@ export function LiveGamePlayerApp({
     }
   }, [applyGameUpdate, gameId, joinCodeFromUrl]);
 
+  /* ---- Effects ---- */
   useEffect(() => {
     void load();
   }, [load]);
@@ -373,7 +281,6 @@ export function LiveGamePlayerApp({
     const intervalId = window.setInterval(() => {
       setNowTickMs(Date.now());
     }, 1_000);
-
     return () => window.clearInterval(intervalId);
   }, []);
 
@@ -459,23 +366,10 @@ export function LiveGamePlayerApp({
     notificationPermission,
   ]);
 
-  useEffect(
-    () => () => {
-      if (fullscreenEffectTimeoutRef.current) {
-        window.clearTimeout(fullscreenEffectTimeoutRef.current);
-      }
-      if (leaderboardStepIntervalRef.current) {
-        window.clearInterval(leaderboardStepIntervalRef.current);
-      }
-    },
-    [],
-  );
-
   useEffect(() => {
     const syncFullscreenState = () => {
       setIsPageFullscreen(document.fullscreenElement != null);
     };
-
     syncFullscreenState();
     document.addEventListener("fullscreenchange", syncFullscreenState);
     return () => {
@@ -483,33 +377,7 @@ export function LiveGamePlayerApp({
     };
   }, []);
 
-  async function handleRefresh() {
-    setIsRefreshing(true);
-    try {
-      await load();
-    } finally {
-      setIsRefreshing(false);
-    }
-  }
-
-  const isRefreshStale =
-    lastRefreshAtMs !== null &&
-    nowTickMs - lastRefreshAtMs > REFRESH_STALE_THRESHOLD_MS;
-  const lobbyCountdownMs = useMemo(() => {
-    if (state?.game.status !== "lobby") return null;
-    if (!state.card.eventDate) return null;
-    const targetMs = new Date(state.card.eventDate).getTime();
-    if (!Number.isFinite(targetMs)) return null;
-    return Math.max(0, targetMs - nowTickMs);
-  }, [nowTickMs, state?.card.eventDate, state?.game.status]);
-  const lobbyStartAtLabel = useMemo(() => {
-    if (state?.game.status !== "lobby") return null;
-    if (!state.card.eventDate) return null;
-    const parsed = new Date(state.card.eventDate);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toLocaleString();
-  }, [state?.card.eventDate, state?.game.status]);
-
+  /* ---- Picks mutation handlers ---- */
   function setMatchWinner(matchId: string, winnerName: string) {
     setPicks((prev) => {
       if (!prev) return prev;
@@ -532,10 +400,7 @@ export function LiveGamePlayerApp({
         nextMatchPicks[index] = nextPick;
       }
 
-      return {
-        ...prev,
-        matchPicks: nextMatchPicks,
-      };
+      return { ...prev, matchPicks: nextMatchPicks };
     });
   }
 
@@ -548,7 +413,6 @@ export function LiveGamePlayerApp({
 
       const nextMatchPicks = [...prev.matchPicks];
       let index = nextMatchPicks.findIndex((pick) => pick.matchId === matchId);
-
       if (index === -1) {
         nextMatchPicks.push({
           matchId,
@@ -563,19 +427,14 @@ export function LiveGamePlayerApp({
       const hasDuplicate = existingEntrants.some(
         (item) => item.toLowerCase() === entrant.toLowerCase(),
       );
-      if (hasDuplicate) {
-        return prev;
-      }
+      if (hasDuplicate) return prev;
 
       nextMatchPicks[index] = {
         ...nextMatchPicks[index],
         battleRoyalEntrants: [...existingEntrants, entrant],
       };
 
-      return {
-        ...prev,
-        matchPicks: nextMatchPicks,
-      };
+      return { ...prev, matchPicks: nextMatchPicks };
     });
 
     setBattleRoyalEntryInputByMatchId((prev) => ({ ...prev, [matchId]: "" }));
@@ -599,10 +458,7 @@ export function LiveGamePlayerApp({
         ),
       };
 
-      return {
-        ...prev,
-        matchPicks: nextMatchPicks,
-      };
+      return { ...prev, matchPicks: nextMatchPicks };
     });
   }
 
@@ -638,15 +494,8 @@ export function LiveGamePlayerApp({
         nextAnswers[answerIndex] = { questionId, answer };
       }
 
-      nextMatchPicks[index] = {
-        ...current,
-        bonusAnswers: nextAnswers,
-      };
-
-      return {
-        ...prev,
-        matchPicks: nextMatchPicks,
-      };
+      nextMatchPicks[index] = { ...current, bonusAnswers: nextAnswers };
+      return { ...prev, matchPicks: nextMatchPicks };
     });
   }
 
@@ -657,30 +506,23 @@ export function LiveGamePlayerApp({
       const index = nextAnswers.findIndex(
         (item) => item.questionId === questionId,
       );
-
       if (index === -1) {
         nextAnswers.push({ questionId, answer });
       } else {
         nextAnswers[index] = { questionId, answer };
       }
-
-      return {
-        ...prev,
-        eventBonusAnswers: nextAnswers,
-      };
+      return { ...prev, eventBonusAnswers: nextAnswers };
     });
   }
 
   function setTiebreakerAnswer(answer: string) {
     setPicks((prev) => {
       if (!prev) return prev;
-      return {
-        ...prev,
-        tiebreakerAnswer: answer,
-      };
+      return { ...prev, tiebreakerAnswer: answer };
     });
   }
 
+  /* ---- Action handlers ---- */
   async function handleSave() {
     if (!picks || !me) return;
 
@@ -690,23 +532,13 @@ export function LiveGamePlayerApp({
         expectedUpdatedAt: me.player.updatedAt,
       });
       setMe((prev) =>
-        prev
-          ? {
-              ...prev,
-              player: saved.player,
-            }
-          : prev,
+        prev ? { ...prev, player: saved.player } : prev,
       );
 
       if (!saved.player.isSubmitted) {
         const submitted = await submitMyLiveGamePicks(gameId);
         setMe((prev) =>
-          prev
-            ? {
-                ...prev,
-                player: submitted,
-              }
-            : prev,
+          prev ? { ...prev, player: submitted } : prev,
         );
       }
 
@@ -726,6 +558,15 @@ export function LiveGamePlayerApp({
       toast.error(message);
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleRefresh() {
+    setIsRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setIsRefreshing(false);
     }
   }
 
@@ -752,7 +593,6 @@ export function LiveGamePlayerApp({
       await manager.release();
       return;
     }
-
     const locked = await manager.request();
     if (!locked) {
       toast.error("Wake lock unavailable. Keep this page visible and retry.");
@@ -764,7 +604,6 @@ export function LiveGamePlayerApp({
       toast.error("Push notifications are not supported in this browser.");
       return;
     }
-
     if (!me) return;
 
     const promptStorageKey = getPushPromptStorageKey(gameId, me.player.id);
@@ -802,30 +641,7 @@ export function LiveGamePlayerApp({
     setIsPushPromptOpen(false);
   }
 
-  const lockSnapshot = me?.locks;
-
-  const myRank = useMemo(
-    () =>
-      state?.leaderboard.find(
-        (entry) => entry.nickname === me?.player.nickname,
-      ) ?? null,
-    [state?.leaderboard, me?.player.nickname],
-  );
-  const displayHref = useMemo(
-    () =>
-      `/games/${gameId}/display?code=${encodeURIComponent(state?.game.joinCode ?? joinCodeFromUrl ?? "")}`,
-    [gameId, joinCodeFromUrl, state?.game.joinCode],
-  );
-  const eventParticipantCandidates = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          (state?.card.matches ?? []).flatMap((match) => match.participants),
-        ),
-      ),
-    [state?.card.matches],
-  );
-
+  /* ---- Loading gate ---- */
   if (isLoading || !me || !state || !picks || !lockSnapshot) {
     return (
       <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-4 text-sm text-muted-foreground">
@@ -834,6 +650,7 @@ export function LiveGamePlayerApp({
     );
   }
 
+  /* ---- Render ---- */
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 px-4 py-6">
       <Dialog
@@ -865,211 +682,34 @@ export function LiveGamePlayerApp({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {activeFullscreenEffect ? (
-        <div
-          className={cn(
-            "lg-fullscreen-effect",
-            activeFullscreenEffect.kind === "events"
-              ? "lg-fullscreen-effect-events"
-              : "lg-fullscreen-effect-leaderboard",
-          )}
-          onClick={dismissActiveFullscreenEffect}
-        >
-          {activeFullscreenEffect.kind === "events" ? (
-            <div className="lg-fullscreen-effect-panel">
-              <div className="lg-fullscreen-effect-title">
-                <Sparkles className="h-6 w-6" />
-                <span className="font-heading text-2xl uppercase tracking-wide">
-                  Live Results
-                </span>
-              </div>
-              <div className="lg-fullscreen-effect-body">
-                {activeFullscreenEffect.events.map((event, index) => (
-                  <div
-                    key={event.id}
-                    className="lg-fullscreen-event-item"
-                    style={{ animationDelay: `${index * 110}ms` }}
-                  >
-                    <p className="text-xs uppercase tracking-wide text-primary/90">
-                      {formatEventTypeLabel(event.type)}
-                    </p>
-                    <p className="text-base text-foreground">{event.message}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="lg-fullscreen-effect-panel">
-              <div className="lg-fullscreen-effect-title">
-                <Trophy className="h-6 w-6" />
-                <span className="font-heading text-2xl uppercase tracking-wide">
-                  Leaderboard Shift
-                </span>
-              </div>
-              <div className="lg-fullscreen-effect-body">
-                {(() => {
-                  const currentByNickname = new Map(
-                    activeFullscreenEffect.current.map((entry) => [
-                      entry.nickname,
-                      entry,
-                    ]),
-                  );
-                  const previousByNickname = new Map(
-                    activeFullscreenEffect.previous.map((entry) => [
-                      entry.nickname,
-                      entry,
-                    ]),
-                  );
-                  const order =
-                    animatedLeaderboardOrder.length > 0
-                      ? animatedLeaderboardOrder
-                      : activeFullscreenEffect.previous.map(
-                          (entry) => entry.nickname,
-                        );
 
-                  return (
-                    <Reorder.Group
-                      axis="y"
-                      values={order}
-                      onReorder={() => {}}
-                      className="lg-fullscreen-reorder-list"
-                    >
-                      {order.map((nickname) => {
-                        const entry = currentByNickname.get(nickname);
-                        if (!entry) return null;
-                        const previousRank =
-                          previousByNickname.get(nickname)?.rank ?? null;
-                        const rankDelta =
-                          previousRank == null ? 0 : previousRank - entry.rank;
+      <FullscreenEffectOverlay
+        activeEffect={activeEffect}
+        animatedLeaderboardOrder={animatedLeaderboardOrder}
+        onDismiss={dismiss}
+      />
 
-                        return (
-                          <Reorder.Item
-                            key={`fullscreen-lb-${nickname}`}
-                            value={nickname}
-                            className="lg-fullscreen-leaderboard-row"
-                            transition={{
-                              duration: 0.9,
-                              ease: [0.2, 0.8, 0.2, 1],
-                            }}
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-base font-semibold">
-                                #{entry.rank} {entry.nickname}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {previousRank == null
-                                  ? "New to board"
-                                  : `Was #${previousRank}`}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-mono text-lg font-semibold">
-                                {entry.score}
-                              </p>
-                              {rankDelta > 0 ? (
-                                <p className="text-xs text-emerald-300">
-                                  +{rankDelta} rank
-                                </p>
-                              ) : null}
-                              {rankDelta < 0 ? (
-                                <p className="text-xs text-amber-300">
-                                  {rankDelta} rank
-                                </p>
-                              ) : null}
-                            </div>
-                          </Reorder.Item>
-                        );
-                      })}
-                    </Reorder.Group>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-        </div>
-      ) : null}
-      <header className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
-        <div className="flex flex-col gap-3">
-          <div>
-            <h1 className="text-2xl font-heading font-semibold">
-              {state.card.eventName || "Live Game"}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Playing as{" "}
-              <span className="font-semibold text-foreground">
-                {me.player.nickname}
-              </span>{" "}
-              • code <span className="font-mono">{state.game.joinCode}</span>
-            </p>
-            {myRank ? (
-              <p className="text-xs text-muted-foreground">
-                Current rank: #{myRank.rank} ({myRank.score} pts)
-              </p>
-            ) : null}
-            {state.game.status === "lobby" ? (
-              <p className="text-xs text-muted-foreground">
-                {lobbyCountdownMs != null
-                  ? `Event starts in ${formatCountdown(lobbyCountdownMs)}${lobbyStartAtLabel ? ` (${lobbyStartAtLabel})` : ""}`
-                  : "Event start time not set"}
-              </p>
-            ) : null}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <Button onClick={() => void handleSave()} disabled={isSaving}>
-              <Save className="mr-1 h-4 w-4" />
-              {isSaving ? "Saving..." : "Save Picks"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => void handleTogglePageFullscreen()}
-            >
-              {isPageFullscreen ? (
-                <Minimize2 className="mr-1 h-4 w-4" />
-              ) : (
-                <Maximize2 className="mr-1 h-4 w-4" />
-              )}
-              {isPageFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => void handleToggleWakeLock()}
-              disabled={!wakeLockSupported}
-            >
-              <Zap className="mr-1 h-4 w-4" />
-              {isWakeLockActive ? "Wake Lock On" : "Keep Screen Awake"}
-            </Button>
-            {notificationPermission === "granted" && isPushSubscribed ? (
-              <Button variant="outline" disabled>
-                <BellOff className="mr-1 h-4 w-4" />
-                Alerts Enabled
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (notificationPermission === "default") {
-                    setIsPushPromptOpen(true);
-                    return;
-                  }
-                  void handleEnableNotifications();
-                }}
-                disabled={
-                  notificationPermission === "unsupported" || isPushSubscribing
-                }
-              >
-                <Bell className="mr-1 h-4 w-4" />
-                {isPushSubscribing ? "Enabling..." : "Enable Alerts"}
-              </Button>
-            )}
-            <Button asChild variant="outline">
-              <Link href={displayHref} target="_blank" rel="noreferrer">
-                <Tv className="mr-1 h-4 w-4" />
-                TV Display
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </header>
+      <PlayerHeader
+        gameId={gameId}
+        joinCodeFromUrl={joinCodeFromUrl}
+        state={state}
+        me={me}
+        myRank={myRank ? { rank: myRank.rank, score: myRank.score } : null}
+        lobbyCountdownMs={lobbyCountdownMs}
+        lobbyStartAtLabel={lobbyStartAtLabel}
+        isSaving={isSaving}
+        isPageFullscreen={isPageFullscreen}
+        isWakeLockActive={isWakeLockActive}
+        wakeLockSupported={wakeLockSupported}
+        notificationPermission={notificationPermission}
+        isPushSubscribed={isPushSubscribed}
+        isPushSubscribing={isPushSubscribing}
+        onSave={() => void handleSave()}
+        onToggleFullscreen={() => void handleTogglePageFullscreen()}
+        onToggleWakeLock={() => void handleToggleWakeLock()}
+        onEnableNotifications={() => void handleEnableNotifications()}
+        onOpenPushPrompt={() => setIsPushPromptOpen(true)}
+      />
 
       {isRefreshStale ? (
         <div className="fixed bottom-4 right-4 z-40">
@@ -1088,515 +728,63 @@ export function LiveGamePlayerApp({
         </div>
       ) : null}
 
-      {state.card.matches.map((match, index) => {
-        const matchPick = findMatchPick(picks, match.id);
-        const isMatchLocked =
-          lockSnapshot.matchLocks[match.id] === true ||
-          lockSnapshot.globalLocked;
-        const battleRoyalEntrants = matchPick?.battleRoyalEntrants ?? [];
-        const battleRoyalEntryInput =
-          battleRoyalEntryInputByMatchId[match.id] ?? "";
-        const battleRoyalFieldKey = `battleRoyal:${match.id}`;
-        const normalizedBattleRoyalEntryInput = battleRoyalEntryInput
-          .trim()
-          .toLowerCase();
-        const battleRoyalSuggestions =
-          roster.activeFieldKey === battleRoyalFieldKey ? roster.suggestions : [];
-        const battleRoyalCandidates = match.isBattleRoyal
-          ? Array.from(
-              new Set([...match.participants, ...battleRoyalSuggestions]),
-            )
-          : [];
-        const filteredBattleRoyalSuggestions = normalizedBattleRoyalEntryInput
-          ? battleRoyalCandidates
-              .filter((candidate) =>
-                candidate
-                  .toLowerCase()
-                  .includes(normalizedBattleRoyalEntryInput),
-              )
-              .filter(
-                (candidate) =>
-                  !battleRoyalEntrants.some(
-                    (entrant) =>
-                      entrant.toLowerCase() === candidate.toLowerCase(),
-                  ),
-              )
-              .slice(0, 8)
-          : [];
+      {state.card.matches.map((match, index) => (
+        <PlayerMatchPicks
+          key={match.id}
+          matchIndex={index}
+          match={match}
+          picks={picks}
+          locks={lockSnapshot}
+          roster={roster}
+          battleRoyalEntryInput={battleRoyalEntryInputByMatchId[match.id] ?? ""}
+          onSetMatchWinner={setMatchWinner}
+          onAddBattleRoyalEntrant={addBattleRoyalEntrant}
+          onRemoveBattleRoyalEntrant={removeBattleRoyalEntrant}
+          onSetBattleRoyalEntryInput={(matchId, value) =>
+            setBattleRoyalEntryInputByMatchId((prev) => ({
+              ...prev,
+              [matchId]: value,
+            }))
+          }
+          onSetMatchBonusAnswer={setMatchBonusAnswer}
+        />
+      ))}
 
-        return (
-          <section
-            key={match.id}
-            className="rounded-lg border border-border bg-card p-4"
-          >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="font-semibold">
-                Match {index + 1}: {match.title || "Untitled Match"}
-              </h2>
-              {isMatchLocked ? (
-                <span className="text-xs text-amber-500">Locked</span>
-              ) : null}
-            </div>
+      <PlayerEventBonusPicks
+        card={state.card}
+        picks={picks}
+        locks={lockSnapshot}
+        roster={roster}
+        onSetEventBonusAnswer={setEventBonusAnswer}
+      />
 
-            <div className="space-y-2">
-              <Label>Winner</Label>
-              <Select
-                value={matchPick?.winnerName || "__none__"}
-                onValueChange={(value) =>
-                  setMatchWinner(match.id, value === "__none__" ? "" : value)
-                }
-                disabled={isMatchLocked}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select winner" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Unanswered</SelectItem>
-                  {match.participants.map((participant) => (
-                    <SelectItem key={participant} value={participant}>
-                      {participant}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {match.isBattleRoyal ? (
-                <div className="space-y-2">
-                  <Label>Surprise Entrants</Label>
-                  <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-                    <Input
-                      value={battleRoyalEntryInput}
-                      onChange={(event) => {
-                        setBattleRoyalEntryInputByMatchId((prev) => ({
-                          ...prev,
-                          [match.id]: event.target.value,
-                        }));
-                        roster.setActiveInput(
-                          battleRoyalFieldKey,
-                          event.target.value,
-                        );
-                      }}
-                      onFocus={() =>
-                        roster.setActiveInput(
-                          battleRoyalFieldKey,
-                          battleRoyalEntryInput,
-                        )
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter") return;
-                        event.preventDefault();
-                        if (isMatchLocked) return;
-                        addBattleRoyalEntrant(match.id, battleRoyalEntryInput);
-                      }}
-                      disabled={isMatchLocked}
-                      placeholder="Add entrant"
-                    />
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() =>
-                        addBattleRoyalEntrant(match.id, battleRoyalEntryInput)
-                      }
-                      disabled={isMatchLocked}
-                    >
-                      <Plus className="mr-1 h-4 w-4" />
-                      Add Entrant
-                    </Button>
-                  </div>
-                  {(roster.activeFieldKey === battleRoyalFieldKey &&
-                    roster.isLoading) ||
-                  filteredBattleRoyalSuggestions.length > 0 ? (
-                    <div className="rounded-md border border-border/70 bg-background/35 px-3 py-2">
-                      <p className="text-[11px] text-muted-foreground">
-                        {roster.activeFieldKey === battleRoyalFieldKey &&
-                        roster.isLoading
-                          ? "Loading roster suggestions..."
-                          : "Autocomplete from promotion roster"}
-                      </p>
-                      {filteredBattleRoyalSuggestions.length > 0 ? (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {filteredBattleRoyalSuggestions.map((candidate) => (
-                            <button
-                              key={candidate}
-                              type="button"
-                              onClick={() =>
-                                addBattleRoyalEntrant(match.id, candidate)
-                              }
-                              disabled={isMatchLocked}
-                              className="inline-flex items-center rounded-md border border-border bg-card px-2 py-1 text-xs text-card-foreground transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {candidate}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {battleRoyalEntrants.length > 0 ? (
-                    <div className="space-y-1.5 rounded-md border border-border/70 bg-background/35 p-2.5">
-                      {battleRoyalEntrants.map((entrant, entrantIndex) => (
-                        <div
-                          key={`${match.id}:${entrant}:${entrantIndex}`}
-                          className="flex items-center justify-between gap-2"
-                        >
-                          <span className="text-sm text-foreground">
-                            {entrantIndex + 1}. {entrant}
-                          </span>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              removeBattleRoyalEntrant(match.id, entrantIndex)
-                            }
-                            disabled={isMatchLocked}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">Remove entrant</span>
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-
-            {match.bonusQuestions.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                <p className="text-sm font-medium">Bonus Picks</p>
-                {match.bonusQuestions.map((question) => {
-                  const answer = findAnswer(
-                    matchPick?.bonusAnswers ?? [],
-                    question.id,
-                  );
-                  const isLocked =
-                    lockSnapshot.matchBonusLocks[
-                      toLockKey(match.id, question.id)
-                    ] === true || isMatchLocked;
-                  const isRosterMemberType =
-                    question.valueType === "rosterMember";
-                  const rosterFieldKey = `matchBonus:${match.id}:${question.id}`;
-                  const rosterQuerySuggestions =
-                    roster.activeFieldKey === rosterFieldKey
-                      ? roster.suggestions
-                      : [];
-                  const filteredRosterSuggestions = isRosterMemberType
-                    ? filterRosterMemberSuggestions(
-                        answer?.answer ?? "",
-                        Array.from(
-                          new Set([
-                            ...match.participants,
-                            ...rosterQuerySuggestions,
-                          ]),
-                        ),
-                      )
-                    : [];
-
-                  return (
-                    <div
-                      key={question.id}
-                      className="space-y-1.5 rounded-md border border-border/70 p-2.5"
-                    >
-                      <Label>{question.question || "Bonus question"}</Label>
-                      {question.answerType === "threshold" ? (
-                        <div className="flex gap-2">
-                          {(question.thresholdLabels ?? ["Over", "Under"]).map(
-                            (label) => (
-                              <button
-                                key={label}
-                                type="button"
-                                disabled={isLocked}
-                                onClick={() =>
-                                  setMatchBonusAnswer(
-                                    match.id,
-                                    question.id,
-                                    label,
-                                  )
-                                }
-                                className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                                  normalizeText(answer?.answer ?? "") ===
-                                  normalizeText(label)
-                                    ? "border-primary bg-primary text-primary-foreground"
-                                    : "border-border bg-card text-card-foreground hover:border-primary/50"
-                                } disabled:cursor-not-allowed disabled:opacity-50`}
-                              >
-                                {label}
-                              </button>
-                            ),
-                          )}
-                        </div>
-                      ) : (
-                        <>
-                          <Input
-                            value={answer?.answer ?? ""}
-                            onChange={(event) => {
-                              setMatchBonusAnswer(
-                                match.id,
-                                question.id,
-                                event.target.value,
-                              );
-                              roster.setActiveInput(
-                                rosterFieldKey,
-                                event.target.value,
-                              );
-                            }}
-                            onFocus={() =>
-                              roster.setActiveInput(
-                                rosterFieldKey,
-                                answer?.answer ?? "",
-                              )
-                            }
-                            disabled={isLocked}
-                            placeholder={
-                              isRosterMemberType
-                                ? "Start typing a roster member..."
-                                : "Your answer"
-                            }
-                          />
-                          {isRosterMemberType &&
-                          ((roster.activeFieldKey === rosterFieldKey &&
-                            roster.isLoading) ||
-                            filteredRosterSuggestions.length > 0) ? (
-                            <div className="rounded-md border border-border/70 bg-background/35 px-3 py-2">
-                              <p className="text-[11px] text-muted-foreground">
-                                {roster.activeFieldKey === rosterFieldKey &&
-                                roster.isLoading
-                                  ? "Loading roster suggestions..."
-                                  : "Autocomplete from promotion roster"}
-                              </p>
-                              {filteredRosterSuggestions.length > 0 ? (
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {filteredRosterSuggestions.map(
-                                    (candidate) => (
-                                      <button
-                                        key={`${question.id}:${candidate}`}
-                                        type="button"
-                                        onClick={() =>
-                                          setMatchBonusAnswer(
-                                            match.id,
-                                            question.id,
-                                            candidate,
-                                          )
-                                        }
-                                        disabled={isLocked}
-                                        className="inline-flex items-center rounded-md border border-border bg-card px-2 py-1 text-xs text-card-foreground transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                                      >
-                                        {candidate}
-                                      </button>
-                                    ),
-                                  )}
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </>
-                      )}
-                      {isLocked ? (
-                        <p className="text-xs text-amber-500">Locked</p>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-          </section>
-        );
-      })}
-
-      {state.card.eventBonusQuestions.length > 0 ? (
-        <section className="rounded-lg border border-border bg-card p-4">
-          <h2 className="font-semibold">Event Bonus Picks</h2>
-          <div className="mt-3 space-y-2">
-            {state.card.eventBonusQuestions.map((question) => {
-              const answer = findAnswer(picks.eventBonusAnswers, question.id);
-              const isLocked =
-                lockSnapshot.eventBonusLocks[question.id] === true ||
-                lockSnapshot.globalLocked;
-              const isRosterMemberType = question.valueType === "rosterMember";
-              const rosterFieldKey = `eventBonus:${question.id}`;
-              const rosterQuerySuggestions =
-                roster.activeFieldKey === rosterFieldKey ? roster.suggestions : [];
-              const filteredRosterSuggestions = isRosterMemberType
-                ? filterRosterMemberSuggestions(
-                    answer?.answer ?? "",
-                    Array.from(
-                      new Set([
-                        ...eventParticipantCandidates,
-                        ...rosterQuerySuggestions,
-                      ]),
-                    ),
-                  )
-                : [];
-
-              return (
-                <div
-                  key={question.id}
-                  className="space-y-1.5 rounded-md border border-border/70 p-2.5"
-                >
-                  <Label>{question.question || "Event bonus"}</Label>
-                  {question.answerType === "threshold" ? (
-                    <div className="flex gap-2">
-                      {(question.thresholdLabels ?? ["Over", "Under"]).map(
-                        (label) => (
-                          <button
-                            key={label}
-                            type="button"
-                            disabled={isLocked}
-                            onClick={() =>
-                              setEventBonusAnswer(question.id, label)
-                            }
-                            className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                              normalizeText(answer?.answer ?? "") ===
-                              normalizeText(label)
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-border bg-card text-card-foreground hover:border-primary/50"
-                            } disabled:cursor-not-allowed disabled:opacity-50`}
-                          >
-                            {label}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <Input
-                        value={answer?.answer ?? ""}
-                        onChange={(event) => {
-                          setEventBonusAnswer(question.id, event.target.value);
-                          roster.setActiveInput(
-                            rosterFieldKey,
-                            event.target.value,
-                          );
-                        }}
-                        onFocus={() =>
-                          roster.setActiveInput(
-                            rosterFieldKey,
-                            answer?.answer ?? "",
-                          )
-                        }
-                        disabled={isLocked}
-                        placeholder={
-                          isRosterMemberType
-                            ? "Start typing a roster member..."
-                            : "Your answer"
-                        }
-                      />
-                      {isRosterMemberType &&
-                      ((roster.activeFieldKey === rosterFieldKey &&
-                        roster.isLoading) ||
-                        filteredRosterSuggestions.length > 0) ? (
-                        <div className="rounded-md border border-border/70 bg-background/35 px-3 py-2">
-                          <p className="text-[11px] text-muted-foreground">
-                            {roster.activeFieldKey === rosterFieldKey &&
-                            roster.isLoading
-                              ? "Loading roster suggestions..."
-                              : "Autocomplete from promotion roster"}
-                          </p>
-                          {filteredRosterSuggestions.length > 0 ? (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {filteredRosterSuggestions.map((candidate) => (
-                                <button
-                                  key={`${question.id}:${candidate}`}
-                                  type="button"
-                                  onClick={() =>
-                                    setEventBonusAnswer(question.id, candidate)
-                                  }
-                                  disabled={isLocked}
-                                  className="inline-flex items-center rounded-md border border-border bg-card px-2 py-1 text-xs text-card-foreground transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {candidate}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </>
-                  )}
-                  {isLocked ? (
-                    <p className="text-xs text-amber-500">Locked</p>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      {state.card.tiebreakerLabel.trim() ? (
-        <section className="rounded-lg border border-border bg-card p-4">
-          <Label>{state.card.tiebreakerLabel}</Label>
-          <Input
-            className="mt-2"
-            value={picks.tiebreakerAnswer}
-            onChange={(event) => setTiebreakerAnswer(event.target.value)}
-            disabled={lockSnapshot.tiebreakerLocked}
-            placeholder="Your tiebreaker answer"
-          />
-          {lockSnapshot.tiebreakerLocked ? (
-            <p className="mt-1 text-xs text-amber-500">Locked</p>
-          ) : null}
-        </section>
-      ) : null}
+      <PlayerTiebreakerInput
+        tiebreakerLabel={state.card.tiebreakerLabel}
+        picks={picks}
+        locks={lockSnapshot}
+        onSetTiebreakerAnswer={setTiebreakerAnswer}
+      />
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
           <h3 className="font-semibold">Leaderboard</h3>
-          <div className="mt-2 space-y-1">
-            {state.leaderboard.slice(0, 12).map((entry) => {
-              const presence = getConnectionStatus(entry.lastSeenAt);
-              const dotClass =
-                presence.state === "online"
-                  ? "bg-emerald-500"
-                  : presence.state === "idle"
-                    ? "bg-amber-500"
-                    : "bg-slate-400";
-              return (
-                <div
-                  key={`${entry.rank}:${entry.nickname}`}
-                  className="flex items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1 text-sm"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate">
-                      #{entry.rank} {entry.nickname}
-                    </p>
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className={`h-2 w-2 rounded-full ${dotClass}`} />
-                      <span className="capitalize">{presence.state}</span>
-                      <span>{presence.ageLabel}</span>
-                    </div>
-                  </div>
-                  <div className="shrink-0">
-                    <span className="font-mono">{entry.score}</span>
-                  </div>
-                </div>
-              );
-            })}
-            {state.leaderboard.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                Leaderboard appears after submissions.
-              </p>
-            ) : null}
+          <div className="mt-2">
+            <LeaderboardPanel
+              leaderboard={state.leaderboard}
+              maxItems={12}
+              myNickname={me.player.nickname}
+              variant="compact"
+            />
           </div>
         </div>
         <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
           <h3 className="font-semibold">Updates</h3>
-          <div className="mt-2 space-y-1">
-            {state.events.slice(0, 12).map((event) => (
-              <p
-                key={event.id}
-                className="rounded-md border border-transparent px-2 py-1 text-sm"
-              >
-                <span className="text-muted-foreground">
-                  {new Date(event.createdAt).toLocaleTimeString()}{" "}
-                </span>
-                {event.message}
-              </p>
-            ))}
-            {state.events.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No events yet.</p>
-            ) : null}
+          <div className="mt-2">
+            <UpdatesFeed
+              events={state.events}
+              maxItems={12}
+              variant="compact"
+            />
           </div>
         </div>
       </section>
