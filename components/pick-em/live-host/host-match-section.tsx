@@ -453,13 +453,6 @@ function HostMatchSectionInner({
               </Command>
             </PopoverContent>
           </Popover>
-          <Input
-            placeholder="Or type any winner name..."
-            value={winnerName}
-            onChange={(event) =>
-              liveSetMatchWinner(match.id, event.target.value)
-            }
-          />
           {gameState?.playerAnswerSummaries && winnerName.trim() ? (
             <FuzzyReviewPanel
               candidates={computeFuzzyCandidatesForAnswer(
