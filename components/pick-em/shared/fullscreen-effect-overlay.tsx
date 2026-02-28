@@ -27,7 +27,7 @@ function FullscreenEffectOverlayInner({
     <div
       className={cn(
         "lg-fullscreen-effect",
-        activeEffect.kind === "events"
+        activeEffect.kind === "events" || activeEffect.kind === "combined"
           ? "lg-fullscreen-effect-events"
           : "lg-fullscreen-effect-leaderboard",
       )}
@@ -56,6 +56,11 @@ function FullscreenEffectOverlayInner({
             ))}
           </div>
         </div>
+      ) : activeEffect.kind === "combined" ? (
+        <CombinedPanel
+          activeEffect={activeEffect}
+          animatedLeaderboardOrder={animatedLeaderboardOrder}
+        />
       ) : (
         <LeaderboardShiftPanel
           activeEffect={activeEffect}
@@ -63,6 +68,85 @@ function FullscreenEffectOverlayInner({
         />
       )}
     </div>
+  );
+}
+
+interface LeaderboardRowsProps {
+  previous: Extract<FullscreenEffect, { kind: "leaderboard" }>["previous"];
+  current: Extract<FullscreenEffect, { kind: "leaderboard" }>["current"];
+  animatedLeaderboardOrder: string[];
+}
+
+function LeaderboardRows({
+  previous,
+  current,
+  animatedLeaderboardOrder,
+}: LeaderboardRowsProps) {
+  const currentByNickname = new Map(
+    current.map((entry) => [entry.nickname, entry]),
+  );
+  const previousByNickname = new Map(
+    previous.map((entry) => [entry.nickname, entry]),
+  );
+  const order =
+    animatedLeaderboardOrder.length > 0
+      ? animatedLeaderboardOrder
+      : previous.map((entry) => entry.nickname);
+
+  return (
+    <Reorder.Group
+      axis="y"
+      values={order}
+      onReorder={() => {}}
+      className="lg-fullscreen-reorder-list"
+    >
+      {order.map((nickname) => {
+        const entry = currentByNickname.get(nickname);
+        if (!entry) return null;
+        const previousRank =
+          previousByNickname.get(nickname)?.rank ?? null;
+        const rankDelta =
+          previousRank == null ? 0 : previousRank - entry.rank;
+
+        return (
+          <Reorder.Item
+            key={`fullscreen-lb-${nickname}`}
+            value={nickname}
+            className="lg-fullscreen-leaderboard-row"
+            transition={{
+              duration: 0.9,
+              ease: [0.2, 0.8, 0.2, 1],
+            }}
+          >
+            <div className="min-w-0">
+              <p className="truncate text-lg font-semibold">
+                #{entry.rank} {entry.nickname}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {previousRank == null
+                  ? "New to board"
+                  : `Was #${previousRank}`}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="font-mono text-xl font-semibold">
+                {entry.score}
+              </p>
+              {rankDelta > 0 ? (
+                <p className="text-xs text-emerald-300">
+                  +{rankDelta} rank
+                </p>
+              ) : null}
+              {rankDelta < 0 ? (
+                <p className="text-xs text-amber-300">
+                  {rankDelta} rank
+                </p>
+              ) : null}
+            </div>
+          </Reorder.Item>
+        );
+      })}
+    </Reorder.Group>
   );
 }
 
@@ -75,17 +159,6 @@ function LeaderboardShiftPanel({
   activeEffect,
   animatedLeaderboardOrder,
 }: LeaderboardShiftPanelProps) {
-  const currentByNickname = new Map(
-    activeEffect.current.map((entry) => [entry.nickname, entry]),
-  );
-  const previousByNickname = new Map(
-    activeEffect.previous.map((entry) => [entry.nickname, entry]),
-  );
-  const order =
-    animatedLeaderboardOrder.length > 0
-      ? animatedLeaderboardOrder
-      : activeEffect.previous.map((entry) => entry.nickname);
-
   return (
     <div className="lg-fullscreen-effect-panel">
       <div className="lg-fullscreen-effect-title">
@@ -95,59 +168,59 @@ function LeaderboardShiftPanel({
         </span>
       </div>
       <div className="lg-fullscreen-effect-body">
-        <Reorder.Group
-          axis="y"
-          values={order}
-          onReorder={() => {}}
-          className="lg-fullscreen-reorder-list"
-        >
-          {order.map((nickname) => {
-            const entry = currentByNickname.get(nickname);
-            if (!entry) return null;
-            const previousRank =
-              previousByNickname.get(nickname)?.rank ?? null;
-            const rankDelta =
-              previousRank == null ? 0 : previousRank - entry.rank;
+        <LeaderboardRows
+          previous={activeEffect.previous}
+          current={activeEffect.current}
+          animatedLeaderboardOrder={animatedLeaderboardOrder}
+        />
+      </div>
+    </div>
+  );
+}
 
-            return (
-              <Reorder.Item
-                key={`fullscreen-lb-${nickname}`}
-                value={nickname}
-                className="lg-fullscreen-leaderboard-row"
-                transition={{
-                  duration: 0.9,
-                  ease: [0.2, 0.8, 0.2, 1],
-                }}
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-lg font-semibold">
-                    #{entry.rank} {entry.nickname}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {previousRank == null
-                      ? "New to board"
-                      : `Was #${previousRank}`}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono text-xl font-semibold">
-                    {entry.score}
-                  </p>
-                  {rankDelta > 0 ? (
-                    <p className="text-xs text-emerald-300">
-                      +{rankDelta} rank
-                    </p>
-                  ) : null}
-                  {rankDelta < 0 ? (
-                    <p className="text-xs text-amber-300">
-                      {rankDelta} rank
-                    </p>
-                  ) : null}
-                </div>
-              </Reorder.Item>
-            );
-          })}
-        </Reorder.Group>
+interface CombinedPanelProps {
+  activeEffect: Extract<FullscreenEffect, { kind: "combined" }>;
+  animatedLeaderboardOrder: string[];
+}
+
+function CombinedPanel({
+  activeEffect,
+  animatedLeaderboardOrder,
+}: CombinedPanelProps) {
+  return (
+    <div className="lg-fullscreen-effect-panel">
+      <div className="lg-fullscreen-effect-title">
+        <Sparkles className="h-6 w-6" />
+        <span className="font-heading text-3xl uppercase tracking-wide">
+          Live Results
+        </span>
+      </div>
+      <div className="lg-fullscreen-effect-body">
+        {activeEffect.events.map((event, index) => (
+          <div
+            key={event.id}
+            className="lg-fullscreen-event-item"
+            style={{ animationDelay: `${index * 110}ms` }}
+          >
+            <p className="text-sm uppercase tracking-wide text-primary/90">
+              {formatEventTypeLabel(event.type)}
+            </p>
+            <p className="text-lg text-foreground">{event.message}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 border-t border-border/30 pt-4">
+        <div className="mb-3 flex items-center gap-3">
+          <Trophy className="h-5 w-5 text-primary" />
+          <span className="font-heading text-xl uppercase tracking-wide">
+            Leaderboard Shift
+          </span>
+        </div>
+        <LeaderboardRows
+          previous={activeEffect.previous}
+          current={activeEffect.current}
+          animatedLeaderboardOrder={animatedLeaderboardOrder}
+        />
       </div>
     </div>
   );

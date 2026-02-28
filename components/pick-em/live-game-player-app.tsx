@@ -207,14 +207,35 @@ export function LiveGamePlayerApp({
       );
 
       const queuedFullscreenEffects: FullscreenEffect[] = [];
-      if (addedEvents.length > 0) {
+      const hasNewEvents = addedEvents.length > 0;
+
+      if (hasNewEvents && leaderboardChanged) {
+        const bubbleSteps = buildBubbleSortSteps(
+          previousState.leaderboard
+            .slice(0, FULLSCREEN_LEADERBOARD_LIMIT)
+            .map((entry) => entry.nickname),
+          nextState.leaderboard
+            .slice(0, FULLSCREEN_LEADERBOARD_LIMIT)
+            .map((entry) => entry.nickname),
+        );
+        queuedFullscreenEffects.push({
+          kind: "combined",
+          events: addedEvents.slice(0, 4),
+          previous: previousState.leaderboard.slice(
+            0,
+            FULLSCREEN_LEADERBOARD_LIMIT,
+          ),
+          current: nextState.leaderboard.slice(0, FULLSCREEN_LEADERBOARD_LIMIT),
+          swapCount: Math.max(1, bubbleSteps.length - 1),
+        });
+        vibrateForeground(UPDATE_VIBRATE_PATTERN);
+      } else if (hasNewEvents) {
         queuedFullscreenEffects.push({
           kind: "events",
           events: addedEvents.slice(0, 4),
         });
         vibrateForeground(UPDATE_VIBRATE_PATTERN);
-      }
-      if (leaderboardChanged) {
+      } else if (leaderboardChanged) {
         const bubbleSteps = buildBubbleSortSteps(
           previousState.leaderboard
             .slice(0, FULLSCREEN_LEADERBOARD_LIMIT)

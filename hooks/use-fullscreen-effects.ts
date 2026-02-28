@@ -18,9 +18,18 @@ export interface FullscreenLeaderboardEffect {
   swapCount: number;
 }
 
+export interface FullscreenCombinedEffect {
+  kind: "combined";
+  events: { id: string; type: string; message: string }[];
+  previous: LiveGameLeaderboardEntry[];
+  current: LiveGameLeaderboardEntry[];
+  swapCount: number;
+}
+
 export type FullscreenEffect =
   | FullscreenEventsEffect
-  | FullscreenLeaderboardEffect;
+  | FullscreenLeaderboardEffect
+  | FullscreenCombinedEffect;
 
 const LEADERBOARD_SWAP_DURATION_MS = 400;
 const EVENT_EFFECT_DURATION_MS = 4_000;
@@ -28,8 +37,15 @@ const LEADERBOARD_EFFECT_BASE_DURATION_MS = 3_000;
 
 function getFullscreenEffectDurationMs(effect: FullscreenEffect): number {
   if (effect.kind === "events") return EVENT_EFFECT_DURATION_MS;
+  if (effect.kind === "leaderboard") {
+    return (
+      LEADERBOARD_EFFECT_BASE_DURATION_MS +
+      effect.swapCount * LEADERBOARD_SWAP_DURATION_MS
+    );
+  }
+  // combined: events display time + leaderboard animation time
   return (
-    LEADERBOARD_EFFECT_BASE_DURATION_MS +
+    EVENT_EFFECT_DURATION_MS +
     effect.swapCount * LEADERBOARD_SWAP_DURATION_MS
   );
 }
@@ -92,7 +108,10 @@ export function useFullscreenEffects(): UseFullscreenEffectsReturn {
       stepIntervalRef.current = null;
     }
 
-    if (!activeEffect || activeEffect.kind !== "leaderboard") {
+    if (
+      !activeEffect ||
+      (activeEffect.kind !== "leaderboard" && activeEffect.kind !== "combined")
+    ) {
       setAnimatedLeaderboardOrder([]);
       return;
     }
