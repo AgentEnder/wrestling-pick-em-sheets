@@ -29,6 +29,7 @@ import { FullscreenEffectOverlay } from "./shared/fullscreen-effect-overlay";
 import { DisplayHeader } from "./live-display/display-header";
 import { LobbyView } from "./live-display/lobby-view";
 import { ActiveGameView } from "./live-display/active-game-view";
+import { EndedView } from "./live-display/ended-view";
 import {
   JoinOverlay,
   type JoinOverlayEntry,
@@ -470,6 +471,8 @@ export function LiveGameDisplayApp({
             joinQrCodeDataUrl={joinQrCodeDataUrl}
             joinBaseOrigin={joinBaseOrigin}
           />
+        ) : state.game.status === "ended" ? (
+          <EndedView state={state} />
         ) : (
           <ActiveGameView state={state} />
         )}
