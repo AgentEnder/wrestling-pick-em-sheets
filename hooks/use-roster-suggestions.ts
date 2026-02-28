@@ -9,7 +9,7 @@ interface UseRosterSuggestionsOptions {
   promotionName: string | undefined | null;
 }
 
-interface UseRosterSuggestionsReturn {
+export interface UseRosterSuggestionsReturn {
   activeFieldKey: string | null;
   query: string;
   suggestions: string[];
