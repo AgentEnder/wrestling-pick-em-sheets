@@ -19,23 +19,21 @@ export function useEventSettings() {
 }
 
 export function useEventSettingsActions() {
-  return useAppStore(
-    useShallow((s) => ({
-      setEventName: s.setEventName,
-      setPromotionName: s.setPromotionName,
-      setEventDate: s.setEventDate,
-      setEventTagline: s.setEventTagline,
-      setDefaultPoints: s.setDefaultPoints,
-      setTiebreakerLabel: s.setTiebreakerLabel,
-      setTiebreakerIsTimeBased: s.setTiebreakerIsTimeBased,
-    })),
-  );
+  return useAppStore((s) => ({
+    setEventName: s.setEventName,
+    setPromotionName: s.setPromotionName,
+    setEventDate: s.setEventDate,
+    setEventTagline: s.setEventTagline,
+    setDefaultPoints: s.setDefaultPoints,
+    setTiebreakerLabel: s.setTiebreakerLabel,
+    setTiebreakerIsTimeBased: s.setTiebreakerIsTimeBased,
+  }));
 }
 
 /* ── Matches ─────────────────────────────────────────────── */
 
 export function useMatchIds(): string[] {
-  return useAppStore((s) => s.matches.map((m) => m.id));
+  return useAppStore(useShallow((s) => s.matches.map((m) => m.id)));
 }
 
 export function useMatchCount(): number {
@@ -51,16 +49,14 @@ export function useMatchById(id: string): Match | undefined {
 }
 
 export function useMatchActions() {
-  return useAppStore(
-    useShallow((s) => ({
-      addMatch: s.addMatch,
-      updateMatch: s.updateMatch,
-      replaceMatch: s.replaceMatch,
-      removeMatch: s.removeMatch,
-      duplicateMatch: s.duplicateMatch,
-      moveMatch: s.moveMatch,
-    })),
-  );
+  return useAppStore((s) => ({
+    addMatch: s.addMatch,
+    updateMatch: s.updateMatch,
+    replaceMatch: s.replaceMatch,
+    removeMatch: s.removeMatch,
+    duplicateMatch: s.duplicateMatch,
+    moveMatch: s.moveMatch,
+  }));
 }
 
 /* ── Event bonus questions ───────────────────────────────── */
@@ -105,23 +101,23 @@ export function useEditorUi() {
 }
 
 export function useEditorActions() {
-  return useAppStore(
-    useShallow((s) => ({
-      setActiveTab: s.setActiveTab,
-      setSheet: s.setSheet,
-      getSheetSnapshot: s.getSheetSnapshot,
-      loadCard: s.loadCard,
-      saveSheet: s.saveSheet,
-      syncOverrides: s.syncOverrides,
-      hydrateFromDraft: s.hydrateFromDraft,
-      persistDraft: s.persistDraft,
-      resetToServer: s.resetToServer,
-      importSheet: s.importSheet,
-      loadSuggestions: s.loadSuggestions,
-      loadBonusQuestionPools: s.loadBonusQuestionPools,
-      loadMatchTypes: s.loadMatchTypes,
-    })),
-  );
+  return useAppStore((s) => ({
+    setActiveTab: s.setActiveTab,
+    setSheet: s.setSheet,
+    getSheetSnapshot: s.getSheetSnapshot,
+    loadCard: s.loadCard,
+    saveSheet: s.saveSheet,
+    syncOverrides: s.syncOverrides,
+    hydrateFromDraft: s.hydrateFromDraft,
+    persistDraft: s.persistDraft,
+    resetToServer: s.resetToServer,
+    importSheet: s.importSheet,
+    loadSuggestions: s.loadSuggestions,
+    loadBonusQuestionPools: s.loadBonusQuestionPools,
+    loadMatchTypes: s.loadMatchTypes,
+    setHasPendingAutoSave: s.setHasPendingAutoSave,
+    clearAutoSaveError: s.clearAutoSaveError,
+  }));
 }
 
 /* ── Derived selectors ───────────────────────────────────── */
@@ -135,5 +131,5 @@ export function useHasEventName(): boolean {
 }
 
 export function useSheetSnapshot() {
-  return useAppStore((s) => s.getSheetSnapshot());
+  return useAppStore(useShallow((s) => s.getSheetSnapshot()));
 }

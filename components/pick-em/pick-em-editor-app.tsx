@@ -63,6 +63,8 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     hydrateFromDraft,
     persistDraft,
     importSheet,
+    setHasPendingAutoSave,
+    clearAutoSaveError,
   } = useEditorActions();
 
   const hasMatches = useHasMatches();
@@ -174,7 +176,7 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
         autoSaveTimeoutRef.current = null;
       }
       if (!isDraftDirty || isEditableFieldFocused) {
-        useAppStore.setState({ hasPendingAutoSave: false });
+        setHasPendingAutoSave(false);
       }
       return;
     }
@@ -184,25 +186,22 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
       useAppStore.getState()._lastFailedAutoSaveSnapshot;
 
     if (lastFailedSnapshot === currentSerialized) {
-      useAppStore.setState({ hasPendingAutoSave: false });
+      setHasPendingAutoSave(false);
       return;
     }
 
     if (autoSaveError) {
-      useAppStore.setState({
-        autoSaveError: null,
-        _lastFailedAutoSaveSnapshot: null,
-      });
+      clearAutoSaveError();
     }
 
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
 
-    useAppStore.setState({ hasPendingAutoSave: true });
+    setHasPendingAutoSave(true);
     autoSaveTimeoutRef.current = setTimeout(() => {
       autoSaveTimeoutRef.current = null;
-      useAppStore.setState({ hasPendingAutoSave: false });
+      setHasPendingAutoSave(false);
       void saveSheet(cardId, "auto");
     }, AUTOSAVE_DEBOUNCE_MS);
   }, [

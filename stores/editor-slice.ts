@@ -327,6 +327,10 @@ export interface EditorSlice {
   resetToServer: () => void;
   importSheet: (sheet: PickEmSheet) => void;
 
+  // Actions — autosave orchestration (used by component-level timer)
+  setHasPendingAutoSave: (value: boolean) => void;
+  clearAutoSaveError: () => void;
+
   // Actions — suggestions
   loadSuggestions: (promotionName: string) => Promise<void>;
   loadBonusQuestionPools: () => Promise<void>;
@@ -691,6 +695,11 @@ export const createEditorSlice: StateCreator<EditorSlice, [], [], EditorSlice> =
         activeTab: "editor",
       });
     },
+
+    // ── Autosave orchestration ────────────────────────────────
+    setHasPendingAutoSave: (value) => set({ hasPendingAutoSave: value }),
+    clearAutoSaveError: () =>
+      set({ autoSaveError: null, _lastFailedAutoSaveSnapshot: null }),
 
     // ── Suggestions ─────────────────────────────────────────
     loadSuggestions: async (promotionName) => {
