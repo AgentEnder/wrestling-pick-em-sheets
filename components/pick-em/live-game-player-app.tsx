@@ -54,6 +54,7 @@ import { PlayerHeader } from "./live-player/player-header";
 import { PlayerMatchPicks } from "./live-player/player-match-picks";
 import { PlayerEventBonusPicks } from "./live-player/player-event-bonus-picks";
 import { PlayerTiebreakerInput } from "./live-player/player-tiebreaker-input";
+import { PlayerEndedView } from "./live-player/player-ended-view";
 
 interface LiveGamePlayerAppProps {
   gameId: string;
@@ -753,65 +754,76 @@ export function LiveGamePlayerApp({
         </div>
       ) : null}
 
-      {state.card.matches.map((match, index) => (
-        <PlayerMatchPicks
-          key={match.id}
-          matchIndex={index}
-          match={match}
-          picks={picks}
-          locks={lockSnapshot}
-          roster={roster}
-          battleRoyalEntryInput={battleRoyalEntryInputByMatchId[match.id] ?? ""}
-          onSetMatchWinner={setMatchWinner}
-          onAddBattleRoyalEntrant={addBattleRoyalEntrant}
-          onRemoveBattleRoyalEntrant={removeBattleRoyalEntrant}
-          onSetBattleRoyalEntryInput={(matchId, value) =>
-            setBattleRoyalEntryInputByMatchId((prev) => ({
-              ...prev,
-              [matchId]: value,
-            }))
-          }
-          onSetMatchBonusAnswer={setMatchBonusAnswer}
+      {state.game.status === "ended" ? (
+        <PlayerEndedView
+          state={state}
+          myRank={myRank ? { rank: myRank.rank, score: myRank.score } : null}
         />
-      ))}
-
-      <PlayerEventBonusPicks
-        card={state.card}
-        picks={picks}
-        locks={lockSnapshot}
-        roster={roster}
-        onSetEventBonusAnswer={setEventBonusAnswer}
-      />
-
-      <PlayerTiebreakerInput
-        tiebreakerLabel={state.card.tiebreakerLabel}
-        picks={picks}
-        locks={lockSnapshot}
-        onSetTiebreakerAnswer={setTiebreakerAnswer}
-      />
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
-          <h3 className="font-semibold">Leaderboard</h3>
-          <div className="mt-2">
-            <LeaderboardPanel
-              leaderboard={state.leaderboard}
-              maxItems={12}
-              variant="compact"
+      ) : (
+        <>
+          {state.card.matches.map((match, index) => (
+            <PlayerMatchPicks
+              key={match.id}
+              matchIndex={index}
+              match={match}
+              picks={picks}
+              locks={lockSnapshot}
+              roster={roster}
+              battleRoyalEntryInput={
+                battleRoyalEntryInputByMatchId[match.id] ?? ""
+              }
+              onSetMatchWinner={setMatchWinner}
+              onAddBattleRoyalEntrant={addBattleRoyalEntrant}
+              onRemoveBattleRoyalEntrant={removeBattleRoyalEntrant}
+              onSetBattleRoyalEntryInput={(matchId, value) =>
+                setBattleRoyalEntryInputByMatchId((prev) => ({
+                  ...prev,
+                  [matchId]: value,
+                }))
+              }
+              onSetMatchBonusAnswer={setMatchBonusAnswer}
             />
-          </div>
-        </div>
-        <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
-          <h3 className="font-semibold">Updates</h3>
-          <div className="mt-2">
-            <UpdatesFeed
-              events={state.events}
-              maxItems={12}
-              variant="compact"
-            />
-          </div>
-        </div>
-      </section>
+          ))}
+
+          <PlayerEventBonusPicks
+            card={state.card}
+            picks={picks}
+            locks={lockSnapshot}
+            roster={roster}
+            onSetEventBonusAnswer={setEventBonusAnswer}
+          />
+
+          <PlayerTiebreakerInput
+            tiebreakerLabel={state.card.tiebreakerLabel}
+            picks={picks}
+            locks={lockSnapshot}
+            onSetTiebreakerAnswer={setTiebreakerAnswer}
+          />
+
+          <section className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
+              <h3 className="font-semibold">Leaderboard</h3>
+              <div className="mt-2">
+                <LeaderboardPanel
+                  leaderboard={state.leaderboard}
+                  maxItems={12}
+                  variant="compact"
+                />
+              </div>
+            </div>
+            <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
+              <h3 className="font-semibold">Updates</h3>
+              <div className="mt-2">
+                <UpdatesFeed
+                  events={state.events}
+                  maxItems={12}
+                  variant="compact"
+                />
+              </div>
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }
