@@ -49,7 +49,11 @@ function normalizeBonusQuestion(
   },
 ): BonusQuestion {
   const answerType: BonusQuestionAnswerType =
-    question.answerType === "multiple-choice" ? "multiple-choice" : "write-in";
+    question.answerType === "multiple-choice"
+      ? "multiple-choice"
+      : question.answerType === "threshold"
+        ? "threshold"
+        : "write-in";
   const valueType: BonusQuestionValueType =
     question.valueType === "numerical" ||
     question.valueType === "time" ||
@@ -80,6 +84,12 @@ function normalizeBonusQuestion(
         : [],
     valueType,
     gradingRule,
+    ...(answerType === "threshold" && typeof question.thresholdValue === "number"
+      ? { thresholdValue: question.thresholdValue }
+      : {}),
+    ...(answerType === "threshold" && Array.isArray(question.thresholdLabels)
+      ? { thresholdLabels: question.thresholdLabels as [string, string] }
+      : {}),
   };
 }
 

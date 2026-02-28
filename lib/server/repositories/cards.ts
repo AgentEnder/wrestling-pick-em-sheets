@@ -21,6 +21,7 @@ import {
 import type {
   BonusGradingRule,
   BonusQuestion,
+  BonusQuestionAnswerType,
   BonusQuestionValueType,
   Match,
 } from "@/lib/types";
@@ -228,8 +229,12 @@ function normalizeBonusQuestion(value: unknown): BonusQuestion | null {
     isCountBased?: boolean;
     gradingMode?: BonusGradingRule;
   };
-  const answerType =
-    raw.answerType === "multiple-choice" ? "multiple-choice" : "write-in";
+  const answerType: BonusQuestionAnswerType =
+    raw.answerType === "multiple-choice"
+      ? "multiple-choice"
+      : raw.answerType === "threshold"
+        ? "threshold"
+        : "write-in";
   const valueType: BonusQuestionValueType =
     raw.valueType === "numerical" ||
     raw.valueType === "time" ||
@@ -266,6 +271,12 @@ function normalizeBonusQuestion(value: unknown): BonusQuestion | null {
     options: normalizedOptions,
     valueType,
     gradingRule,
+    ...(answerType === "threshold" && typeof raw.thresholdValue === "number"
+      ? { thresholdValue: raw.thresholdValue }
+      : {}),
+    ...(answerType === "threshold" && Array.isArray(raw.thresholdLabels)
+      ? { thresholdLabels: raw.thresholdLabels as [string, string] }
+      : {}),
   };
 }
 
