@@ -4,7 +4,6 @@ import {
   saveCardSheet,
   updateCardOverrides,
 } from "@/lib/client/cards-api";
-import type { ResolvedCard } from "@/lib/client/cards-api";
 import {
   DEFAULT_BATTLE_ROYAL_MATCH_TYPE_ID,
   DEFAULT_MATCH_TYPE_ID,
@@ -28,7 +27,6 @@ import type {
 /* ── Constants ─────────────────────────────────────────────── */
 
 const LOCAL_DRAFT_STORAGE_KEY = "pick-em-editor-draft-v2";
-const AUTOSAVE_DEBOUNCE_MS = 900;
 
 const INITIAL_SHEET: PickEmSheet = {
   eventName: "",
@@ -321,7 +319,7 @@ export interface EditorSlice {
   setActiveTab: (tab: string) => void;
 
   // Actions — persistence
-  loadCard: (cardId: string, userId: string | null) => Promise<void>;
+  loadCard: (cardId: string) => Promise<void>;
   saveSheet: (cardId: string, mode: "manual" | "auto") => Promise<void>;
   syncOverrides: (cardId: string) => Promise<void>;
   hydrateFromDraft: (cardId: string) => void;
@@ -522,7 +520,7 @@ export const createEditorSlice: StateCreator<EditorSlice, [], [], EditorSlice> =
       }
     },
 
-    loadCard: async (cardId, userId) => {
+    loadCard: async (cardId) => {
       const state = get();
       const draftForCard = state._localDraft.draftsByCardId[cardId];
       if (draftForCard) return;
