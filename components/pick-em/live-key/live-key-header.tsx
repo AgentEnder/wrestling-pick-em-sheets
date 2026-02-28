@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCcw, Save } from "lucide-react";
 
@@ -14,7 +15,7 @@ interface LiveKeyHeaderProps {
   onRefresh: () => void;
 }
 
-export function LiveKeyHeader({
+const LiveKeyHeaderInner = function LiveKeyHeader({
   cardId,
   syncStatus,
   usingEditorDraft,
@@ -74,3 +75,5 @@ export function LiveKeyHeader({
     </>
   );
 }
+
+export const LiveKeyHeader = React.memo(LiveKeyHeaderInner);

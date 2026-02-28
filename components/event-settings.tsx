@@ -19,7 +19,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useEventSettings, useEventSettingsActions } from "@/stores/selectors";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 
 const TIMEZONE_FALLBACK = [
   "UTC",
@@ -149,7 +149,7 @@ function getTimeZoneShortLabel(timeZone: string, instant: Date): string {
   return parts.find((part) => part.type === "timeZoneName")?.value ?? timeZone;
 }
 
-export function EventSettings() {
+export const EventSettings = memo(function EventSettings() {
   const { eventName, promotionName, eventDate, eventTagline, defaultPoints, tiebreakerLabel, tiebreakerIsTimeBased } = useEventSettings();
   const { setEventName: onEventNameChange, setPromotionName: onPromotionNameChange, setEventDate: onEventDateChange, setEventTagline: onEventTaglineChange, setDefaultPoints: onDefaultPointsChange, setTiebreakerLabel: onTiebreakerLabelChange, setTiebreakerIsTimeBased: onTiebreakerIsTimeBasedChange } = useEventSettingsActions();
   const browserTimeZone = useMemo(
@@ -337,4 +337,4 @@ export function EventSettings() {
       </div>
     </div>
   );
-}
+});

@@ -42,10 +42,6 @@ export function useMatchCount(): number {
   return useAppStore((s) => s.matches.length);
 }
 
-export function useMatchByIndex(index: number): Match | undefined {
-  return useAppStore((s) => s.matches[index]);
-}
-
 export function useMatchById(id: string): Match | undefined {
   return useAppStore((s) => s.matches.find((m) => m.id === id));
 }
