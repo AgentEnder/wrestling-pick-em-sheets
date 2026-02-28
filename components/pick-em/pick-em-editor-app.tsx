@@ -8,77 +8,18 @@ import { PreviewView } from "@/components/pick-em/preview-view";
 import { PrintSheet } from "@/components/print-sheet";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  getCard,
-  saveCardSheet,
-  updateCardOverrides,
-} from "@/lib/client/cards-api";
-import {
-  DEFAULT_BATTLE_ROYAL_MATCH_TYPE_ID,
-  DEFAULT_MATCH_TYPE_ID,
-  getDefaultMatchType,
-  normalizeMatchTypeId,
-} from "@/lib/match-types";
-import type {
-  BonusGradingRule,
-  BonusQuestion,
-  BonusQuestionAnswerType,
-  BonusQuestionValueType,
-  Match,
-  PickEmSheet,
-} from "@/lib/types";
+import type { PickEmSheet } from "@/lib/types";
 import { useAuth } from "@/lib/client/clerk-test-mode";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useAppStore } from "@/stores/app-store";
+import {
+  useEditorUi,
+  useEditorActions,
+  useHasMatches,
+  useHasEventName,
+} from "@/stores/selectors";
 
-function createMatch(input?: {
-  type?: string;
-  isBattleRoyal?: boolean;
-  isEliminationStyle?: boolean;
-}): Match {
-  const fallbackIsBattleRoyal = input?.isBattleRoyal === true;
-  const normalizedType = normalizeMatchTypeId(
-    input?.type ??
-      (fallbackIsBattleRoyal
-        ? DEFAULT_BATTLE_ROYAL_MATCH_TYPE_ID
-        : DEFAULT_MATCH_TYPE_ID),
-    fallbackIsBattleRoyal,
-  );
-  const typeDefinition = getDefaultMatchType(normalizedType);
-  const isBattleRoyal =
-    typeof input?.isBattleRoyal === "boolean"
-      ? input.isBattleRoyal
-      : (typeDefinition?.defaultRuleSetIds.includes("timed-entry") ?? false);
-
-  return {
-    id: crypto.randomUUID(),
-    type: normalizedType,
-    typeLabelOverride: "",
-    isBattleRoyal,
-    isEliminationStyle: input?.isEliminationStyle === true,
-    title: "",
-    description: "",
-    participants: [],
-    surpriseSlots: 5,
-    surpriseEntrantPoints: null,
-    bonusQuestions: [],
-    points: null,
-  };
-}
-
-const INITIAL_SHEET: PickEmSheet = {
-  eventName: "",
-  promotionName: "",
-  eventDate: "",
-  eventTagline: "",
-  defaultPoints: 1,
-  tiebreakerLabel: "Main event total match time (mins)",
-  tiebreakerIsTimeBased: true,
-  matches: [],
-  eventBonusQuestions: [],
-};
-
-const LOCAL_DRAFT_STORAGE_KEY = "pick-em-editor-draft-v2";
 const AUTOSAVE_DEBOUNCE_MS = 900;
 
 function isEditableField(element: Element | null): boolean {
@@ -96,320 +37,74 @@ function isEditableField(element: Element | null): boolean {
   );
 }
 
-interface LocalDraftState {
-  draftsByCardId: Record<string, PickEmSheet>;
-  dirtyByCardId: Record<string, boolean>;
-}
-
-const EMPTY_LOCAL_DRAFT_STATE: LocalDraftState = {
-  draftsByCardId: {},
-  dirtyByCardId: {},
-};
-
-function normalizeBonusQuestion(
-  question: Partial<BonusQuestion> & {
-    isTimeBased?: boolean;
-    isCountBased?: boolean;
-  },
-): BonusQuestion {
-  const answerType: BonusQuestionAnswerType =
-    question.answerType === "multiple-choice" ? "multiple-choice" : "write-in";
-
-  const valueType: BonusQuestionValueType =
-    question.valueType === "numerical" ||
-    question.valueType === "time" ||
-    question.valueType === "rosterMember"
-      ? question.valueType
-      : question.isTimeBased === true
-        ? "time"
-        : question.isCountBased === true
-          ? "numerical"
-          : "string";
-  const gradingRule: BonusGradingRule =
-    question.gradingRule === "closest" ||
-    question.gradingRule === "atOrAbove" ||
-    question.gradingRule === "atOrBelow"
-      ? question.gradingRule
-      : "exact";
-
-  return {
-    id: typeof question.id === "string" ? question.id : crypto.randomUUID(),
-    question: typeof question.question === "string" ? question.question : "",
-    points: typeof question.points === "number" ? question.points : null,
-    answerType,
-    options:
-      answerType === "multiple-choice" && Array.isArray(question.options)
-        ? question.options.filter(
-            (option): option is string => typeof option === "string",
-          )
-        : [],
-    valueType,
-    gradingRule,
-  };
-}
-
-function normalizeMatch(match: Match): Match {
-  const raw = match as Match & {
-    announcedParticipants?: string[];
-    isBattleRoyal?: boolean;
-    isEliminationStyle?: boolean;
-    typeLabelOverride?: string;
-  };
-  const inferredBattleRoyal =
-    raw.isBattleRoyal === true || raw.type === "battleRoyal";
-  const normalizedType = normalizeMatchTypeId(raw.type, inferredBattleRoyal);
-  const typeDefinition = getDefaultMatchType(normalizedType);
-  const isBattleRoyal =
-    typeof raw.isBattleRoyal === "boolean"
-      ? raw.isBattleRoyal
-      : (typeDefinition?.defaultRuleSetIds.includes("timed-entry") ??
-        raw.type === "battleRoyal");
-  const bonusQuestions = Array.isArray(raw.bonusQuestions)
-    ? raw.bonusQuestions.map((question) => normalizeBonusQuestion(question))
-    : [];
-  const participants = Array.isArray(raw.participants)
-    ? raw.participants
-    : Array.isArray(raw.announcedParticipants)
-      ? raw.announcedParticipants
-      : [];
-
-  return {
-    ...raw,
-    type: normalizedType,
-    typeLabelOverride:
-      typeof raw.typeLabelOverride === "string" ? raw.typeLabelOverride : "",
-    isBattleRoyal,
-    isEliminationStyle: raw.isEliminationStyle === true,
-    participants,
-    surpriseSlots:
-      isBattleRoyal && typeof raw.surpriseSlots === "number"
-        ? raw.surpriseSlots
-        : 0,
-    surpriseEntrantPoints:
-      isBattleRoyal && typeof raw.surpriseEntrantPoints === "number"
-        ? raw.surpriseEntrantPoints
-        : null,
-    bonusQuestions,
-  };
-}
-
-function normalizeSheet(
-  input: Partial<PickEmSheet> | null | undefined,
-): PickEmSheet {
-  const matches = Array.isArray(input?.matches)
-    ? (input.matches as Match[]).map((match) => normalizeMatch(match))
-    : [];
-  const eventBonusQuestions = Array.isArray(input?.eventBonusQuestions)
-    ? (input.eventBonusQuestions as BonusQuestion[]).map((question) =>
-        normalizeBonusQuestion(question),
-      )
-    : [];
-
-  return {
-    ...INITIAL_SHEET,
-    ...input,
-    promotionName:
-      typeof input?.promotionName === "string" ? input.promotionName : "",
-    matches,
-    eventBonusQuestions,
-    tiebreakerIsTimeBased:
-      typeof input?.tiebreakerIsTimeBased === "boolean"
-        ? input.tiebreakerIsTimeBased
-        : INITIAL_SHEET.tiebreakerIsTimeBased,
-  };
-}
-
-function readLocalDraftState(): LocalDraftState {
-  try {
-    const raw = localStorage.getItem(LOCAL_DRAFT_STORAGE_KEY);
-    if (!raw) {
-      return {
-        ...EMPTY_LOCAL_DRAFT_STATE,
-        draftsByCardId: {},
-        dirtyByCardId: {},
-      };
-    }
-
-    const parsed = JSON.parse(raw) as Partial<LocalDraftState>;
-    const draftsByCardId =
-      parsed.draftsByCardId && typeof parsed.draftsByCardId === "object"
-        ? (parsed.draftsByCardId as Record<string, PickEmSheet>)
-        : {};
-    const dirtyByCardId =
-      parsed.dirtyByCardId && typeof parsed.dirtyByCardId === "object"
-        ? (parsed.dirtyByCardId as Record<string, boolean>)
-        : {};
-
-    const normalizedDraftsByCardId: Record<string, PickEmSheet> = {};
-    const normalizedDirtyByCardId: Record<string, boolean> = {};
-    for (const [draftCardId, draftSheet] of Object.entries(draftsByCardId)) {
-      normalizedDraftsByCardId[draftCardId] = normalizeSheet(draftSheet);
-      normalizedDirtyByCardId[draftCardId] =
-        dirtyByCardId[draftCardId] === true;
-    }
-
-    return {
-      draftsByCardId: normalizedDraftsByCardId,
-      dirtyByCardId: normalizedDirtyByCardId,
-    };
-  } catch {
-    return {
-      ...EMPTY_LOCAL_DRAFT_STATE,
-      draftsByCardId: {},
-      dirtyByCardId: {},
-    };
-  }
-}
-
-function writeLocalDraftState(state: LocalDraftState) {
-  localStorage.setItem(LOCAL_DRAFT_STORAGE_KEY, JSON.stringify(state));
-}
-
-function toSheet(card: {
-  eventName: string;
-  promotionName: string;
-  eventDate: string;
-  eventTagline: string;
-  defaultPoints: number;
-  tiebreakerLabel: string;
-  tiebreakerIsTimeBased: boolean;
-  matches: Match[];
-  eventBonusQuestions: BonusQuestion[];
-}): PickEmSheet {
-  return {
-    eventName: card.eventName,
-    promotionName: card.promotionName,
-    eventDate: card.eventDate,
-    eventTagline: card.eventTagline,
-    defaultPoints: card.defaultPoints,
-    tiebreakerLabel: card.tiebreakerLabel,
-    tiebreakerIsTimeBased: card.tiebreakerIsTimeBased,
-    matches: card.matches,
-    eventBonusQuestions: card.eventBonusQuestions,
-  };
-}
-
-function normalizeNullable(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
 interface PickEmEditorAppProps {
   cardId: string;
 }
 
 export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
   const { userId, isLoaded: isAuthLoaded } = useAuth();
-  const [sheet, setSheet] = useState<PickEmSheet>(INITIAL_SHEET);
-  const [activeTab, setActiveTab] = useState("editor");
-  const [isLoadingCard, setIsLoadingCard] = useState(false);
-  const [isSyncingOverrides, setIsSyncingOverrides] = useState(false);
-  const [isSavingSheet, setIsSavingSheet] = useState(false);
-  const [isAutoSavingSheet, setIsAutoSavingSheet] = useState(false);
-  const [hasPendingAutoSave, setHasPendingAutoSave] = useState(false);
-  const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
-  const [isDraftDirty, setIsDraftDirty] = useState(false);
-  const [hasHydratedDraft, setHasHydratedDraft] = useState(false);
+
+  const {
+    activeTab,
+    isLoadingCard,
+    isSyncingOverrides,
+    isSavingSheet,
+    isAutoSavingSheet,
+    hasPendingAutoSave,
+    autoSaveError,
+    isDraftDirty,
+  } = useEditorUi();
+
+  const {
+    setActiveTab,
+    getSheetSnapshot,
+    loadCard,
+    saveSheet,
+    syncOverrides,
+    hydrateFromDraft,
+    persistDraft,
+    resetToServer,
+    importSheet,
+  } = useEditorActions();
+
+  const hasMatches = useHasMatches();
+  const hasEventName = useHasEventName();
+
   const [isEditableFieldFocused, setIsEditableFieldFocused] = useState(false);
 
   const printRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
-  const resetSheetRef = useRef<PickEmSheet>(INITIAL_SHEET);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sheetRef = useRef<PickEmSheet>(INITIAL_SHEET);
-  const lastFailedAutoSaveSnapshotRef = useRef<string | null>(null);
-  const suppressDraftDirtyRef = useRef(false);
-  const localDraftRef = useRef<LocalDraftState>({
-    draftsByCardId: {},
-    dirtyByCardId: {},
-  });
 
-  const hasMatches = sheet.matches.length > 0;
-  const hasEventName = sheet.eventName.trim().length > 0;
   const canAutoSave = isAuthLoaded && Boolean(userId);
 
+  // Hydrate from local draft on mount (or when cardId changes)
   useEffect(() => {
-    sheetRef.current = sheet;
-  }, [sheet]);
+    hydrateFromDraft(cardId);
+  }, [cardId, hydrateFromDraft]);
 
+  // Load card from server after hydration
   useEffect(() => {
-    const localDraft = readLocalDraftState();
-    localDraftRef.current = localDraft;
-
-    const draftForCard = localDraft.draftsByCardId[cardId];
-    if (draftForCard) {
-      setSheet(draftForCard);
-      resetSheetRef.current = draftForCard;
-      setIsDraftDirty(localDraft.dirtyByCardId[cardId] === true);
-    } else {
-      setSheet(INITIAL_SHEET);
-      resetSheetRef.current = INITIAL_SHEET;
-      setIsDraftDirty(false);
-    }
-
-    setHasHydratedDraft(true);
-  }, [cardId]);
-
-  const loadCard = useCallback(async () => {
-    const draftForCard = localDraftRef.current.draftsByCardId[cardId];
-    if (draftForCard) {
+    const hasHydrated = useAppStore.getState()._hasHydratedDraft;
+    if (!hasHydrated) {
       return;
     }
 
-    setIsLoadingCard(true);
-    try {
-      const card = await getCard(cardId);
-      const cardSheet = normalizeSheet(toSheet(card));
-      suppressDraftDirtyRef.current = true;
-      setSheet(cardSheet);
-      setIsDraftDirty(false);
-      resetSheetRef.current = cardSheet;
-      localDraftRef.current.draftsByCardId[cardId] = cardSheet;
-      localDraftRef.current.dirtyByCardId[cardId] = false;
-      writeLocalDraftState(localDraftRef.current);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to load card";
-      toast.error(message);
-    } finally {
-      setIsLoadingCard(false);
-    }
-  }, [cardId]);
+    void loadCard(cardId);
+  }, [cardId, loadCard]);
 
+  // Persist draft to localStorage whenever the store dirty flag changes
   useEffect(() => {
-    if (!hasHydratedDraft) {
+    const hasHydrated = useAppStore.getState()._hasHydratedDraft;
+    if (!hasHydrated) {
       return;
     }
 
-    void loadCard();
-  }, [hasHydratedDraft, loadCard]);
+    persistDraft(cardId);
+  }, [cardId, isDraftDirty, persistDraft]);
 
-  useEffect(() => {
-    if (!hasHydratedDraft) {
-      return;
-    }
-
-    if (suppressDraftDirtyRef.current) {
-      suppressDraftDirtyRef.current = false;
-      return;
-    }
-
-    const isEquivalent =
-      JSON.stringify(sheet) === JSON.stringify(resetSheetRef.current);
-    setIsDraftDirty(!isEquivalent);
-  }, [sheet, hasHydratedDraft]);
-
-  useEffect(() => {
-    if (!hasHydratedDraft) {
-      return;
-    }
-
-    localDraftRef.current.draftsByCardId[cardId] = sheet;
-    localDraftRef.current.dirtyByCardId[cardId] = isDraftDirty;
-    writeLocalDraftState(localDraftRef.current);
-  }, [cardId, sheet, isDraftDirty, hasHydratedDraft]);
-
+  // Global error handlers
   useEffect(() => {
     function onError(event: ErrorEvent) {
       toast.error(event.message || "An unexpected error occurred");
@@ -432,6 +127,7 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     };
   }, []);
 
+  // Focus tracking for autosave gating
   useEffect(() => {
     function syncFocusedFieldState() {
       setIsEditableFieldFocused(isEditableField(document.activeElement));
@@ -455,6 +151,7 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     };
   }, []);
 
+  // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
       if (syncTimeoutRef.current) {
@@ -466,81 +163,9 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     };
   }, []);
 
-  const persistSheet = useCallback(
-    async (mode: "manual" | "auto") => {
-      if (!userId) {
-        if (mode === "manual") {
-          toast.error("Sign in to save your card");
-        }
-        return;
-      }
-
-      const snapshot = sheetRef.current;
-      const snapshotSerialized = JSON.stringify(snapshot);
-
-      if (mode === "manual") {
-        setIsSavingSheet(true);
-      } else {
-        setIsAutoSavingSheet(true);
-      }
-
-      try {
-        const saved = await saveCardSheet(cardId, snapshot);
-        const savedSheet = normalizeSheet(toSheet(saved));
-        const hasChangedSinceRequest =
-          JSON.stringify(sheetRef.current) !== snapshotSerialized;
-        const shouldHydrateSavedSheet =
-          !hasChangedSinceRequest &&
-          (mode !== "auto" || !isEditableField(document.activeElement));
-
-        resetSheetRef.current = savedSheet;
-        setAutoSaveError(null);
-        lastFailedAutoSaveSnapshotRef.current = null;
-
-        if (shouldHydrateSavedSheet) {
-          suppressDraftDirtyRef.current = true;
-          setSheet(savedSheet);
-          sheetRef.current = savedSheet;
-          setIsDraftDirty(false);
-          localDraftRef.current.draftsByCardId[cardId] = savedSheet;
-          localDraftRef.current.dirtyByCardId[cardId] = false;
-        } else if (!hasChangedSinceRequest) {
-          setIsDraftDirty(false);
-          localDraftRef.current.draftsByCardId[cardId] = sheetRef.current;
-          localDraftRef.current.dirtyByCardId[cardId] = false;
-        } else {
-          localDraftRef.current.draftsByCardId[cardId] = sheetRef.current;
-          localDraftRef.current.dirtyByCardId[cardId] = true;
-        }
-
-        writeLocalDraftState(localDraftRef.current);
-
-        if (mode === "manual") {
-          toast.success("Card saved");
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to save card";
-        if (mode === "manual") {
-          toast.error(message);
-        } else {
-          setAutoSaveError(message);
-          lastFailedAutoSaveSnapshotRef.current = snapshotSerialized;
-        }
-      } finally {
-        if (mode === "manual") {
-          setIsSavingSheet(false);
-        } else {
-          setIsAutoSavingSheet(false);
-        }
-      }
-    },
-    [cardId, userId],
-  );
-
+  // Autosave orchestration
   useEffect(() => {
     if (
-      !hasHydratedDraft ||
       !canAutoSave ||
       !isDraftDirty ||
       isSavingSheet ||
@@ -552,46 +177,50 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
         autoSaveTimeoutRef.current = null;
       }
       if (!isDraftDirty || isEditableFieldFocused) {
-        setHasPendingAutoSave(false);
+        useAppStore.setState({ hasPendingAutoSave: false });
       }
       return;
     }
 
-    const currentSerialized = JSON.stringify(sheet);
-    const lastFailedSnapshot = lastFailedAutoSaveSnapshotRef.current;
+    const currentSerialized = JSON.stringify(getSheetSnapshot());
+    const lastFailedSnapshot =
+      useAppStore.getState()._lastFailedAutoSaveSnapshot;
 
     if (lastFailedSnapshot === currentSerialized) {
-      setHasPendingAutoSave(false);
+      useAppStore.setState({ hasPendingAutoSave: false });
       return;
     }
 
     if (autoSaveError) {
-      setAutoSaveError(null);
-      lastFailedAutoSaveSnapshotRef.current = null;
+      useAppStore.setState({
+        autoSaveError: null,
+        _lastFailedAutoSaveSnapshot: null,
+      });
     }
 
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
 
-    setHasPendingAutoSave(true);
+    useAppStore.setState({ hasPendingAutoSave: true });
     autoSaveTimeoutRef.current = setTimeout(() => {
       autoSaveTimeoutRef.current = null;
-      setHasPendingAutoSave(false);
-      void persistSheet("auto");
+      useAppStore.setState({ hasPendingAutoSave: false });
+      void saveSheet(cardId, "auto");
     }, AUTOSAVE_DEBOUNCE_MS);
   }, [
     autoSaveError,
     canAutoSave,
-    hasHydratedDraft,
     isAutoSavingSheet,
     isEditableFieldFocused,
     isDraftDirty,
     isSavingSheet,
-    persistSheet,
-    sheet,
+    saveSheet,
+    getSheetSnapshot,
+    cardId,
   ]);
 
+  // Beforeunload guard
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent) {
       if (!hasPendingAutoSave && !isAutoSavingSheet && !isSavingSheet) {
@@ -608,109 +237,46 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     };
   }, [hasPendingAutoSave, isAutoSavingSheet, isSavingSheet]);
 
-  function queueOverrideSync(nextSheet: PickEmSheet) {
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
-    }
-
-    syncTimeoutRef.current = setTimeout(async () => {
-      setIsSyncingOverrides(true);
-
-      try {
-        await updateCardOverrides(cardId, {
-          eventName: normalizeNullable(nextSheet.eventName),
-          promotionName: normalizeNullable(nextSheet.promotionName),
-          eventDate: normalizeNullable(nextSheet.eventDate),
-          eventTagline: normalizeNullable(nextSheet.eventTagline),
-          defaultPoints: nextSheet.defaultPoints,
-          tiebreakerLabel: normalizeNullable(nextSheet.tiebreakerLabel),
-          tiebreakerIsTimeBased: nextSheet.tiebreakerIsTimeBased,
-        });
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Failed to sync card overrides";
-        toast.error(message);
-      } finally {
-        setIsSyncingOverrides(false);
-      }
-    }, 500);
-  }
-
-  function addMatch() {
-    const newMatch = createMatch();
-
-    setSheet((prev) => ({
-      ...prev,
-      matches: [...prev.matches, newMatch],
-    }));
-  }
-
-  function updateMatch(index: number, updated: Match) {
-    setSheet((prev) => ({
-      ...prev,
-      matches: prev.matches.map((match, i) => (i === index ? updated : match)),
-    }));
-  }
-
-  function removeMatch(index: number) {
-    setSheet((prev) => ({
-      ...prev,
-      matches: prev.matches.filter((_, i) => i !== index),
-    }));
-  }
-
-  function moveMatch(index: number, direction: "up" | "down") {
-    setSheet((prev) => {
-      const newMatches = [...prev.matches];
-      const swapIndex = direction === "up" ? index - 1 : index + 1;
-
-      if (swapIndex < 0 || swapIndex >= newMatches.length) {
-        return prev;
+  // Override sync — subscribe to event settings changes in the store
+  useEffect(() => {
+    const unsubscribe = useAppStore.subscribe((state, prevState) => {
+      // Only sync when event settings actually change
+      if (
+        !state._hasHydratedDraft ||
+        state.isLoadingCard ||
+        (state.eventName === prevState.eventName &&
+          state.promotionName === prevState.promotionName &&
+          state.eventDate === prevState.eventDate &&
+          state.eventTagline === prevState.eventTagline &&
+          state.defaultPoints === prevState.defaultPoints &&
+          state.tiebreakerLabel === prevState.tiebreakerLabel &&
+          state.tiebreakerIsTimeBased === prevState.tiebreakerIsTimeBased)
+      ) {
+        return;
       }
 
-      [newMatches[index], newMatches[swapIndex]] = [
-        newMatches[swapIndex],
-        newMatches[index],
-      ];
-      return { ...prev, matches: newMatches };
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+
+      syncTimeoutRef.current = setTimeout(() => {
+        void syncOverrides(cardId);
+      }, 500);
     });
-  }
 
-  function duplicateMatch(index: number) {
-    setSheet((prev) => {
-      const source = prev.matches[index];
-      const clone = {
-        ...JSON.parse(JSON.stringify(source)),
-        id: crypto.randomUUID(),
-      };
+    return unsubscribe;
+  }, [cardId, syncOverrides]);
 
-      clone.bonusQuestions = clone.bonusQuestions.map(
-        (question: BonusQuestion) => ({
-          ...question,
-          id: crypto.randomUUID(),
-        }),
-      );
-
-      const newMatches = [...prev.matches];
-      newMatches.splice(index + 1, 0, clone);
-      return { ...prev, matches: newMatches };
-    });
-  }
-
-  function handlePrint() {
+  const handlePrint = useCallback(() => {
     window.print();
-  }
+  }, []);
 
-  function handleReset() {
-    suppressDraftDirtyRef.current = true;
-    setSheet(resetSheetRef.current);
-    setIsDraftDirty(false);
-    setActiveTab("editor");
-  }
+  const handleReset = useCallback(() => {
+    resetToServer();
+  }, [resetToServer]);
 
-  function handleExport() {
+  const handleExport = useCallback(() => {
+    const sheet = getSheetSnapshot();
     const json = JSON.stringify(sheet, null, 2);
     const bytes = new TextEncoder().encode(json);
     let binary = "";
@@ -732,50 +298,47 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
     anchor.download = `${safeName}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
-  }
+  }, [getSheetSnapshot]);
 
-  function handleImportClick() {
+  const handleImportClick = useCallback(() => {
     importInputRef.current?.click();
-  }
+  }, []);
 
-  function handleImportFile(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (loadEvent) => {
-      try {
-        const raw = loadEvent.target?.result as string;
-        const decoded = atob(raw.trim());
-        const bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
-        const json = new TextDecoder().decode(bytes);
-        const parsed = normalizeSheet(JSON.parse(json) as PickEmSheet);
-        setSheet(parsed);
-        setActiveTab("editor");
-      } catch {
-        toast.error("Failed to import: the file appears to be invalid.");
+  const handleImportFile = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
       }
-    };
 
-    reader.readAsText(file);
-    event.target.value = "";
-  }
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        try {
+          const raw = loadEvent.target?.result as string;
+          const decoded = atob(raw.trim());
+          const bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+          const json = new TextDecoder().decode(bytes);
+          const parsed = JSON.parse(json) as PickEmSheet;
+          importSheet(parsed);
+        } catch {
+          toast.error("Failed to import: the file appears to be invalid.");
+        }
+      };
 
-  function handleEventSettingsChange(nextSheet: PickEmSheet) {
-    setSheet(nextSheet);
-    queueOverrideSync(nextSheet);
-  }
+      reader.readAsText(file);
+      event.target.value = "";
+    },
+    [importSheet],
+  );
 
   async function handleSaveSheet() {
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
       autoSaveTimeoutRef.current = null;
-      setHasPendingAutoSave(false);
+      useAppStore.setState({ hasPendingAutoSave: false });
     }
 
-    await persistSheet("manual");
+    await saveSheet(cardId, "manual");
   }
 
   const draftStatusMessage = (() => {
@@ -807,6 +370,8 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
 
     return isDraftDirty ? "Unsaved local edits." : "All sheet edits are saved.";
   })();
+
+  const sheetForPrint = useAppStore((s) => s.getSheetSnapshot());
 
   return (
     <div className="relative min-h-screen overflow-x-clip bg-background print:bg-white">
@@ -884,23 +449,12 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
                   Loading card...
                 </div>
               ) : (
-                <EditorView
-                  sheet={sheet}
-                  hasMatches={hasMatches}
-                  onSheetChange={handleEventSettingsChange}
-                  onAddMatch={addMatch}
-                  onUpdateMatch={updateMatch}
-                  onRemoveMatch={removeMatch}
-                  onDuplicateMatch={duplicateMatch}
-                  onMoveMatch={moveMatch}
-                />
+                <EditorView />
               )}
             </TabsContent>
 
             <TabsContent value="preview" className="mt-0">
               <PreviewView
-                sheet={sheet}
-                hasMatches={hasMatches}
                 printRef={printRef}
                 onPrint={handlePrint}
               />
@@ -910,7 +464,7 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
       </main>
 
       <div className="print-only-wrapper">
-        <PrintSheet sheet={sheet} />
+        <PrintSheet sheet={sheetForPrint} />
       </div>
     </div>
   );
