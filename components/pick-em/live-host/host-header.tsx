@@ -12,12 +12,11 @@ import { useLiveCard, useLiveGames, useLiveUi } from "@/stores/selectors";
 interface HostHeaderProps {
   gameId: string;
   onSave: () => void;
-  onRefresh: () => void;
 }
 
 /* ---- Component ---- */
 
-function HostHeaderInner({ gameId, onSave, onRefresh }: HostHeaderProps) {
+function HostHeaderInner({ gameId, onSave }: HostHeaderProps) {
   const card = useLiveCard();
   const ui = useLiveUi();
   const games = useLiveGames();

@@ -505,7 +505,6 @@ export function LiveGameKeyHostApp({
       <HostHeader
         gameId={gameId}
         onSave={() => void handleSaveKey()}
-        onRefresh={() => void handleRefresh()}
       />
 
       <GameLifecycleControls gameId={gameId} />
