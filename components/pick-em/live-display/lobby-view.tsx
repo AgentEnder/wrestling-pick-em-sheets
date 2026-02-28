@@ -43,7 +43,7 @@ function LobbyViewInner({
             <img
               src={joinQrCodeDataUrl}
               alt={`QR code to join room ${state.game.joinCode}`}
-              className="h-72 w-72 rounded-md bg-white p-2 lg:h-80 lg:w-80"
+              className="aspect-square w-full max-w-[420px] rounded-md bg-white p-3"
             />
           ) : (
             <p className="py-24 text-sm text-muted-foreground">

@@ -375,7 +375,7 @@ export function LiveGameDisplayApp({
       }
       try {
         const qrUrl = await QRCode.toDataURL(joinUrl, {
-          width: 420,
+          width: 560,
           margin: 1,
         });
         if (!cancelled) {
