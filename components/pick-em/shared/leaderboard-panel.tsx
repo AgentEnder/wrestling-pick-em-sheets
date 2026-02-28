@@ -37,7 +37,7 @@ function LeaderboardPanelInner({
         </div>
         <div className="mt-2 space-y-1">
           {entries.length > 0 ? (
-            entries.map((entry, index) => {
+            entries.map((entry) => {
               const presence = getConnectionStatus(entry.lastSeenAt);
               const dotClass =
                 presence.state === "online"
