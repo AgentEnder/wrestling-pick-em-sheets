@@ -51,7 +51,7 @@ function LeaderboardPanelInner({
                   key={`${entry.rank}:${entry.nickname}`}
                   className="relative grid grid-cols-[72px_1fr_170px_90px] items-center gap-2 rounded-md border border-border/70 bg-background/45 px-3 py-2"
                 >
-                  {index === 0 ? (
+                  {entry.rank === 1 ? (
                     <div className="absolute -left-2 -top-2 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
                       <Trophy className="mr-1 inline h-3 w-3" />
                       Leader
