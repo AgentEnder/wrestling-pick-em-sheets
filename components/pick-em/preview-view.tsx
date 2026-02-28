@@ -4,14 +4,14 @@ import { PrintSheet } from "@/components/print-sheet";
 import { Button } from "@/components/ui/button";
 import { useSheetSnapshot, useHasMatches } from "@/stores/selectors";
 import { Printer } from "lucide-react";
-import { memo, type RefObject } from "react";
+import type { RefObject } from "react";
 
 interface PreviewViewProps {
   printRef: RefObject<HTMLDivElement | null>;
   onPrint: () => void;
 }
 
-export const PreviewView = memo(function PreviewView({ printRef, onPrint }: PreviewViewProps) {
+export function PreviewView({ printRef, onPrint }: PreviewViewProps) {
   const sheet = useSheetSnapshot();
   const hasMatches = useHasMatches();
 
@@ -50,4 +50,4 @@ export const PreviewView = memo(function PreviewView({ printRef, onPrint }: Prev
       </div>
     </div>
   );
-});
+}

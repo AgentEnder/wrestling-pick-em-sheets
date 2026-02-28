@@ -30,7 +30,7 @@ import {
   Upload,
 } from "lucide-react";
 import Link from "next/link";
-import { memo, useCallback } from "react";
+import { useCallback } from "react";
 
 interface PageHeaderProps {
   cardId: string;
@@ -39,7 +39,7 @@ interface PageHeaderProps {
   onPrint: () => void;
 }
 
-export const PageHeader = memo(function PageHeader({
+export function PageHeader({
   cardId,
   canSave,
   onImportClick,
@@ -174,4 +174,4 @@ export const PageHeader = memo(function PageHeader({
       </div>
     </header>
   );
-});
+}
