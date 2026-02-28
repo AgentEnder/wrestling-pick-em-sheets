@@ -84,13 +84,10 @@ function PlayerMatchPicksInner({
   const allWinnerOptions = match.isBattleRoyal
     ? Array.from(new Set([...match.participants, ...battleRoyalEntrants]))
     : match.participants;
-  const winnerInOptions = allWinnerOptions.some(
-    (p) => p === matchPick?.winnerName,
-  );
   const winnerSelectValue = matchPick?.winnerName
-    ? winnerInOptions
+    ? allWinnerOptions.includes(matchPick.winnerName)
       ? matchPick.winnerName
-      : "__custom__"
+      : "__none__"
     : "__none__";
   const battleRoyalInputRef = React.useRef<HTMLInputElement>(null);
   const battleRoyalFieldKey = `battleRoyal:${match.id}`;
@@ -141,14 +138,6 @@ function PlayerMatchPicksInner({
               onSetMatchWinner(match.id, "");
               return;
             }
-            if (value === "__custom__") {
-              const current =
-                matchPick?.winnerName && !winnerInOptions
-                  ? matchPick.winnerName
-                  : "";
-              onSetMatchWinner(match.id, current);
-              return;
-            }
             onSetMatchWinner(match.id, value);
           }}
           disabled={isMatchLocked}
@@ -163,26 +152,8 @@ function PlayerMatchPicksInner({
                 {participant}
               </SelectItem>
             ))}
-            {match.isBattleRoyal ? (
-              <SelectItem value="__custom__">
-                Other (type name)...
-              </SelectItem>
-            ) : null}
           </SelectContent>
         </Select>
-        {winnerSelectValue === "__custom__" ? (
-          <div className="space-y-1">
-            <Label>Custom winner</Label>
-            <Input
-              value={matchPick?.winnerName ?? ""}
-              onChange={(event) =>
-                onSetMatchWinner(match.id, event.target.value)
-              }
-              disabled={isMatchLocked}
-              placeholder="Type winner name"
-            />
-          </div>
-        ) : null}
 
         {match.isBattleRoyal ? (
           <div className="space-y-2">
