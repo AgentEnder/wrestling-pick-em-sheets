@@ -26,7 +26,7 @@ function ActiveGameViewInner({ state }: ActiveGameViewProps) {
         </h2>
         <UpdatesFeed
           events={state.events}
-          maxItems={15}
+          maxItems={8}
           variant="display"
         />
       </section>

@@ -32,10 +32,10 @@ function UpdatesFeedInner({
               key={event.id}
               className="rounded-md border border-border/70 bg-background/45 p-2"
             >
-              <p className="text-sm text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 {new Date(event.createdAt).toLocaleTimeString()}
               </p>
-              <p className="text-base">{event.message}</p>
+              <p className="text-lg">{event.message}</p>
             </div>
           ))
         ) : (
