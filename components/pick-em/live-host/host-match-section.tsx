@@ -1,19 +1,26 @@
 "use client";
 
 import React, { useCallback, useMemo } from "react";
-import { Pause, Play, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Check, ChevronsUpDown, Pause, Play, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import {
   useLiveCard,
   useLivePayload,
@@ -108,12 +115,7 @@ function HostMatchSectionInner({
   const matchResult = findMatchResult(payload, match.id);
   const participants = match.participants;
   const winnerName = matchResult?.winnerName ?? "";
-  const winnerInList = participants.some((name) => name === winnerName);
-  const winnerSelectValue = winnerName
-    ? winnerInList
-      ? winnerName
-      : "__custom__"
-    : "__none__";
+  const [winnerComboboxOpen, setWinnerComboboxOpen] = React.useState(false);
 
   /* Timer state */
   const matchTimerId = toMatchTimerId(match.id);
@@ -384,47 +386,71 @@ function HostMatchSectionInner({
       <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
         <div className="space-y-2">
           <Label>Winner</Label>
-          <Select
-            value={winnerSelectValue}
-            onValueChange={(value) => {
-              if (value === "__none__") {
-                liveSetMatchWinner(match.id, "");
-                return;
-              }
-              if (value === "__custom__") {
-                const current =
-                  winnerName && !winnerInList ? winnerName : "";
-                liveSetMatchWinner(match.id, current);
-                return;
-              }
-              liveSetMatchWinner(match.id, value);
-            }}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select winner" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">Unanswered</SelectItem>
-              {participants.map((participant) => (
-                <SelectItem key={participant} value={participant}>
-                  {participant}
-                </SelectItem>
-              ))}
-              <SelectItem value="__custom__">Custom winner...</SelectItem>
-            </SelectContent>
-          </Select>
-          {winnerSelectValue === "__custom__" ? (
-            <div className="space-y-1.5">
-              <Label>Custom winner</Label>
-              <Input
-                placeholder="Type winner name"
-                value={winnerName}
-                onChange={(event) =>
-                  liveSetMatchWinner(match.id, event.target.value)
-                }
-              />
-            </div>
-          ) : null}
+          <Popover open={winnerComboboxOpen} onOpenChange={setWinnerComboboxOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={winnerComboboxOpen}
+                className="w-full justify-between font-normal"
+              >
+                {winnerName || "Select winner..."}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+              <Command>
+                <CommandInput placeholder="Search or type winner..." />
+                <CommandList>
+                  <CommandEmpty>
+                    No match found. Press enter to use typed value.
+                  </CommandEmpty>
+                  <CommandGroup>
+                    <CommandItem
+                      value="__clear__"
+                      onSelect={() => {
+                        liveSetMatchWinner(match.id, "");
+                        setWinnerComboboxOpen(false);
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          !winnerName ? "opacity-100" : "opacity-0",
+                        )}
+                      />
+                      Unanswered
+                    </CommandItem>
+                    {participants.map((participant) => (
+                      <CommandItem
+                        key={participant}
+                        value={participant}
+                        onSelect={() => {
+                          liveSetMatchWinner(match.id, participant);
+                          setWinnerComboboxOpen(false);
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            winnerName === participant ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                        {participant}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+          <Input
+            placeholder="Or type any winner name..."
+            value={winnerName}
+            onChange={(event) =>
+              liveSetMatchWinner(match.id, event.target.value)
+            }
+          />
           {gameState?.playerAnswerSummaries && winnerName.trim() ? (
             <FuzzyReviewPanel
               candidates={computeFuzzyCandidatesForAnswer(

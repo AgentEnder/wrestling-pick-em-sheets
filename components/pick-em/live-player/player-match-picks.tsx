@@ -80,16 +80,19 @@ function PlayerMatchPicksInner({
   const matchPick = findMatchPick(picks, match.id);
   const isMatchLocked =
     locks.matchLocks[match.id] === true || locks.globalLocked;
-  const winnerInParticipants = match.participants.some(
+  const battleRoyalEntrants = matchPick?.battleRoyalEntrants ?? [];
+  const allWinnerOptions = match.isBattleRoyal
+    ? Array.from(new Set([...match.participants, ...battleRoyalEntrants]))
+    : match.participants;
+  const winnerInOptions = allWinnerOptions.some(
     (p) => p === matchPick?.winnerName,
   );
   const winnerSelectValue = matchPick?.winnerName
-    ? winnerInParticipants
+    ? winnerInOptions
       ? matchPick.winnerName
       : "__custom__"
     : "__none__";
   const battleRoyalInputRef = React.useRef<HTMLInputElement>(null);
-  const battleRoyalEntrants = matchPick?.battleRoyalEntrants ?? [];
   const battleRoyalFieldKey = `battleRoyal:${match.id}`;
   const isSurpriseEntrantsFull =
     battleRoyalEntrants.length >= match.surpriseSlots;
@@ -140,7 +143,7 @@ function PlayerMatchPicksInner({
             }
             if (value === "__custom__") {
               const current =
-                matchPick?.winnerName && !winnerInParticipants
+                matchPick?.winnerName && !winnerInOptions
                   ? matchPick.winnerName
                   : "";
               onSetMatchWinner(match.id, current);
@@ -155,7 +158,7 @@ function PlayerMatchPicksInner({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__none__">Unanswered</SelectItem>
-            {match.participants.map((participant) => (
+            {allWinnerOptions.map((participant) => (
               <SelectItem key={participant} value={participant}>
                 {participant}
               </SelectItem>
