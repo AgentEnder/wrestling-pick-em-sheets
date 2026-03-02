@@ -63,6 +63,11 @@ import {
 
 /* ---- Helpers ---- */
 
+function parseCountAnswer(value: string | undefined): number {
+  if (!value) return 0;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 function formatThresholdValue(seconds: number, valueType: string): string {
   if (valueType === "time") {
@@ -851,33 +856,97 @@ function HostMatchSectionInner({
                 </div>
                 {question.answerType === "threshold" ? (
                   <div className="space-y-1.5">
-                    <div className="flex gap-2">
-                      {(question.thresholdLabels ?? ["Over", "Under"]).map(
-                        (label) => (
-                          <button
-                            key={label}
-                            type="button"
-                            onClick={() =>
+                    {question.valueType === "numerical" ? (
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              const current = parseCountAnswer(answer?.answer);
                               liveSetMatchBonusAnswer(
                                 match.id,
                                 question.id,
-                                label,
+                                String(Math.max(0, current - 1)),
                                 false,
-                              )
-                            }
-                            className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                              normalizeText(answer?.answer ?? "") ===
-                              normalizeText(label)
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-border bg-card text-card-foreground hover:border-primary/50"
-                            }`}
+                              );
+                            }}
                           >
-                            {label}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                    {question.thresholdValue != null ? (
+                            &minus;
+                          </Button>
+                          <span className="min-w-[3rem] rounded-md border border-border px-3 py-1.5 text-center font-mono text-lg">
+                            {parseCountAnswer(answer?.answer)}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              const current = parseCountAnswer(answer?.answer);
+                              liveSetMatchBonusAnswer(
+                                match.id,
+                                question.id,
+                                String(current + 1),
+                                false,
+                              );
+                            }}
+                          >
+                            +
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              liveSetMatchBonusAnswer(match.id, question.id, "", false)
+                            }
+                            disabled={(answer?.answer ?? "").trim().length === 0}
+                          >
+                            Clear
+                          </Button>
+                        </div>
+                        {question.thresholdValue != null ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Threshold: {question.thresholdValue}
+                            {(answer?.answer ?? "").trim() ? (
+                              <>
+                                {" \u00b7 "}
+                                Result:{" "}
+                                {parseCountAnswer(answer?.answer) > question.thresholdValue
+                                  ? (question.thresholdLabels ?? ["Over", "Under"])[0]
+                                  : (question.thresholdLabels ?? ["Over", "Under"])[1]}
+                              </>
+                            ) : null}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        {(question.thresholdLabels ?? ["Over", "Under"]).map(
+                          (label) => (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() =>
+                                liveSetMatchBonusAnswer(
+                                  match.id,
+                                  question.id,
+                                  label,
+                                  false,
+                                )
+                              }
+                              className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                                normalizeText(answer?.answer ?? "") ===
+                                normalizeText(label)
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-border bg-card text-card-foreground hover:border-primary/50"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ),
+                        )}
+                      </div>
+                    )}
+                    {question.thresholdValue != null && question.valueType !== "numerical" ? (
                       <p className="text-xs text-muted-foreground">
                         Threshold: {formatThresholdValue(
                           question.thresholdValue,
