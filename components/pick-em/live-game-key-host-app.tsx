@@ -25,7 +25,12 @@ import {
 } from "@/lib/client/live-games-api";
 import type { LiveGameKeyPayload } from "@/lib/types";
 import { snapshotPayload } from "@/lib/pick-em/payload-utils";
-import { nowMs } from "@/lib/pick-em/timer-utils";
+import {
+  nowMs,
+  toMatchTimerId,
+  toMatchBonusTimerId,
+  toEventBonusTimerId,
+} from "@/lib/pick-em/timer-utils";
 import { normalizeText } from "@/lib/pick-em/text-utils";
 import { computeFuzzyConfidence } from "@/lib/fuzzy-match";
 
@@ -45,14 +50,12 @@ const REFRESH_STALE_THRESHOLD_MS = POLL_INTERVAL_MS * 5;
 
 /* ---- Helpers ---- */
 
-function ensureMatchTimer(
+function ensureTimer(
   payload: LiveGameKeyPayload,
-  matchId: string,
+  timerId: string,
   label: string,
 ): LiveGameKeyPayload {
-  const timerId = `match:${matchId}`;
   const found = payload.timers.find((timer) => timer.id === timerId);
-
   if (found) {
     return {
       ...payload,
@@ -61,35 +64,46 @@ function ensureMatchTimer(
       ),
     };
   }
-
   return {
     ...payload,
     timers: [
       ...payload.timers,
-      {
-        id: timerId,
-        label,
-        elapsedMs: 0,
-        isRunning: false,
-        startedAt: null,
-      },
+      { id: timerId, label, elapsedMs: 0, isRunning: false, startedAt: null },
     ],
   };
 }
 
-function ensureAllMatchTimers(
+function ensureAllTimers(
   payload: LiveGameKeyPayload,
-  matches: Array<{ id: string; title: string }>,
+  matches: Array<{
+    id: string;
+    title: string;
+    bonusQuestions: Array<{ id: string; question: string; valueType: string }>;
+  }>,
+  eventBonusQuestions: Array<{ id: string; question: string; valueType: string }>,
 ): LiveGameKeyPayload {
-  return matches.reduce(
-    (acc, match, index) =>
-      ensureMatchTimer(
-        acc,
-        match.id,
-        `Match ${index + 1}: ${match.title || "Untitled"}`,
-      ),
-    payload,
-  );
+  let result = payload;
+
+  matches.forEach((match, matchIndex) => {
+    const matchLabel = `Match ${matchIndex + 1}: ${match.title || "Untitled"}`;
+    result = ensureTimer(result, toMatchTimerId(match.id), matchLabel);
+
+    match.bonusQuestions.forEach((question) => {
+      if (question.valueType !== "time") return;
+      const bonusTimerId = toMatchBonusTimerId(match.id, question.id);
+      const bonusLabel = `${matchLabel} — ${question.question || "Bonus"}`;
+      result = ensureTimer(result, bonusTimerId, bonusLabel);
+    });
+  });
+
+  eventBonusQuestions.forEach((question, index) => {
+    if (question.valueType !== "time") return;
+    const timerId = toEventBonusTimerId(question.id);
+    const label = `Event Bonus ${index + 1}: ${question.question || "Bonus"}`;
+    result = ensureTimer(result, timerId, label);
+  });
+
+  return result;
 }
 
 /* ---- Props ---- */
@@ -134,9 +148,10 @@ export function LiveGameKeyHostApp({
         getLiveGameKey(gameId),
         getLiveGameState(gameId, joinCodeFromUrl ?? undefined),
       ]);
-      const nextPayload = ensureAllMatchTimers(
+      const nextPayload = ensureAllTimers(
         keyResponse.key,
         keyResponse.card.matches,
+        keyResponse.card.eventBonusQuestions ?? [],
       );
 
       const store = useAppStore.getState();
