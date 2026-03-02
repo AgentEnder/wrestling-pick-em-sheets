@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useMemo } from "react";
-import { Check, ChevronsUpDown, Pause, Play, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Check, ChevronsUpDown, Pause, Play, Plus, RotateCcw, Timer, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ import {
   formatDuration,
   getTimerElapsedMs,
   toMatchTimerId,
+  toMatchBonusTimerId,
 } from "@/lib/pick-em/timer-utils";
 import {
   findMatchResult,
@@ -827,6 +828,12 @@ function HostMatchSectionInner({
                 )
               : [];
 
+            const bonusTimerId = toMatchBonusTimerId(match.id, question.id);
+            const bonusTimer = timerById.get(bonusTimerId) ?? null;
+            const bonusTimerElapsed = bonusTimer
+              ? formatDuration(getTimerElapsedMs(bonusTimer, currentTimeMs))
+              : "--:--";
+
             return (
               <div
                 key={question.id}
@@ -926,6 +933,64 @@ function HostMatchSectionInner({
                     }
                   />
                 )}
+                {question.valueType === "time" ? (
+                  <div className="mt-2 rounded-md border border-border/60 bg-background/40 p-2.5">
+                    <p className="text-xs text-muted-foreground">Question Timer</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="rounded-md border border-border px-2 py-1 font-mono text-sm">
+                        {bonusTimerElapsed}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          if (!bonusTimer) return;
+                          if (bonusTimer.isRunning) {
+                            liveStopTimer(bonusTimer.id);
+                          } else {
+                            liveStartTimer(bonusTimer.id);
+                          }
+                        }}
+                        disabled={!bonusTimer}
+                      >
+                        {bonusTimer?.isRunning ? (
+                          <Pause className="mr-1 h-4 w-4" />
+                        ) : (
+                          <Play className="mr-1 h-4 w-4" />
+                        )}
+                        {bonusTimer?.isRunning ? "Stop" : "Start"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => bonusTimer && liveResetTimer(bonusTimer.id)}
+                        disabled={!bonusTimer}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        <span className="sr-only">Reset bonus timer</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          if (!bonusTimer) return;
+                          const elapsedMs = getTimerElapsedMs(bonusTimer, Date.now());
+                          const timerValue = formatDuration(elapsedMs);
+                          liveSetMatchBonusAnswer(
+                            match.id,
+                            question.id,
+                            timerValue,
+                            true,
+                          );
+                        }}
+                        disabled={!bonusTimer}
+                      >
+                        <Timer className="mr-1 h-4 w-4" />
+                        Capture Time
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
                 {isRosterMemberType &&
                 ((roster.activeFieldKey === rosterFieldKey &&
                   roster.isLoading) ||
