@@ -14,9 +14,15 @@ import {
   isEventBonusTimerId,
   isSystemTimerId,
   getQuestionValueType,
+  ensureSystemTimers,
 } from "@/lib/pick-em/timer-utils";
 
-import type { LiveKeyTimer } from "@/lib/types";
+import type {
+  LiveKeyTimer,
+  CardLiveKeyPayload,
+  Match,
+  BonusQuestion,
+} from "@/lib/types";
 
 describe("formatDuration", () => {
   test("formats zero milliseconds as 00:00", () => {
@@ -182,5 +188,126 @@ describe("getQuestionValueType", () => {
       getQuestionValueType({ valueType: "numerical", isTimeBased: true }),
       "numerical",
     );
+  });
+});
+
+describe("ensureSystemTimers", () => {
+  const emptyPayload: CardLiveKeyPayload = {
+    timers: [],
+    matchResults: [],
+    eventBonusAnswers: [],
+    tiebreakerAnswer: "",
+    tiebreakerRecordedAt: null,
+    tiebreakerTimerId: null,
+    scoreOverrides: [],
+    winnerOverrides: [],
+  };
+
+  function makeMatch(
+    id: string,
+    title: string,
+    bonusQuestions: BonusQuestion[] = [],
+  ): Match {
+    return {
+      id,
+      type: "singles",
+      typeLabelOverride: "",
+      isBattleRoyal: false,
+      isEliminationStyle: false,
+      title,
+      description: "",
+      participants: [],
+      surpriseSlots: 0,
+      surpriseEntrantPoints: null,
+      bonusQuestions,
+      points: null,
+    };
+  }
+
+  test("creates match timers for each match", () => {
+    const matches = [
+      makeMatch("m1", "Title Match"),
+      makeMatch("m2", "Tag Match"),
+    ];
+    const result = ensureSystemTimers(emptyPayload, matches, []);
+    assert.equal(result.timers.length, 2);
+    assert.equal(result.timers[0].id, "match:m1");
+    assert.ok(result.timers[0].label.includes("Title Match"));
+    assert.equal(result.timers[1].id, "match:m2");
+  });
+
+  test("creates bonus timers for time-based bonus questions", () => {
+    const bonus: BonusQuestion = {
+      id: "q1",
+      question: "How long?",
+      points: null,
+      answerType: "write-in",
+      options: [],
+      valueType: "time",
+    };
+    const matches = [makeMatch("m1", "Main Event", [bonus])];
+    const result = ensureSystemTimers(emptyPayload, matches, []);
+    assert.equal(result.timers.length, 2); // match timer + bonus timer
+    assert.equal(result.timers[1].id, "match-bonus:m1:q1");
+  });
+
+  test("skips bonus timers for non-time bonus questions", () => {
+    const bonus: BonusQuestion = {
+      id: "q1",
+      question: "Who wins?",
+      points: null,
+      answerType: "write-in",
+      options: [],
+      valueType: "string",
+    };
+    const matches = [makeMatch("m1", "Main Event", [bonus])];
+    const result = ensureSystemTimers(emptyPayload, matches, []);
+    assert.equal(result.timers.length, 1); // match timer only
+  });
+
+  test("creates event bonus timers for time-based event questions", () => {
+    const eventQ: BonusQuestion = {
+      id: "eq1",
+      question: "Total show time?",
+      points: null,
+      answerType: "write-in",
+      options: [],
+      valueType: "time",
+    };
+    const result = ensureSystemTimers(emptyPayload, [], [eventQ]);
+    assert.equal(result.timers.length, 1);
+    assert.equal(result.timers[0].id, "event-bonus:eq1");
+  });
+
+  test("preserves existing timer state (elapsedMs, isRunning)", () => {
+    const existingTimer: LiveKeyTimer = {
+      id: "match:m1",
+      label: "Old Label",
+      elapsedMs: 5000,
+      isRunning: true,
+      startedAt: "2025-01-01T00:00:00Z",
+    };
+    const payloadWithTimer = { ...emptyPayload, timers: [existingTimer] };
+    const matches = [makeMatch("m1", "New Title")];
+    const result = ensureSystemTimers(payloadWithTimer, matches, []);
+    assert.equal(result.timers[0].elapsedMs, 5000);
+    assert.equal(result.timers[0].isRunning, true);
+    assert.ok(result.timers[0].label.includes("New Title")); // label updated
+  });
+
+  test("preserves custom (non-system) timers at the end", () => {
+    const customTimer: LiveKeyTimer = {
+      id: "custom:my-timer",
+      label: "My Timer",
+      elapsedMs: 0,
+      isRunning: false,
+      startedAt: null,
+    };
+    const payloadWithCustom = { ...emptyPayload, timers: [customTimer] };
+    const matches = [makeMatch("m1", "Match 1")];
+    const result = ensureSystemTimers(payloadWithCustom, matches, []);
+    assert.equal(result.timers.length, 2);
+    assert.equal(result.timers[0].id, "match:m1"); // system first
+    assert.equal(result.timers[1].id, "custom:my-timer"); // custom at end
   });
 });
