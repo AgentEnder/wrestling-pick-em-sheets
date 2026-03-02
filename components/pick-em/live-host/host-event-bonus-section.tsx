@@ -367,6 +367,50 @@ function HostEventBonusSectionInner({
                     ))}
                   </SelectContent>
                 </Select>
+              ) : question.valueType === "numerical" ? (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      const current = parseCountAnswer(answer?.answer);
+                      liveSetEventBonusAnswer(
+                        question.id,
+                        String(Math.max(0, current - 1)),
+                        false,
+                      );
+                    }}
+                  >
+                    &minus;
+                  </Button>
+                  <span className="min-w-[3rem] rounded-md border border-border px-3 py-1.5 text-center font-mono text-lg">
+                    {parseCountAnswer(answer?.answer)}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      const current = parseCountAnswer(answer?.answer);
+                      liveSetEventBonusAnswer(
+                        question.id,
+                        String(current + 1),
+                        false,
+                      );
+                    }}
+                  >
+                    +
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      liveSetEventBonusAnswer(question.id, "", false)
+                    }
+                    disabled={(answer?.answer ?? "").trim().length === 0}
+                  >
+                    Clear
+                  </Button>
+                </div>
               ) : (
                 <Input
                   value={answer?.answer ?? ""}
