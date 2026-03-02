@@ -324,6 +324,31 @@ function PlayerMatchPicksInner({
                       ),
                     )}
                   </div>
+                ) : question.answerType === "multiple-choice" &&
+                  question.options.length > 0 ? (
+                  <Select
+                    value={answer?.answer || "__none__"}
+                    onValueChange={(value) =>
+                      onSetMatchBonusAnswer(
+                        match.id,
+                        question.id,
+                        value === "__none__" ? "" : value,
+                      )
+                    }
+                    disabled={isLocked}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select answer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Unanswered</SelectItem>
+                      {question.options.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : (
                   <>
                     <Input

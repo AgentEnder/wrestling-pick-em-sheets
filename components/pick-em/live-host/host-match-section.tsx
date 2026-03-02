@@ -20,6 +20,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   useLiveCard,
@@ -44,7 +51,7 @@ import {
   findAnswer,
   toLockKey,
 } from "@/lib/pick-em/payload-utils";
-import { filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import { filterRosterMemberSuggestions, normalizeText } from "@/lib/pick-em/text-utils";
 import { updateLiveGameLocks } from "@/lib/client/live-games-api";
 import type { LiveGameLockState } from "@/lib/types";
 import {
@@ -681,54 +688,90 @@ function HostMatchSectionInner({
                     {isLocked ? "Unlock" : "Lock"}
                   </Button>
                 </div>
-                <Input
-                  value={answer?.answer ?? ""}
-                  onChange={(event) => {
-                    liveSetMatchBonusAnswer(
-                      match.id,
-                      question.id,
-                      event.target.value,
-                      false,
-                    );
-                    roster.setActiveInput(rosterFieldKey, event.target.value);
-                  }}
-                  onFocus={() =>
-                    roster.setActiveInput(rosterFieldKey, answer?.answer ?? "")
-                  }
-                  placeholder={
-                    isRosterMemberType
-                      ? "Start typing a roster member..."
-                      : "Key answer"
-                  }
-                />
-                {question.answerType === "threshold" &&
-                question.thresholdValue != null &&
-                (answer?.answer ?? "").trim() ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {(() => {
-                      const labels = question.thresholdLabels ?? [
-                        "Over",
-                        "Under",
-                      ];
-                      const parsed = parseValueForDisplay(
-                        answer?.answer ?? "",
-                        question.valueType,
+                {question.answerType === "threshold" ? (
+                  <div className="space-y-1.5">
+                    <div className="flex gap-2">
+                      {(question.thresholdLabels ?? ["Over", "Under"]).map(
+                        (label) => (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() =>
+                              liveSetMatchBonusAnswer(
+                                match.id,
+                                question.id,
+                                label,
+                                false,
+                              )
+                            }
+                            className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                              normalizeText(answer?.answer ?? "") ===
+                              normalizeText(label)
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border bg-card text-card-foreground hover:border-primary/50"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ),
+                      )}
+                    </div>
+                    {question.thresholdValue != null ? (
+                      <p className="text-xs text-muted-foreground">
+                        Threshold: {formatThresholdValue(
+                          question.thresholdValue,
+                          question.valueType,
+                        )}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : question.answerType === "multiple-choice" &&
+                  question.options.length > 0 ? (
+                  <Select
+                    value={answer?.answer || "__none__"}
+                    onValueChange={(value) =>
+                      liveSetMatchBonusAnswer(
+                        match.id,
+                        question.id,
+                        value === "__none__" ? "" : value,
+                        false,
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select answer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Unanswered</SelectItem>
+                      {question.options.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={answer?.answer ?? ""}
+                    onChange={(event) => {
+                      liveSetMatchBonusAnswer(
+                        match.id,
+                        question.id,
+                        event.target.value,
+                        false,
                       );
-                      if (parsed === null) return "Enter a valid value";
-                      const fmtParsed = formatThresholdValue(
-                        parsed,
-                        question.valueType,
-                      );
-                      const fmtThreshold = formatThresholdValue(
-                        question.thresholdValue,
-                        question.valueType,
-                      );
-                      return parsed > question.thresholdValue
-                        ? `Result: ${labels[0]} (${fmtParsed} > ${fmtThreshold})`
-                        : `Result: ${labels[1]} (${fmtParsed} \u2264 ${fmtThreshold})`;
-                    })()}
-                  </p>
-                ) : null}
+                      roster.setActiveInput(rosterFieldKey, event.target.value);
+                    }}
+                    onFocus={() =>
+                      roster.setActiveInput(rosterFieldKey, answer?.answer ?? "")
+                    }
+                    placeholder={
+                      isRosterMemberType
+                        ? "Start typing a roster member..."
+                        : "Key answer"
+                    }
+                  />
+                )}
                 {isRosterMemberType &&
                 ((roster.activeFieldKey === rosterFieldKey &&
                   roster.isLoading) ||

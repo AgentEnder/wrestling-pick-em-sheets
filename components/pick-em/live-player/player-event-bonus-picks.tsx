@@ -4,6 +4,13 @@ import React, { useMemo } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   LivePlayerAnswer,
   LivePlayerPicksPayload,
@@ -106,6 +113,30 @@ function PlayerEventBonusPicksInner({
                     ),
                   )}
                 </div>
+              ) : question.answerType === "multiple-choice" &&
+                question.options.length > 0 ? (
+                <Select
+                  value={answer?.answer || "__none__"}
+                  onValueChange={(value) =>
+                    onSetEventBonusAnswer(
+                      question.id,
+                      value === "__none__" ? "" : value,
+                    )
+                  }
+                  disabled={isLocked}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select answer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Unanswered</SelectItem>
+                    {question.options.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : (
                 <>
                   <Input

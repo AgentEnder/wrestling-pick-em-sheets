@@ -7,6 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   useLiveCard,
   useLivePayload,
   useLivePayloadActions,
@@ -16,7 +23,7 @@ import {
 import { useAppStore } from "@/stores/app-store";
 import type { UseRosterSuggestionsReturn } from "@/hooks/use-roster-suggestions";
 import { findAnswer } from "@/lib/pick-em/payload-utils";
-import { filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import { filterRosterMemberSuggestions, normalizeText } from "@/lib/pick-em/text-utils";
 import { updateLiveGameLocks } from "@/lib/client/live-games-api";
 import type { LiveGameLockState } from "@/lib/types";
 import {
@@ -26,21 +33,13 @@ import {
 
 /* ---- Helpers ---- */
 
-function parseValueForDisplay(
-  value: string,
-  valueType: string,
-): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (valueType === "time" && trimmed.includes(":")) {
-    const parts = trimmed.split(":").map(Number);
-    if (parts.some((p) => Number.isNaN(p))) return null;
-    let total = 0;
-    for (const part of parts) total = total * 60 + part;
-    return total;
+function formatThresholdValue(seconds: number, valueType: string): string {
+  if (valueType === "time") {
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
   }
-  const num = Number.parseFloat(trimmed);
-  return Number.isFinite(num) ? num : null;
+  return String(seconds);
 }
 
 /* ---- Props ---- */
@@ -213,45 +212,87 @@ function HostEventBonusSectionInner({
                   {isLocked ? "Unlock" : "Lock"}
                 </Button>
               </div>
-              <Input
-                value={answer?.answer ?? ""}
-                onChange={(event) => {
-                  liveSetEventBonusAnswer(
-                    question.id,
-                    event.target.value,
-                    false,
-                  );
-                  roster.setActiveInput(rosterFieldKey, event.target.value);
-                }}
-                onFocus={() =>
-                  roster.setActiveInput(rosterFieldKey, answer?.answer ?? "")
-                }
-                placeholder={
-                  isRosterMemberType
-                    ? "Start typing a roster member..."
-                    : "Key answer"
-                }
-              />
-              {question.answerType === "threshold" &&
-              question.thresholdValue != null &&
-              (answer?.answer ?? "").trim() ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {(() => {
-                    const labels = question.thresholdLabels ?? [
-                      "Over",
-                      "Under",
-                    ];
-                    const parsed = parseValueForDisplay(
-                      answer?.answer ?? "",
-                      question.valueType,
+              {question.answerType === "threshold" ? (
+                <div className="space-y-1.5">
+                  <div className="flex gap-2">
+                    {(question.thresholdLabels ?? ["Over", "Under"]).map(
+                      (label) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() =>
+                            liveSetEventBonusAnswer(
+                              question.id,
+                              label,
+                              false,
+                            )
+                          }
+                          className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                            normalizeText(answer?.answer ?? "") ===
+                            normalizeText(label)
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-border bg-card text-card-foreground hover:border-primary/50"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                  {question.thresholdValue != null ? (
+                    <p className="text-xs text-muted-foreground">
+                      Threshold: {formatThresholdValue(
+                        question.thresholdValue,
+                        question.valueType,
+                      )}
+                    </p>
+                  ) : null}
+                </div>
+              ) : question.answerType === "multiple-choice" &&
+                question.options.length > 0 ? (
+                <Select
+                  value={answer?.answer || "__none__"}
+                  onValueChange={(value) =>
+                    liveSetEventBonusAnswer(
+                      question.id,
+                      value === "__none__" ? "" : value,
+                      false,
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select answer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Unanswered</SelectItem>
+                    {question.options.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={answer?.answer ?? ""}
+                  onChange={(event) => {
+                    liveSetEventBonusAnswer(
+                      question.id,
+                      event.target.value,
+                      false,
                     );
-                    if (parsed === null) return "Enter a valid value";
-                    return parsed > question.thresholdValue
-                      ? `Result: ${labels[0]} (${parsed} > ${question.thresholdValue})`
-                      : `Result: ${labels[1]} (${parsed} \u2264 ${question.thresholdValue})`;
-                  })()}
-                </p>
-              ) : null}
+                    roster.setActiveInput(rosterFieldKey, event.target.value);
+                  }}
+                  onFocus={() =>
+                    roster.setActiveInput(rosterFieldKey, answer?.answer ?? "")
+                  }
+                  placeholder={
+                    isRosterMemberType
+                      ? "Start typing a roster member..."
+                      : "Key answer"
+                  }
+                />
+              )}
               {isRosterMemberType &&
               ((roster.activeFieldKey === rosterFieldKey &&
                 roster.isLoading) ||
