@@ -211,6 +211,7 @@ function LiveKeyMatchSectionInner({
           winnerName: "",
           winnerRecordedAt: null,
           battleRoyalEntryOrder: [],
+          battleRoyalEliminationOrder: [],
           bonusAnswers: [],
         });
         resultIndex = nextResults.length - 1;

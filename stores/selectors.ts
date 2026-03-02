@@ -162,6 +162,10 @@ export function useBattleRoyalEntryInputByMatchId() {
   return useAppStore((s) => s.battleRoyalEntryInputByMatchId);
 }
 
+export function useEliminationEntryInputByMatchId() {
+  return useAppStore((s) => s.eliminationEntryInputByMatchId);
+}
+
 export function useLiveUi() {
   return useAppStore(
     useShallow((s) => ({ ...s.liveUi })),
@@ -175,6 +179,8 @@ export function useLivePayloadActions() {
       liveAddBattleRoyalEntrant: s.liveAddBattleRoyalEntrant,
       liveRemoveBattleRoyalEntrant: s.liveRemoveBattleRoyalEntrant,
       liveSetBattleRoyalEntryOrder: s.liveSetBattleRoyalEntryOrder,
+      liveAddEliminationEntry: s.liveAddEliminationEntry,
+      liveRemoveEliminationEntry: s.liveRemoveEliminationEntry,
       liveSetMatchBonusAnswer: s.liveSetMatchBonusAnswer,
       liveSetEventBonusAnswer: s.liveSetEventBonusAnswer,
       setLiveTiebreakerAnswer: s.setLiveTiebreakerAnswer,
@@ -206,6 +212,7 @@ export function useLiveSetterActions() {
       setLockState: s.setLockState,
       setGames: s.setGames,
       setBattleRoyalEntryInput: s.setBattleRoyalEntryInput,
+      setEliminationEntryInput: s.setEliminationEntryInput,
       setLiveUi: s.setLiveUi,
     })),
   );

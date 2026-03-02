@@ -129,6 +129,7 @@ export interface LiveKeyMatchResult {
   winnerName: string;
   winnerRecordedAt: string | null;
   battleRoyalEntryOrder: string[];
+  battleRoyalEliminationOrder: string[];
   bonusAnswers: LiveKeyAnswer[];
 }
 

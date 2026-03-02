@@ -37,6 +37,7 @@ import {
   useLiveLockState,
   useLiveGameState,
   useBattleRoyalEntryInputByMatchId,
+  useEliminationEntryInputByMatchId,
 } from "@/stores/selectors";
 import { useAppStore } from "@/stores/app-store";
 import { useTimerClock } from "@/hooks/use-timer-clock";
@@ -93,12 +94,16 @@ function HostMatchSectionInner({
   const {
     liveSetMatchWinner,
     liveSetBattleRoyalEntryOrder,
+    liveAddEliminationEntry: liveAddEliminationEntryAction,
+    liveRemoveEliminationEntry: liveRemoveEliminationEntryAction,
     liveSetMatchBonusAnswer,
   } = useLivePayloadActions();
   const { liveStartTimer, liveStopTimer, liveResetTimer } =
     useLiveTimerActions();
-  const { setBattleRoyalEntryInput } = useLiveSetterActions();
+  const { setBattleRoyalEntryInput, setEliminationEntryInput } =
+    useLiveSetterActions();
   const battleRoyalEntryInputByMatchId = useBattleRoyalEntryInputByMatchId();
+  const eliminationEntryInputByMatchId = useEliminationEntryInputByMatchId();
 
   const match = card?.matches?.[matchIndex];
   if (!match || !lockState) return null;
@@ -156,6 +161,41 @@ function HostMatchSectionInner({
         .filter(
           (candidate) =>
             !battleRoyalEntryOrder.some(
+              (entry) => entry.toLowerCase() === candidate.toLowerCase(),
+            ),
+        )
+        .slice(0, 8)
+    : [];
+
+  /* Elimination Order state */
+  const eliminationInputRef = React.useRef<HTMLInputElement>(null);
+  const eliminationOrder =
+    matchResult?.battleRoyalEliminationOrder ?? [];
+  const eliminationEntryInput =
+    eliminationEntryInputByMatchId[match.id] ?? "";
+  const eliminationFieldKey = `elimination:${match.id}`;
+  const normalizedEliminationEntryInput = eliminationEntryInput
+    .trim()
+    .toLowerCase();
+  const eliminationSuggestions =
+    roster.activeFieldKey === eliminationFieldKey ? roster.suggestions : [];
+  const eliminationCandidates = match.isEliminationStyle
+    ? Array.from(
+        new Set([
+          ...match.participants,
+          ...battleRoyalEntryOrder,
+          ...eliminationSuggestions,
+        ]),
+      )
+    : [];
+  const filteredEliminationSuggestions = normalizedEliminationEntryInput
+    ? eliminationCandidates
+        .filter((candidate) =>
+          candidate.toLowerCase().includes(normalizedEliminationEntryInput),
+        )
+        .filter(
+          (candidate) =>
+            !eliminationOrder.some(
               (entry) => entry.toLowerCase() === candidate.toLowerCase(),
             ),
         )
@@ -250,6 +290,40 @@ function HostMatchSectionInner({
       );
     },
     [payload, match.id, liveSetBattleRoyalEntryOrder],
+  );
+
+  /* Elimination order handlers */
+  const addEliminationEntry = useCallback(
+    (entrantName: string) => {
+      const entrant = entrantName.trim();
+      if (!entrant) return;
+      const existingEntries =
+        findMatchResult(payload, match.id)?.battleRoyalEliminationOrder ?? [];
+      const duplicate = existingEntries.some(
+        (entry) => entry.toLowerCase() === entrant.toLowerCase(),
+      );
+      if (duplicate) {
+        setEliminationEntryInput(match.id, "");
+        return;
+      }
+      liveAddEliminationEntryAction(match.id, entrant);
+      setEliminationEntryInput(match.id, "");
+      roster.clearSuggestions();
+    },
+    [
+      payload,
+      match.id,
+      liveAddEliminationEntryAction,
+      setEliminationEntryInput,
+      roster,
+    ],
+  );
+
+  const removeEliminationEntry = useCallback(
+    (entryIndex: number) => {
+      liveRemoveEliminationEntryAction(match.id, entryIndex);
+    },
+    [match.id, liveRemoveEliminationEntryAction],
   );
 
   /* Fuzzy override handlers */
@@ -588,6 +662,102 @@ function HostMatchSectionInner({
               ) : null}
               <p className="text-xs text-muted-foreground">
                 Entrants are recorded in the order you add them.
+              </p>
+            </div>
+          ) : null}
+
+          {match.isEliminationStyle ? (
+            <div className="space-y-2">
+              <Label>Elimination Order</Label>
+              <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+                <Input
+                  ref={eliminationInputRef}
+                  value={eliminationEntryInput}
+                  onChange={(event) => {
+                    setEliminationEntryInput(match.id, event.target.value);
+                    roster.setActiveInput(
+                      eliminationFieldKey,
+                      event.target.value,
+                    );
+                  }}
+                  onFocus={() =>
+                    roster.setActiveInput(
+                      eliminationFieldKey,
+                      eliminationEntryInput,
+                    )
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    addEliminationEntry(eliminationEntryInput);
+                  }}
+                  placeholder="Add eliminated wrestler"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => addEliminationEntry(eliminationEntryInput)}
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  Eliminated
+                </Button>
+              </div>
+              {(roster.activeFieldKey === eliminationFieldKey &&
+                roster.isLoading) ||
+              filteredEliminationSuggestions.length > 0 ? (
+                <div className="rounded-md border border-border/70 bg-background/35 px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">
+                    {roster.activeFieldKey === eliminationFieldKey &&
+                    roster.isLoading
+                      ? "Loading roster suggestions..."
+                      : "Autocomplete from promotion roster"}
+                  </p>
+                  {filteredEliminationSuggestions.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {filteredEliminationSuggestions.map((candidate) => (
+                        <button
+                          key={candidate}
+                          type="button"
+                          onClick={() => {
+                            addEliminationEntry(candidate);
+                            requestAnimationFrame(() => {
+                              eliminationInputRef.current?.focus();
+                            });
+                          }}
+                          className="inline-flex items-center rounded-md border border-border bg-card px-2 py-1 text-xs text-card-foreground transition-colors hover:border-primary hover:text-primary"
+                        >
+                          {candidate}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {eliminationOrder.length > 0 ? (
+                <div className="space-y-1.5 rounded-md border border-border/70 bg-background/35 p-2.5">
+                  {eliminationOrder.map((entrant, entrantIndex) => (
+                    <div
+                      key={`elim:${entrant}:${entrantIndex}`}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="text-sm text-foreground">
+                        {entrantIndex + 1}. {entrant}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeEliminationEntry(entrantIndex)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Remove</span>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Record each elimination as it happens.
               </p>
             </div>
           ) : null}

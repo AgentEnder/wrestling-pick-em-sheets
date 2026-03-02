@@ -37,6 +37,7 @@ describe("findMatchResult", () => {
       winnerName: "Cody",
       winnerRecordedAt: null,
       battleRoyalEntryOrder: [],
+      battleRoyalEliminationOrder: [],
       bonusAnswers: [],
     };
     payload.matchResults = [result];
@@ -94,6 +95,7 @@ describe("updateMatchWinner", () => {
         winnerName: "Old",
         winnerRecordedAt: null,
         battleRoyalEntryOrder: [],
+        battleRoyalEliminationOrder: [],
         bonusAnswers: [],
       },
     ];
@@ -130,6 +132,7 @@ describe("addBattleRoyalEntrant", () => {
         winnerName: "",
         winnerRecordedAt: null,
         battleRoyalEntryOrder: ["A"],
+        battleRoyalEliminationOrder: [],
         bonusAnswers: [],
       },
     ];
@@ -150,6 +153,7 @@ describe("removeBattleRoyalEntrant", () => {
         winnerName: "",
         winnerRecordedAt: null,
         battleRoyalEntryOrder: ["A", "B", "C"],
+        battleRoyalEliminationOrder: [],
         bonusAnswers: [],
       },
     ];
@@ -195,6 +199,7 @@ describe("updateMatchBonusAnswer", () => {
         winnerName: "",
         winnerRecordedAt: null,
         battleRoyalEntryOrder: [],
+        battleRoyalEliminationOrder: [],
         bonusAnswers: [
           { questionId: "q1", answer: "old", recordedAt: null, timerId: null },
         ],

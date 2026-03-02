@@ -111,6 +111,11 @@ function normalizeMatchResult(value: unknown): LiveKeyMatchResult | null {
           .map((entry) => entry.trim())
           .filter((entry) => entry.length > 0)
       : [],
+    battleRoyalEliminationOrder: Array.isArray(raw.battleRoyalEliminationOrder)
+      ? (raw.battleRoyalEliminationOrder as unknown[])
+          .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+          .map((entry) => entry.trim())
+      : [],
     bonusAnswers: Array.isArray(raw.bonusAnswers)
       ? raw.bonusAnswers
           .map((answer) => normalizeAnswer(answer))

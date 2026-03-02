@@ -25,6 +25,11 @@ const matchResultSchema = z.object({
     .max(120)
     .optional()
     .default([]),
+  battleRoyalEliminationOrder: z
+    .array(z.string().trim().min(1).max(160))
+    .max(120)
+    .optional()
+    .default([]),
   bonusAnswers: z.array(answerSchema).max(100),
 });
 

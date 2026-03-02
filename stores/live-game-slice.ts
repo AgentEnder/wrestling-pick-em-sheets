@@ -12,6 +12,8 @@ import {
   addBattleRoyalEntrant as addBattleRoyalEntrantUtil,
   removeBattleRoyalEntrant as removeBattleRoyalEntrantUtil,
   setBattleRoyalEntryOrder as setBattleRoyalEntryOrderUtil,
+  addEliminationEntry as addEliminationEntryUtil,
+  removeEliminationEntry as removeEliminationEntryUtil,
   updateMatchBonusAnswer,
   updateEventBonusAnswer,
   snapshotPayload,
@@ -60,6 +62,7 @@ export interface LiveGameSlice {
   lockState: LiveGameLockState | null;
   games: LiveGame[];
   battleRoyalEntryInputByMatchId: Record<string, string>;
+  eliminationEntryInputByMatchId: Record<string, string>;
   liveUi: typeof INITIAL_LIVE_UI;
   _lastSyncedPayloadSnapshot: string | null;
 
@@ -71,6 +74,8 @@ export interface LiveGameSlice {
     matchId: string,
     entryOrder: string[],
   ) => void;
+  liveAddEliminationEntry: (matchId: string, entrantName: string) => void;
+  liveRemoveEliminationEntry: (matchId: string, entryIndex: number) => void;
   liveSetMatchBonusAnswer: (
     matchId: string,
     questionId: string,
@@ -106,6 +111,7 @@ export interface LiveGameSlice {
   setLockState: (lockState: LiveGameLockState | null) => void;
   setGames: (games: LiveGame[]) => void;
   setBattleRoyalEntryInput: (matchId: string, value: string) => void;
+  setEliminationEntryInput: (matchId: string, value: string) => void;
   setLiveUi: (partial: Partial<LiveGameSlice["liveUi"]>) => void;
 
   // API actions
@@ -138,6 +144,7 @@ export const createLiveGameSlice: StateCreator<
   lockState: null,
   games: [],
   battleRoyalEntryInputByMatchId: {},
+  eliminationEntryInputByMatchId: {},
   liveUi: { ...INITIAL_LIVE_UI },
   _lastSyncedPayloadSnapshot: null,
 
@@ -180,6 +187,30 @@ export const createLiveGameSlice: StateCreator<
         state.livePayload,
         matchId,
         entryOrder,
+      );
+      return { livePayload: next };
+    });
+    get()._checkLiveDirty();
+  },
+
+  liveAddEliminationEntry: (matchId, entrantName) => {
+    set((state) => {
+      const next = addEliminationEntryUtil(
+        state.livePayload,
+        matchId,
+        entrantName,
+      );
+      return { livePayload: next };
+    });
+    get()._checkLiveDirty();
+  },
+
+  liveRemoveEliminationEntry: (matchId, entryIndex) => {
+    set((state) => {
+      const next = removeEliminationEntryUtil(
+        state.livePayload,
+        matchId,
+        entryIndex,
       );
       return { livePayload: next };
     });
@@ -385,6 +416,15 @@ export const createLiveGameSlice: StateCreator<
     set((state) => ({
       battleRoyalEntryInputByMatchId: {
         ...state.battleRoyalEntryInputByMatchId,
+        [matchId]: value,
+      },
+    }));
+  },
+
+  setEliminationEntryInput: (matchId, value) => {
+    set((state) => ({
+      eliminationEntryInputByMatchId: {
+        ...state.eliminationEntryInputByMatchId,
         [matchId]: value,
       },
     }));

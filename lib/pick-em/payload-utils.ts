@@ -40,6 +40,7 @@ function ensureMatchResult(
       winnerName: "",
       winnerRecordedAt: null,
       battleRoyalEntryOrder: [],
+      battleRoyalEliminationOrder: [],
       bonusAnswers: [],
     });
     index = results.length - 1;
@@ -102,6 +103,38 @@ export function setBattleRoyalEntryOrder(
   results[index] = {
     ...results[index],
     battleRoyalEntryOrder: entryOrder,
+  };
+  return { ...payload, matchResults: results };
+}
+
+export function addEliminationEntry(
+  payload: CardLiveKeyPayload,
+  matchId: string,
+  entrantName: string,
+): CardLiveKeyPayload {
+  const { results, index } = ensureMatchResult(payload, matchId);
+  results[index] = {
+    ...results[index],
+    battleRoyalEliminationOrder: [
+      ...results[index].battleRoyalEliminationOrder,
+      entrantName,
+    ],
+  };
+  return { ...payload, matchResults: results };
+}
+
+export function removeEliminationEntry(
+  payload: CardLiveKeyPayload,
+  matchId: string,
+  entryIndex: number,
+): CardLiveKeyPayload {
+  const { results, index } = ensureMatchResult(payload, matchId);
+  results[index] = {
+    ...results[index],
+    battleRoyalEliminationOrder:
+      results[index].battleRoyalEliminationOrder.filter(
+        (_, i) => i !== entryIndex,
+      ),
   };
   return { ...payload, matchResults: results };
 }
