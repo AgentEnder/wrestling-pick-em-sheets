@@ -17,10 +17,7 @@ import type {
 } from "@/lib/types";
 import {
   nowIso,
-  toMatchTimerId,
-  toMatchBonusTimerId,
-  toEventBonusTimerId,
-  isSystemTimerId,
+  ensureSystemTimers,
 } from "@/lib/pick-em/timer-utils";
 import { snapshotPayload } from "@/lib/pick-em/payload-utils";
 import { useRosterSuggestions } from "@/hooks/use-roster-suggestions";
@@ -322,105 +319,6 @@ function applyEditorDraftToCard(
     tiebreakerIsTimeBased: draft.tiebreakerIsTimeBased,
     matches: draft.matches,
     eventBonusQuestions: draft.eventBonusQuestions,
-  };
-}
-
-/* ── Timer ensurer ─────────────────────────────────────────── */
-
-function getQuestionValueType(question: {
-  valueType?: "string" | "numerical" | "time" | "rosterMember";
-  isTimeBased?: boolean;
-  isCountBased?: boolean;
-}): "string" | "numerical" | "time" | "rosterMember" {
-  if (
-    question.valueType === "numerical" ||
-    question.valueType === "time" ||
-    question.valueType === "rosterMember"
-  ) {
-    return question.valueType;
-  }
-  if (question.isTimeBased) return "time";
-  if (question.isCountBased) return "numerical";
-  return "string";
-}
-
-function buildMatchTimerLabel(match: Match, index: number): string {
-  const title = match.title.trim() || `Match ${index + 1}`;
-  return `Match ${index + 1}: ${title}`;
-}
-
-function buildMatchBonusTimerLabel(
-  match: Match,
-  matchIndex: number,
-  questionText: string,
-): string {
-  const title = match.title.trim() || `Match ${matchIndex + 1}`;
-  const suffix = questionText.trim() || "Bonus";
-  return `Match ${matchIndex + 1} Bonus: ${title} - ${suffix}`;
-}
-
-function buildEventBonusTimerLabel(
-  questionText: string,
-  questionIndex: number,
-): string {
-  const suffix = questionText.trim() || `Question ${questionIndex + 1}`;
-  return `Event Bonus Timer: ${suffix}`;
-}
-
-function createTimer(id: string, label: string): LiveKeyTimer {
-  return { id, label, elapsedMs: 0, isRunning: false, startedAt: null };
-}
-
-function ensureSystemTimers(
-  payload: CardLiveKeyPayload,
-  matches: Match[],
-  eventBonusQuestions: PickEmSheet["eventBonusQuestions"],
-): CardLiveKeyPayload {
-  const timersById = new Map(payload.timers.map((timer) => [timer.id, timer]));
-  const systemTimers: LiveKeyTimer[] = [];
-
-  matches.forEach((match, index) => {
-    const timerId = toMatchTimerId(match.id);
-    const existing = timersById.get(timerId);
-    const label = buildMatchTimerLabel(match, index);
-    systemTimers.push(
-      existing ? { ...existing, label } : createTimer(timerId, label),
-    );
-
-    match.bonusQuestions.forEach((question) => {
-      if (getQuestionValueType(question) !== "time") return;
-      const bonusTimerId = toMatchBonusTimerId(match.id, question.id);
-      const bonusLabel = buildMatchBonusTimerLabel(
-        match,
-        index,
-        question.question,
-      );
-      const existingBonus = timersById.get(bonusTimerId);
-      systemTimers.push(
-        existingBonus
-          ? { ...existingBonus, label: bonusLabel }
-          : createTimer(bonusTimerId, bonusLabel),
-      );
-    });
-  });
-
-  eventBonusQuestions.forEach((question, index) => {
-    if (getQuestionValueType(question) !== "time") return;
-    const timerId = toEventBonusTimerId(question.id);
-    const label = buildEventBonusTimerLabel(question.question, index);
-    const existing = timersById.get(timerId);
-    systemTimers.push(
-      existing ? { ...existing, label } : createTimer(timerId, label),
-    );
-  });
-
-  const customTimers = payload.timers.filter(
-    (timer) => !isSystemTimerId(timer.id),
-  );
-
-  return {
-    ...payload,
-    timers: [...systemTimers, ...customTimers],
   };
 }
 

@@ -23,13 +23,10 @@ import {
   getLiveGameState,
   saveLiveGameKey,
 } from "@/lib/client/live-games-api";
-import type { LiveGameKeyPayload } from "@/lib/types";
 import { snapshotPayload } from "@/lib/pick-em/payload-utils";
 import {
   nowMs,
-  toMatchTimerId,
-  toMatchBonusTimerId,
-  toEventBonusTimerId,
+  ensureSystemTimers,
 } from "@/lib/pick-em/timer-utils";
 import { normalizeText } from "@/lib/pick-em/text-utils";
 import { computeFuzzyConfidence } from "@/lib/fuzzy-match";
@@ -47,64 +44,6 @@ import { FUZZY_AUTO_THRESHOLD } from "./live-host/fuzzy-match-review-panel";
 
 const POLL_INTERVAL_MS = 10_000;
 const REFRESH_STALE_THRESHOLD_MS = POLL_INTERVAL_MS * 5;
-
-/* ---- Helpers ---- */
-
-function ensureTimer(
-  payload: LiveGameKeyPayload,
-  timerId: string,
-  label: string,
-): LiveGameKeyPayload {
-  const found = payload.timers.find((timer) => timer.id === timerId);
-  if (found) {
-    return {
-      ...payload,
-      timers: payload.timers.map((timer) =>
-        timer.id === timerId ? { ...timer, label } : timer,
-      ),
-    };
-  }
-  return {
-    ...payload,
-    timers: [
-      ...payload.timers,
-      { id: timerId, label, elapsedMs: 0, isRunning: false, startedAt: null },
-    ],
-  };
-}
-
-function ensureAllTimers(
-  payload: LiveGameKeyPayload,
-  matches: Array<{
-    id: string;
-    title: string;
-    bonusQuestions: Array<{ id: string; question: string; valueType: string }>;
-  }>,
-  eventBonusQuestions: Array<{ id: string; question: string; valueType: string }>,
-): LiveGameKeyPayload {
-  let result = payload;
-
-  matches.forEach((match, matchIndex) => {
-    const matchLabel = `Match ${matchIndex + 1}: ${match.title || "Untitled"}`;
-    result = ensureTimer(result, toMatchTimerId(match.id), matchLabel);
-
-    match.bonusQuestions.forEach((question) => {
-      if (question.valueType !== "time") return;
-      const bonusTimerId = toMatchBonusTimerId(match.id, question.id);
-      const bonusLabel = `${matchLabel} — ${question.question || "Bonus"}`;
-      result = ensureTimer(result, bonusTimerId, bonusLabel);
-    });
-  });
-
-  eventBonusQuestions.forEach((question, index) => {
-    if (question.valueType !== "time") return;
-    const timerId = toEventBonusTimerId(question.id);
-    const label = `Event Bonus ${index + 1}: ${question.question || "Bonus"}`;
-    result = ensureTimer(result, timerId, label);
-  });
-
-  return result;
-}
 
 /* ---- Props ---- */
 
@@ -148,7 +87,7 @@ export function LiveGameKeyHostApp({
         getLiveGameKey(gameId),
         getLiveGameState(gameId, joinCodeFromUrl ?? undefined),
       ]);
-      const nextPayload = ensureAllTimers(
+      const nextPayload = ensureSystemTimers(
         keyResponse.key,
         keyResponse.card.matches,
         keyResponse.card.eventBonusQuestions ?? [],
