@@ -61,22 +61,6 @@ import {
 
 /* ---- Helpers ---- */
 
-function parseValueForDisplay(
-  value: string,
-  valueType: string,
-): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (valueType === "time" && trimmed.includes(":")) {
-    const parts = trimmed.split(":").map(Number);
-    if (parts.some((p) => Number.isNaN(p))) return null;
-    let total = 0;
-    for (const part of parts) total = total * 60 + part;
-    return total;
-  }
-  const num = Number.parseFloat(trimmed);
-  return Number.isFinite(num) ? num : null;
-}
 
 function formatThresholdValue(seconds: number, valueType: string): string {
   if (valueType === "time") {
