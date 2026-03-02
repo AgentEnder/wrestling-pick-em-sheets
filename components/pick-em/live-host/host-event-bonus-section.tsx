@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useMemo } from "react";
+import { Pause, Play, RotateCcw, Timer } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,9 +15,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  formatDuration,
+  getTimerElapsedMs,
+  toEventBonusTimerId,
+} from "@/lib/pick-em/timer-utils";
+import { useTimerClock } from "@/hooks/use-timer-clock";
+import {
   useLiveCard,
   useLivePayload,
   useLivePayloadActions,
+  useLiveTimerActions,
   useLiveLockState,
   useLiveGameState,
 } from "@/stores/selectors";
@@ -60,6 +68,19 @@ function HostEventBonusSectionInner({
   const lockState = useLiveLockState();
   const gameState = useLiveGameState();
   const { liveSetEventBonusAnswer } = useLivePayloadActions();
+  const { liveStartTimer, liveStopTimer, liveResetTimer } =
+    useLiveTimerActions();
+
+  const hasRunningTimers = useMemo(
+    () => payload.timers.some((timer) => timer.isRunning),
+    [payload.timers],
+  );
+  const currentTimeMs = useTimerClock(300, hasRunningTimers);
+
+  const timerById = useMemo(
+    () => new Map(payload.timers.map((t) => [t.id, t])),
+    [payload.timers],
+  );
 
   const eventBonusQuestions = card?.eventBonusQuestions ?? [];
   const eventParticipantCandidates = useMemo(
@@ -197,6 +218,12 @@ function HostEventBonusSectionInner({
               )
             : [];
 
+          const bonusTimerId = toEventBonusTimerId(question.id);
+          const bonusTimer = timerById.get(bonusTimerId) ?? null;
+          const bonusTimerElapsed = bonusTimer
+            ? formatDuration(getTimerElapsedMs(bonusTimer, currentTimeMs))
+            : "--:--";
+
           return (
             <div
               key={question.id}
@@ -293,6 +320,59 @@ function HostEventBonusSectionInner({
                   }
                 />
               )}
+              {question.valueType === "time" ? (
+                <div className="mt-2 rounded-md border border-border/60 bg-background/40 p-2.5">
+                  <p className="text-xs text-muted-foreground">Question Timer</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="rounded-md border border-border px-2 py-1 font-mono text-sm">
+                      {bonusTimerElapsed}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        if (!bonusTimer) return;
+                        if (bonusTimer.isRunning) {
+                          liveStopTimer(bonusTimer.id);
+                        } else {
+                          liveStartTimer(bonusTimer.id);
+                        }
+                      }}
+                      disabled={!bonusTimer}
+                    >
+                      {bonusTimer?.isRunning ? (
+                        <Pause className="mr-1 h-4 w-4" />
+                      ) : (
+                        <Play className="mr-1 h-4 w-4" />
+                      )}
+                      {bonusTimer?.isRunning ? "Stop" : "Start"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => bonusTimer && liveResetTimer(bonusTimer.id)}
+                      disabled={!bonusTimer}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      <span className="sr-only">Reset bonus timer</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        if (!bonusTimer) return;
+                        const elapsedMs = getTimerElapsedMs(bonusTimer, Date.now());
+                        const timerValue = formatDuration(elapsedMs);
+                        liveSetEventBonusAnswer(question.id, timerValue, true);
+                      }}
+                      disabled={!bonusTimer}
+                    >
+                      <Timer className="mr-1 h-4 w-4" />
+                      Capture Time
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
               {isRosterMemberType &&
               ((roster.activeFieldKey === rosterFieldKey &&
                 roster.isLoading) ||
