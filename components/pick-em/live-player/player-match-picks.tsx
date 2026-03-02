@@ -155,7 +155,7 @@ function PlayerMatchPicksInner({
           </SelectContent>
         </Select>
 
-        {match.isBattleRoyal ? (
+        {match.isBattleRoyal && match.surpriseSlots > 0 ? (
           <div className="space-y-2">
             <Label>
               Surprise Entrants ({battleRoyalEntrants.length}/
