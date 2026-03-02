@@ -13,6 +13,7 @@ import {
   isMatchBonusTimerId,
   isEventBonusTimerId,
   isSystemTimerId,
+  getQuestionValueType,
 } from "@/lib/pick-em/timer-utils";
 
 import type { LiveKeyTimer } from "@/lib/types";
@@ -153,5 +154,33 @@ describe("timer ID helpers", () => {
     assert.equal(isSystemTimerId("match-bonus:m1:q1"), true);
     assert.equal(isSystemTimerId("event-bonus:q1"), true);
     assert.equal(isSystemTimerId("custom:c1"), false);
+  });
+});
+
+describe("getQuestionValueType", () => {
+  test("returns valueType directly when it is numerical, time, or rosterMember", () => {
+    assert.equal(getQuestionValueType({ valueType: "numerical" }), "numerical");
+    assert.equal(getQuestionValueType({ valueType: "time" }), "time");
+    assert.equal(getQuestionValueType({ valueType: "rosterMember" }), "rosterMember");
+  });
+
+  test("falls back to time when isTimeBased is true", () => {
+    assert.equal(getQuestionValueType({ isTimeBased: true }), "time");
+  });
+
+  test("falls back to numerical when isCountBased is true", () => {
+    assert.equal(getQuestionValueType({ isCountBased: true }), "numerical");
+  });
+
+  test("defaults to string for unrecognized shapes", () => {
+    assert.equal(getQuestionValueType({}), "string");
+    assert.equal(getQuestionValueType({ valueType: "string" }), "string");
+  });
+
+  test("prioritizes explicit valueType over boolean flags", () => {
+    assert.equal(
+      getQuestionValueType({ valueType: "numerical", isTimeBased: true }),
+      "numerical",
+    );
   });
 });

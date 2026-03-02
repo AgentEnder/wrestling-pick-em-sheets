@@ -75,3 +75,20 @@ export function isSystemTimerId(timerId: string): boolean {
     isEventBonusTimerId(timerId)
   );
 }
+
+export function getQuestionValueType(question: {
+  valueType?: "string" | "numerical" | "time" | "rosterMember";
+  isTimeBased?: boolean;
+  isCountBased?: boolean;
+}): "string" | "numerical" | "time" | "rosterMember" {
+  if (
+    question.valueType === "numerical" ||
+    question.valueType === "time" ||
+    question.valueType === "rosterMember"
+  ) {
+    return question.valueType;
+  }
+  if (question.isTimeBased) return "time";
+  if (question.isCountBased) return "numerical";
+  return "string";
+}
