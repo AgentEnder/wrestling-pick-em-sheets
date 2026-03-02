@@ -119,7 +119,7 @@ function LeaderboardRows({
             }}
           >
             <div className="min-w-0">
-              <p className="truncate text-lg font-semibold">
+              <p className="truncate text-xl font-semibold">
                 #{entry.rank} {entry.nickname}
               </p>
               <p className="text-xs text-muted-foreground">
@@ -129,17 +129,17 @@ function LeaderboardRows({
               </p>
             </div>
             <div className="text-right">
-              <p className="font-mono text-xl font-semibold">
+              <p className="font-mono text-2xl font-semibold">
                 {entry.score}
               </p>
               {rankDelta > 0 ? (
-                <p className="text-xs text-emerald-300">
-                  +{rankDelta} rank
+                <p className="text-sm font-medium text-emerald-300">
+                  ▲ {rankDelta} rank
                 </p>
               ) : null}
               {rankDelta < 0 ? (
-                <p className="text-xs text-amber-300">
-                  {rankDelta} rank
+                <p className="text-sm font-medium text-amber-300">
+                  ▼ {Math.abs(rankDelta)} rank
                 </p>
               ) : null}
             </div>
@@ -211,8 +211,8 @@ function CombinedPanel({
       </div>
       <div className="mt-4 border-t border-border/30 pt-4">
         <div className="mb-3 flex items-center gap-3">
-          <Trophy className="h-5 w-5 text-primary" />
-          <span className="font-heading text-xl uppercase tracking-wide">
+          <Trophy className="h-6 w-6 text-primary" />
+          <span className="font-heading text-2xl uppercase tracking-wide">
             Leaderboard Shift
           </span>
         </div>
