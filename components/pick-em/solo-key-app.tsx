@@ -28,8 +28,8 @@ import { useLiveCard, useLivePayload, useLiveUi } from "@/stores/selectors";
 
 import { SoloKeyHeader } from "@/components/pick-em/solo-key/solo-key-header";
 import { TimerManagementPanel } from "@/components/pick-em/solo-key/timer-management-panel";
-import { LiveKeyMatchSection } from "@/components/pick-em/solo-key/live-key-match-section";
-import { EventBonusSection } from "@/components/pick-em/solo-key/event-bonus-section";
+import { KeyMatchSection } from "@/components/pick-em/shared/key-match-section";
+import { KeyEventBonusSection } from "@/components/pick-em/shared/key-event-bonus-section";
 import { TiebreakerSection } from "@/components/pick-em/solo-key/tiebreaker-section";
 
 /* ── Constants ─────────────────────────────────────────────── */
@@ -701,14 +701,14 @@ export function SoloKeyApp({ cardId }: SoloKeyAppProps) {
         <TimerManagementPanel />
 
         {card.matches.map((match, index) => (
-          <LiveKeyMatchSection
+          <KeyMatchSection
             key={match.id}
             matchIndex={index}
             roster={roster}
           />
         ))}
 
-        <EventBonusSection roster={roster} />
+        <KeyEventBonusSection roster={roster} />
 
         <TiebreakerSection />
       </main>
