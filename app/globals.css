@@ -81,6 +81,16 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/*
+ * Radix Select uses react-remove-scroll internally which locks body scroll
+ * when the dropdown is open. On mobile this blocks all page scrolling.
+ * Override the lock so users can still scroll while a Select is open.
+ */
+body[data-scroll-locked] {
+  overflow: auto !important;
+  margin-right: 0 !important;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
