@@ -92,12 +92,25 @@ export function scoreForQuestion(
     return { score: 0, isClosestCandidate: false };
   }
 
-  // Threshold answer type: host enters actual value, compare to threshold
+  // Threshold answer type: host enters actual value or label directly
   if (question.answerType === "threshold" && question.thresholdValue != null) {
+    const labels = question.thresholdLabels ?? ["Over", "Under"];
+
+    // If host entered a label directly, compare labels
+    if (
+      answerEquals(keyAnswer, labels[0]) ||
+      answerEquals(keyAnswer, labels[1])
+    ) {
+      return {
+        score: answerEquals(playerAnswer, keyAnswer) ? points : 0,
+        isClosestCandidate: false,
+      };
+    }
+
+    // Otherwise, host entered a numeric value — derive the correct label
     const actualValue = parseValueByType(keyAnswer, question.valueType);
     if (actualValue === null) return { score: 0, isClosestCandidate: false };
 
-    const labels = question.thresholdLabels ?? ["Over", "Under"];
     const correctLabel =
       actualValue > question.thresholdValue ? labels[0] : labels[1];
     return {
