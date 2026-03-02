@@ -2,6 +2,13 @@
 
 import React from "react";
 
+const HIDDEN_FEED_EVENT_TYPES = new Set([
+  "lock.global",
+  "lock.match",
+  "lock.matchBonus",
+  "lock.eventBonus",
+]);
+
 interface GameEvent {
   id: string;
   type: string;
@@ -21,7 +28,10 @@ function UpdatesFeedInner({
   maxItems = 15,
   variant = "compact",
 }: UpdatesFeedProps) {
-  const visibleEvents = events.slice(0, maxItems);
+  const filteredEvents = events.filter(
+    (event) => !HIDDEN_FEED_EVENT_TYPES.has(event.type),
+  );
+  const visibleEvents = filteredEvents.slice(0, maxItems);
 
   if (variant === "display") {
     return (
@@ -59,7 +69,7 @@ function UpdatesFeedInner({
           {event.message}
         </p>
       ))}
-      {events.length === 0 ? (
+      {filteredEvents.length === 0 ? (
         <p className="text-xs text-muted-foreground">No events yet.</p>
       ) : null}
     </div>
