@@ -14,6 +14,7 @@ import {
   useLiveUi,
   useLiveGames,
   useLiveGameState,
+  useLiveLockState,
   useLivePayloadActions,
 } from "@/stores/selectors";
 import { useAppStore } from "@/stores/app-store";
@@ -22,21 +23,23 @@ import {
   getLiveGameKey,
   getLiveGameState,
   saveLiveGameKey,
+  updateLiveGameLocks,
 } from "@/lib/client/live-games-api";
-import { snapshotPayload } from "@/lib/pick-em/payload-utils";
+import { snapshotPayload, toLockKey } from "@/lib/pick-em/payload-utils";
 import {
   nowMs,
   ensureSystemTimers,
 } from "@/lib/pick-em/timer-utils";
 import { normalizeText } from "@/lib/pick-em/text-utils";
 import { computeFuzzyConfidence } from "@/lib/fuzzy-match";
+import type { LiveGameLockState } from "@/lib/types";
 
 import { HostHeader } from "./live-host/host-header";
 import { JoinRequestsPanel } from "./live-host/join-requests-panel";
 import { GameLifecycleControls } from "./live-host/game-lifecycle-controls";
 import { LockControls } from "./live-host/lock-controls";
-import { HostMatchSection } from "./live-host/host-match-section";
-import { HostEventBonusSection } from "./live-host/host-event-bonus-section";
+import { KeyMatchSection } from "./shared/key-match-section";
+import { KeyEventBonusSection } from "./shared/key-event-bonus-section";
 import { HostDashboardPanels } from "./live-host/host-dashboard-panels";
 import { FUZZY_AUTO_THRESHOLD } from "./live-host/fuzzy-match-review-panel";
 
@@ -63,6 +66,7 @@ export function LiveGameKeyHostApp({
   const ui = useLiveUi();
   const games = useLiveGames();
   const gameState = useLiveGameState();
+  const lockState = useLiveLockState();
   const { setLiveTiebreakerAnswer } = useLivePayloadActions();
 
   const game = games.find((g) => g.id === gameId) ?? null;
@@ -438,6 +442,190 @@ export function LiveGameKeyHostApp({
     payload?.winnerOverrides,
   ]);
 
+  /* ---- Lock toggle callbacks ---- */
+
+  const saveLocks = useCallback(
+    async (next: LiveGameLockState) => {
+      try {
+        const updated = await updateLiveGameLocks(gameId, next);
+        const store = useAppStore.getState();
+        store.setLockState(updated.lockState);
+        store.setGames([updated]);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to update locks";
+        toast.error(message);
+      }
+    },
+    [gameId],
+  );
+
+  const handleToggleMatchLock = useCallback(
+    (matchId: string, locked: boolean) => {
+      if (!lockState) return;
+      void saveLocks({
+        ...lockState,
+        matchLocks: {
+          ...lockState.matchLocks,
+          [matchId]: {
+            locked,
+            source: "host" as const,
+          },
+        },
+      });
+    },
+    [lockState, saveLocks],
+  );
+
+  const handleToggleMatchBonusLock = useCallback(
+    (matchId: string, questionId: string, locked: boolean) => {
+      if (!lockState) return;
+      const key = toLockKey(matchId, questionId);
+      void saveLocks({
+        ...lockState,
+        matchBonusLocks: {
+          ...lockState.matchBonusLocks,
+          [key]: {
+            locked,
+            source: "host" as const,
+          },
+        },
+      });
+    },
+    [lockState, saveLocks],
+  );
+
+  const handleToggleEventBonusLock = useCallback(
+    (questionId: string, locked: boolean) => {
+      if (!lockState) return;
+      void saveLocks({
+        ...lockState,
+        eventBonusLocks: {
+          ...lockState.eventBonusLocks,
+          [questionId]: {
+            locked,
+            source: "host" as const,
+          },
+        },
+      });
+    },
+    [lockState, saveLocks],
+  );
+
+  /* ---- Fuzzy override callbacks ---- */
+
+  const handleAcceptWinnerOverride = useCallback(
+    (matchId: string, playerNickname: string, confidence: number) => {
+      const store = useAppStore.getState();
+      const currentPayload = store.livePayload;
+      store.setLivePayload({
+        ...currentPayload,
+        winnerOverrides: [
+          ...currentPayload.winnerOverrides.filter(
+            (o) =>
+              !(
+                o.matchId === matchId &&
+                o.playerNickname.toLowerCase() ===
+                  playerNickname.toLowerCase()
+              ),
+          ),
+          {
+            matchId,
+            playerNickname,
+            accepted: true,
+            source: "host" as const,
+            confidence,
+          },
+        ],
+      });
+    },
+    [],
+  );
+
+  const handleRejectWinnerOverride = useCallback(
+    (matchId: string, playerNickname: string) => {
+      const store = useAppStore.getState();
+      const currentPayload = store.livePayload;
+      store.setLivePayload({
+        ...currentPayload,
+        winnerOverrides: [
+          ...currentPayload.winnerOverrides.filter(
+            (o) =>
+              !(
+                o.matchId === matchId &&
+                o.playerNickname.toLowerCase() ===
+                  playerNickname.toLowerCase()
+              ),
+          ),
+          {
+            matchId,
+            playerNickname,
+            accepted: false,
+            source: "host" as const,
+            confidence: 0,
+          },
+        ],
+      });
+    },
+    [],
+  );
+
+  const handleAcceptBonusOverride = useCallback(
+    (questionId: string, playerNickname: string, confidence: number) => {
+      const store = useAppStore.getState();
+      const currentPayload = store.livePayload;
+      store.setLivePayload({
+        ...currentPayload,
+        scoreOverrides: [
+          ...currentPayload.scoreOverrides.filter(
+            (o) =>
+              !(
+                o.questionId === questionId &&
+                o.playerNickname.toLowerCase() ===
+                  playerNickname.toLowerCase()
+              ),
+          ),
+          {
+            questionId,
+            playerNickname,
+            accepted: true,
+            source: "host" as const,
+            confidence,
+          },
+        ],
+      });
+    },
+    [],
+  );
+
+  const handleRejectBonusOverride = useCallback(
+    (questionId: string, playerNickname: string) => {
+      const store = useAppStore.getState();
+      const currentPayload = store.livePayload;
+      store.setLivePayload({
+        ...currentPayload,
+        scoreOverrides: [
+          ...currentPayload.scoreOverrides.filter(
+            (o) =>
+              !(
+                o.questionId === questionId &&
+                o.playerNickname.toLowerCase() ===
+                  playerNickname.toLowerCase()
+              ),
+          ),
+          {
+            questionId,
+            playerNickname,
+            accepted: false,
+            source: "host" as const,
+            confidence: 0,
+          },
+        ],
+      });
+    },
+    [],
+  );
+
   /* ---- Stale refresh indicator ---- */
 
   const isRefreshStale =
@@ -468,15 +656,29 @@ export function LiveGameKeyHostApp({
       <LockControls gameId={gameId} />
 
       {card.matches.map((_, index) => (
-        <HostMatchSection
+        <KeyMatchSection
           key={card.matches[index].id}
           matchIndex={index}
           roster={roster}
-          gameId={gameId}
+          lockState={lockState}
+          gameState={gameState}
+          onToggleMatchLock={handleToggleMatchLock}
+          onToggleMatchBonusLock={handleToggleMatchBonusLock}
+          onAcceptWinnerOverride={handleAcceptWinnerOverride}
+          onRejectWinnerOverride={handleRejectWinnerOverride}
+          onAcceptBonusOverride={handleAcceptBonusOverride}
+          onRejectBonusOverride={handleRejectBonusOverride}
         />
       ))}
 
-      <HostEventBonusSection roster={roster} gameId={gameId} />
+      <KeyEventBonusSection
+        roster={roster}
+        lockState={lockState}
+        gameState={gameState}
+        onToggleEventBonusLock={handleToggleEventBonusLock}
+        onAcceptOverride={handleAcceptBonusOverride}
+        onRejectOverride={handleRejectBonusOverride}
+      />
 
       {card.tiebreakerLabel.trim() ? (
         <section className="rounded-lg border border-border bg-card p-4">
