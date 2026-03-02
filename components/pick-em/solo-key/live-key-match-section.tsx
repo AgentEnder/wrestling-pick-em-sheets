@@ -33,6 +33,8 @@ import {
 } from "@/lib/pick-em/timer-utils";
 import { findMatchResult, findAnswer } from "@/lib/pick-em/payload-utils";
 import { filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import { CounterInput } from "@/components/pick-em/shared/counter-input";
+import { BonusTimerCapture } from "@/components/pick-em/shared/bonus-timer-capture";
 
 /* ---- Utility helpers (local to this component) ---- */
 
@@ -51,13 +53,6 @@ function getQuestionValueType(question: {
   if (question.isTimeBased) return "time";
   if (question.isCountBased) return "numerical";
   return "string";
-}
-
-function parseCountAnswer(answer: string | null | undefined): number {
-  if (!answer) return 0;
-  const parsed = Number.parseInt(answer, 10);
-  if (Number.isNaN(parsed)) return 0;
-  return Math.max(0, parsed);
 }
 
 function formatTimestamp(value: string | null): string {
@@ -311,34 +306,6 @@ function LiveKeyMatchSectionInner({
     ],
   );
 
-  const incrementMatchBonusCount = useCallback(
-    (questionId: string, isTimeBased: boolean) => {
-      const result = findMatchResult(payload, match.id);
-      const existingAnswer = findAnswer(
-        result?.bonusAnswers ?? [],
-        questionId,
-      );
-      const nextValue = String(parseCountAnswer(existingAnswer?.answer) + 1);
-      liveSetMatchBonusAnswer(match.id, questionId, nextValue, isTimeBased);
-    },
-    [payload, match.id, liveSetMatchBonusAnswer],
-  );
-
-  const decrementMatchBonusCount = useCallback(
-    (questionId: string, isTimeBased: boolean) => {
-      const result = findMatchResult(payload, match.id);
-      const existingAnswer = findAnswer(
-        result?.bonusAnswers ?? [],
-        questionId,
-      );
-      const nextValue = String(
-        Math.max(0, parseCountAnswer(existingAnswer?.answer) - 1),
-      );
-      liveSetMatchBonusAnswer(match.id, questionId, nextValue, isTimeBased);
-    },
-    [payload, match.id, liveSetMatchBonusAnswer],
-  );
-
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -560,19 +527,13 @@ function LiveKeyMatchSectionInner({
             const bonusTimer = timersById.get(bonusTimerId);
             const selectedTimerId =
               answer?.timerId ?? (isTimeValueType ? bonusTimerId : null);
-            const bonusTimerElapsed = bonusTimer
-              ? formatDuration(getTimerElapsedMs(bonusTimer, currentTimeMs))
-              : "--:--";
             const isUsingAlternateTimer =
               isTimeValueType && selectedTimerId !== bonusTimerId;
             const filteredRosterSuggestions = isRosterMemberType
               ? filterRosterMemberSuggestions(
                   answer?.answer ?? "",
                   Array.from(
-                    new Set([
-                      ...match.participants,
-                      ...rosterQuerySuggestions,
-                    ]),
+                    new Set([...match.participants, ...rosterQuerySuggestions]),
                   ),
                 )
               : [];
@@ -584,43 +545,18 @@ function LiveKeyMatchSectionInner({
               >
                 <Label>{question.question || "Bonus question"}</Label>
                 {isNumericalValueType ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="rounded-md border border-border px-3 py-1.5 font-mono text-lg text-foreground">
-                      {parseCountAnswer(answer?.answer)}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        decrementMatchBonusCount(question.id, isTimeValueType)
-                      }
-                    >
-                      -
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        incrementMatchBonusCount(question.id, isTimeValueType)
-                      }
-                    >
-                      +
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
+                  <div className="mt-2">
+                    <CounterInput
+                      value={answer?.answer}
+                      onChange={(v) =>
                         liveSetMatchBonusAnswer(
                           match.id,
                           question.id,
-                          "",
+                          v,
                           isTimeValueType,
                         )
                       }
-                      disabled={(answer?.answer ?? "").trim().length === 0}
-                    >
-                      Clear
-                    </Button>
+                    />
                   </div>
                 ) : (
                   <>
@@ -740,85 +676,39 @@ function LiveKeyMatchSectionInner({
                       </>
                     ) : (
                       <>
-                        <div className="rounded-md border border-border/60 bg-background/40 p-2.5">
-                          <p className="text-xs text-muted-foreground">
-                            Question Timer
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <span className="rounded-md border border-border px-2 py-1 font-mono text-sm">
-                              {bonusTimerElapsed}
-                            </span>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => {
-                                if (!bonusTimer) return;
-                                if (bonusTimer.isRunning) {
-                                  liveStopTimer(bonusTimer.id);
-                                } else {
-                                  liveStartTimer(bonusTimer.id);
-                                }
-                              }}
-                              disabled={!bonusTimer}
-                            >
-                              {bonusTimer?.isRunning ? (
-                                <Pause className="mr-1 h-4 w-4" />
-                              ) : (
-                                <Play className="mr-1 h-4 w-4" />
-                              )}
-                              {bonusTimer?.isRunning ? "Stop" : "Start"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                bonusTimer && liveResetTimer(bonusTimer.id)
-                              }
-                              disabled={!bonusTimer}
-                            >
-                              <RotateCcw className="h-4 w-4" />
-                              <span className="sr-only">
-                                Reset bonus timer
-                              </span>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() =>
-                                applySpecificTimerValueToMatchBonus(
-                                  question.id,
-                                  bonusTimerId,
-                                )
-                              }
-                            >
-                              <Timer className="mr-1 h-4 w-4" />
-                              Use Question Timer
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                const alternateTimerId =
-                                  findAlternateTimerId(bonusTimerId);
-                                if (!alternateTimerId) {
-                                  toast.error("No alternate timers available");
-                                  return;
-                                }
-                                setMatchBonusTimer(
-                                  question.id,
-                                  alternateTimerId,
-                                );
-                              }}
-                            >
-                              Use Different Timer
-                            </Button>
-                          </div>
-                        </div>
+                        <BonusTimerCapture
+                          timer={bonusTimer}
+                          currentTimeMs={currentTimeMs}
+                          onStart={liveStartTimer}
+                          onStop={liveStopTimer}
+                          onReset={liveResetTimer}
+                          onCapture={() =>
+                            applySpecificTimerValueToMatchBonus(
+                              question.id,
+                              bonusTimerId,
+                            )
+                          }
+                          captureLabel="Use Question Timer"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const alternateTimerId =
+                              findAlternateTimerId(bonusTimerId);
+                            if (!alternateTimerId) {
+                              toast.error("No alternate timers available");
+                              return;
+                            }
+                            setMatchBonusTimer(question.id, alternateTimerId);
+                          }}
+                        >
+                          Use Different Timer
+                        </Button>
                       </>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      Recorded:{" "}
-                      {formatTimestamp(answer?.recordedAt ?? null)}
+                      Recorded: {formatTimestamp(answer?.recordedAt ?? null)}
                     </p>
                   </div>
                 ) : null}

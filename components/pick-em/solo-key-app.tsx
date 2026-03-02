@@ -26,11 +26,11 @@ import { toast } from "sonner";
 import { useAppStore } from "@/stores/app-store";
 import { useLiveCard, useLivePayload, useLiveUi } from "@/stores/selectors";
 
-import { LiveKeyHeader } from "@/components/pick-em/live-key/live-key-header";
-import { TimerManagementPanel } from "@/components/pick-em/live-key/timer-management-panel";
-import { LiveKeyMatchSection } from "@/components/pick-em/live-key/live-key-match-section";
-import { EventBonusSection } from "@/components/pick-em/live-key/event-bonus-section";
-import { TiebreakerSection } from "@/components/pick-em/live-key/tiebreaker-section";
+import { SoloKeyHeader } from "@/components/pick-em/solo-key/solo-key-header";
+import { TimerManagementPanel } from "@/components/pick-em/solo-key/timer-management-panel";
+import { LiveKeyMatchSection } from "@/components/pick-em/solo-key/live-key-match-section";
+import { EventBonusSection } from "@/components/pick-em/solo-key/event-bonus-section";
+import { TiebreakerSection } from "@/components/pick-em/solo-key/tiebreaker-section";
 
 /* ── Constants ─────────────────────────────────────────────── */
 
@@ -58,7 +58,7 @@ interface LocalLiveKeyRecord {
   updatedAt: string;
 }
 
-interface LiveKeyAppProps {
+interface SoloKeyAppProps {
   cardId: string;
 }
 
@@ -331,7 +331,7 @@ function formatTimestamp(value: string | null): string {
 
 /* ── Shell component ───────────────────────────────────────── */
 
-export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
+export function SoloKeyApp({ cardId }: SoloKeyAppProps) {
   const { userId, isLoaded: isAuthLoaded } = useAuth();
   const storageKey = useMemo(
     () => getStorageKey(cardId, userId),
@@ -689,7 +689,7 @@ export function LiveKeyApp({ cardId }: LiveKeyAppProps) {
     <div className="relative min-h-screen overflow-x-clip bg-background">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(230,170,60,0.20),transparent_35%),radial-gradient(circle_at_90%_20%,rgba(130,160,255,0.12),transparent_35%),linear-gradient(to_bottom,rgba(255,255,255,0.02),transparent_35%)]" />
 
-      <LiveKeyHeader
+      <SoloKeyHeader
         cardId={cardId}
         syncStatus={syncStatus}
         usingEditorDraft={usingEditorDraft}

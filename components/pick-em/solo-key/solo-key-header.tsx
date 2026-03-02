@@ -6,7 +6,7 @@ import { ArrowLeft, RefreshCcw, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLiveCard, useLiveUi } from "@/stores/selectors";
 
-interface LiveKeyHeaderProps {
+interface SoloKeyHeaderProps {
   cardId: string;
   syncStatus: string;
   usingEditorDraft: boolean;
@@ -14,13 +14,13 @@ interface LiveKeyHeaderProps {
   onRefresh: () => void;
 }
 
-export function LiveKeyHeader({
+export function SoloKeyHeader({
   cardId,
   syncStatus,
   usingEditorDraft,
   onSave,
   onRefresh,
-}: LiveKeyHeaderProps) {
+}: SoloKeyHeaderProps) {
   const card = useLiveCard();
   const { isSaving, isRefreshing } = useLiveUi();
 
