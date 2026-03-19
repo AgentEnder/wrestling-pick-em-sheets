@@ -19,7 +19,7 @@ importers:
         version: 0.8.1
       '@libsql/kysely-libsql':
         specifier: ^0.4.1
-        version: 0.4.1(kysely@0.27.6)
+        version: 0.4.1(kysely@0.28.12)
       '@radix-ui/react-accordion':
         specifier: 1.2.12
         version: 1.2.12(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -126,8 +126,8 @@ importers:
         specifier: 1.4.2
         version: 1.4.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       kysely:
-        specifier: ^0.27.6
-        version: 0.27.6
+        specifier: ^0.28.12
+        version: 0.28.12
       lucide-react:
         specifier: ^0.564.0
         version: 0.564.0(react@19.2.4)
@@ -212,7 +212,7 @@ importers:
         version: 11.10.0
       kysely-codegen:
         specifier: ^0.19.0
-        version: 0.19.0(@libsql/kysely-libsql@0.4.1(kysely@0.27.6))(better-sqlite3@11.10.0)(kysely@0.27.6)(typescript@5.7.3)
+        version: 0.19.0(@libsql/kysely-libsql@0.4.1(kysely@0.28.12))(better-sqlite3@11.10.0)(kysely@0.28.12)(typescript@5.7.3)
       postcss:
         specifier: ^8.5
         version: 8.5.6
@@ -262,6 +262,7 @@ packages:
   '@clerk/clerk-react@5.61.1':
     resolution: {integrity: sha512-FB6Dt6iwNR//UG/Xt61+WJKj6wtxvPtrF4CgO3Vm3GWb6xyFPZUFRrcdE4pZrF1glCVZ1TXEAAvDMFOAM4ybRw==}
     engines: {node: '>=18.17.0'}
+    deprecated: 'This package is no longer supported. Please use @clerk/react instead. See the upgrade guide for more info: https://clerk.com/docs/guides/development/upgrading/upgrade-guides/core-3'
     peerDependencies:
       react: ^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0
       react-dom: ^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0
@@ -289,6 +290,7 @@ packages:
   '@clerk/types@4.101.18':
     resolution: {integrity: sha512-huTv4ESnNK5ujCSc0vUNtK2k5xMDOP5C96qOUPB0AZyOWeMYEou5tHDua2NOlgFZAS/M+dJBOffohbiO2mLAhw==}
     engines: {node: '>=18.17.0'}
+    deprecated: 'This package is no longer supported. Please import types from @clerk/shared/types instead. See the upgrade guide for more info: https://clerk.com/docs/guides/development/upgrading/upgrade-guides/core-3'
 
   '@date-fns/tz@1.4.1':
     resolution: {integrity: sha512-P5LUNhtbj6YfI3iJjw5EL9eUAG6OitD0W3fWQcpQjDRc/QIsL0tRNuO1PcDvPccWL1fSTXXdE1ds+l95DV/OFA==}
@@ -2106,12 +2108,13 @@ packages:
       tedious:
         optional: true
 
-  kysely@0.27.6:
-    resolution: {integrity: sha512-FIyV/64EkKhJmjgC0g2hygpBv5RNWVPyNCqSAD7eTCv6eFWNIi4PN1UvdSJGicN/o35bnevgis4Y0UDC0qi8jQ==}
-    engines: {node: '>=14.0.0'}
+  kysely@0.28.12:
+    resolution: {integrity: sha512-kWiueDWXhbCchgiotwXkwdxZE/6h56IHAeFWg4euUfW0YsmO9sxbAxzx1KLLv2lox15EfuuxHQvgJ1qIfZuHGw==}
+    engines: {node: '>=20.0.0'}
 
   libsql@0.3.19:
     resolution: {integrity: sha512-Aj5cQ5uk/6fHdmeW0TiXK42FqUlwx7ytmMLPSaUQPin5HKKKuUPD62MAbN4OEweGBBI7q1BekoEN4gPUEL6MZA==}
+    cpu: [x64, arm64, wasm32]
     os: [darwin, linux, win32]
 
   lightningcss-android-arm64@1.31.1:
@@ -3108,10 +3111,10 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@libsql/kysely-libsql@0.4.1(kysely@0.27.6)':
+  '@libsql/kysely-libsql@0.4.1(kysely@0.28.12)':
     dependencies:
       '@libsql/client': 0.8.1
-      kysely: 0.27.6
+      kysely: 0.28.12
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -4457,25 +4460,25 @@ snapshots:
       jwa: 2.0.1
       safe-buffer: 5.2.1
 
-  kysely-codegen@0.19.0(@libsql/kysely-libsql@0.4.1(kysely@0.27.6))(better-sqlite3@11.10.0)(kysely@0.27.6)(typescript@5.7.3):
+  kysely-codegen@0.19.0(@libsql/kysely-libsql@0.4.1(kysely@0.28.12))(better-sqlite3@11.10.0)(kysely@0.28.12)(typescript@5.7.3):
     dependencies:
       chalk: 4.1.2
       cosmiconfig: 9.0.0(typescript@5.7.3)
       dotenv: 17.3.1
       dotenv-expand: 12.0.3
       git-diff: 2.0.6
-      kysely: 0.27.6
+      kysely: 0.28.12
       micromatch: 4.0.8
       minimist: 1.2.8
       pluralize: 8.0.0
       zod: 4.3.6
     optionalDependencies:
-      '@libsql/kysely-libsql': 0.4.1(kysely@0.27.6)
+      '@libsql/kysely-libsql': 0.4.1(kysely@0.28.12)
       better-sqlite3: 11.10.0
     transitivePeerDependencies:
       - typescript
 
-  kysely@0.27.6: {}
+  kysely@0.28.12: {}
 
   libsql@0.3.19:
     dependencies:
