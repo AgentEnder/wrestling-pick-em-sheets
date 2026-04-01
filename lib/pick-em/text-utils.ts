@@ -31,6 +31,13 @@ export function normalizeText(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+export function parseCountAnswer(value: string | null | undefined): number {
+  if (!value) return 0;
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) return 0;
+  return Math.max(0, parsed);
+}
+
 export function formatEventTypeLabel(type: string): string {
   const normalized = type.toLowerCase();
   if (normalized.includes("bonus")) return "Bonus Question";
