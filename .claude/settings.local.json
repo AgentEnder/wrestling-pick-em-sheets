@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "mcp__plugin_linear_linear__get_issue"
+      "mcp__plugin_linear_linear__get_issue",
+      "WebSearch",
+      "WebFetch(domain:clerk.com)",
+      "Bash(tar -xzf /tmp/clerk-nextjs-7.0.7.tgz -C /tmp)",
+      "Read(//tmp/package/dist/esm/**)"
     ]
   }
 }
