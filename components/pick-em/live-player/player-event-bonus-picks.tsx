@@ -4,20 +4,15 @@ import React, { useMemo } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import type { LivePlayerAnswer, LivePlayerPicksPayload } from "@/lib/types";
 import type {
-  LivePlayerAnswer,
-  LivePlayerPicksPayload,
-} from "@/lib/types";
-import type { LiveGameMeResponse, LiveGameStateResponse } from "@/lib/client/live-games-api";
+  LiveGameMeResponse,
+  LiveGameStateResponse,
+} from "@/lib/client/live-games-api";
 import type { UseRosterSuggestionsReturn } from "@/hooks/use-roster-suggestions";
-import { filterRosterMemberSuggestions, normalizeText } from "@/lib/pick-em/text-utils";
+import { filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import { ThresholdButtons } from "@/components/pick-em/shared/threshold-buttons";
+import { MultipleChoiceSelect } from "@/components/pick-em/shared/multiple-choice-select";
 
 /* ---- Local helpers ---- */
 
@@ -49,9 +44,7 @@ function PlayerEventBonusPicksInner({
 }: PlayerEventBonusPicksProps) {
   const eventParticipantCandidates = useMemo(
     () =>
-      Array.from(
-        new Set(card.matches.flatMap((match) => match.participants)),
-      ),
+      Array.from(new Set(card.matches.flatMap((match) => match.participants))),
     [card.matches],
   );
 
@@ -64,14 +57,11 @@ function PlayerEventBonusPicksInner({
         {card.eventBonusQuestions.map((question) => {
           const answer = findAnswer(picks.eventBonusAnswers, question.id);
           const isLocked =
-            locks.eventBonusLocks[question.id] === true ||
-            locks.globalLocked;
+            locks.eventBonusLocks[question.id] === true || locks.globalLocked;
           const isRosterMemberType = question.valueType === "rosterMember";
           const rosterFieldKey = `eventBonus:${question.id}`;
           const rosterQuerySuggestions =
-            roster.activeFieldKey === rosterFieldKey
-              ? roster.suggestions
-              : [];
+            roster.activeFieldKey === rosterFieldKey ? roster.suggestions : [];
           const filteredRosterSuggestions = isRosterMemberType
             ? filterRosterMemberSuggestions(
                 answer?.answer ?? "",
@@ -91,62 +81,29 @@ function PlayerEventBonusPicksInner({
             >
               <Label>{question.question || "Event bonus"}</Label>
               {question.answerType === "threshold" ? (
-                <div className="flex gap-2">
-                  {(question.thresholdLabels ?? ["Over", "Under"]).map(
-                    (label) => (
-                      <button
-                        key={label}
-                        type="button"
-                        disabled={isLocked}
-                        onClick={() =>
-                          onSetEventBonusAnswer(question.id, label)
-                        }
-                        className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                          normalizeText(answer?.answer ?? "") ===
-                          normalizeText(label)
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-card text-card-foreground hover:border-primary/50"
-                        } disabled:cursor-not-allowed disabled:opacity-50`}
-                      >
-                        {label}
-                      </button>
-                    ),
-                  )}
-                </div>
-              ) : question.answerType === "multiple-choice" &&
-                question.options.length > 0 ? (
-                <Select
-                  value={answer?.answer || "__none__"}
-                  onValueChange={(value) =>
-                    onSetEventBonusAnswer(
-                      question.id,
-                      value === "__none__" ? "" : value,
-                    )
+                <ThresholdButtons
+                  labels={question.thresholdLabels ?? ["Over", "Under"]}
+                  selectedValue={answer?.answer ?? ""}
+                  onSelect={(label) =>
+                    onSetEventBonusAnswer(question.id, label)
                   }
                   disabled={isLocked}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select answer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Unanswered</SelectItem>
-                    {question.options.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
+              ) : question.answerType === "multiple-choice" &&
+                question.options.length > 0 ? (
+                <MultipleChoiceSelect
+                  options={question.options}
+                  value={answer?.answer ?? ""}
+                  onChange={(v) => onSetEventBonusAnswer(question.id, v)}
+                  disabled={isLocked}
+                />
               ) : (
                 <>
                   <Input
                     value={answer?.answer ?? ""}
                     onChange={(event) => {
                       onSetEventBonusAnswer(question.id, event.target.value);
-                      roster.setActiveInput(
-                        rosterFieldKey,
-                        event.target.value,
-                      );
+                      roster.setActiveInput(rosterFieldKey, event.target.value);
                     }}
                     onFocus={() =>
                       roster.setActiveInput(

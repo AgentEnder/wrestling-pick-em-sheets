@@ -18,9 +18,14 @@ import type {
   LivePlayerMatchPick,
   LivePlayerPicksPayload,
 } from "@/lib/types";
-import type { LiveGameMeResponse, LiveGameStateResponse } from "@/lib/client/live-games-api";
+import type {
+  LiveGameMeResponse,
+  LiveGameStateResponse,
+} from "@/lib/client/live-games-api";
 import type { UseRosterSuggestionsReturn } from "@/hooks/use-roster-suggestions";
-import { filterRosterMemberSuggestions, normalizeText } from "@/lib/pick-em/text-utils";
+import { filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import { ThresholdButtons } from "@/components/pick-em/shared/threshold-buttons";
+import { MultipleChoiceSelect } from "@/components/pick-em/shared/multiple-choice-select";
 
 /* ---- Local helpers ---- */
 
@@ -99,9 +104,7 @@ function PlayerMatchPicksInner({
   const battleRoyalSuggestions =
     roster.activeFieldKey === battleRoyalFieldKey ? roster.suggestions : [];
   const battleRoyalCandidates = match.isBattleRoyal
-    ? Array.from(
-        new Set([...match.participants, ...battleRoyalSuggestions]),
-      )
+    ? Array.from(new Set([...match.participants, ...battleRoyalSuggestions]))
     : [];
   const filteredBattleRoyalSuggestions = normalizedBattleRoyalEntryInput
     ? battleRoyalCandidates
@@ -111,8 +114,7 @@ function PlayerMatchPicksInner({
         .filter(
           (candidate) =>
             !battleRoyalEntrants.some(
-              (entrant) =>
-                entrant.toLowerCase() === candidate.toLowerCase(),
+              (entrant) => entrant.toLowerCase() === candidate.toLowerCase(),
             ),
         )
         .slice(0, 8)
@@ -272,8 +274,7 @@ function PlayerMatchPicksInner({
             const isLocked =
               locks.matchBonusLocks[toLockKey(match.id, question.id)] ===
                 true || isMatchLocked;
-            const isRosterMemberType =
-              question.valueType === "rosterMember";
+            const isRosterMemberType = question.valueType === "rosterMember";
             const rosterFieldKey = `matchBonus:${match.id}:${question.id}`;
             const rosterQuerySuggestions =
               roster.activeFieldKey === rosterFieldKey
@@ -283,10 +284,7 @@ function PlayerMatchPicksInner({
               ? filterRosterMemberSuggestions(
                   answer?.answer ?? "",
                   Array.from(
-                    new Set([
-                      ...match.participants,
-                      ...rosterQuerySuggestions,
-                    ]),
+                    new Set([...match.participants, ...rosterQuerySuggestions]),
                   ),
                 )
               : [];
@@ -298,57 +296,24 @@ function PlayerMatchPicksInner({
               >
                 <Label>{question.question || "Bonus question"}</Label>
                 {question.answerType === "threshold" ? (
-                  <div className="flex gap-2">
-                    {(question.thresholdLabels ?? ["Over", "Under"]).map(
-                      (label) => (
-                        <button
-                          key={label}
-                          type="button"
-                          disabled={isLocked}
-                          onClick={() =>
-                            onSetMatchBonusAnswer(
-                              match.id,
-                              question.id,
-                              label,
-                            )
-                          }
-                          className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                            normalizeText(answer?.answer ?? "") ===
-                            normalizeText(label)
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-border bg-card text-card-foreground hover:border-primary/50"
-                          } disabled:cursor-not-allowed disabled:opacity-50`}
-                        >
-                          {label}
-                        </button>
-                      ),
-                    )}
-                  </div>
-                ) : question.answerType === "multiple-choice" &&
-                  question.options.length > 0 ? (
-                  <Select
-                    value={answer?.answer || "__none__"}
-                    onValueChange={(value) =>
-                      onSetMatchBonusAnswer(
-                        match.id,
-                        question.id,
-                        value === "__none__" ? "" : value,
-                      )
+                  <ThresholdButtons
+                    labels={question.thresholdLabels ?? ["Over", "Under"]}
+                    selectedValue={answer?.answer ?? ""}
+                    onSelect={(label) =>
+                      onSetMatchBonusAnswer(match.id, question.id, label)
                     }
                     disabled={isLocked}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select answer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Unanswered</SelectItem>
-                      {question.options.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  />
+                ) : question.answerType === "multiple-choice" &&
+                  question.options.length > 0 ? (
+                  <MultipleChoiceSelect
+                    options={question.options}
+                    value={answer?.answer ?? ""}
+                    onChange={(v) =>
+                      onSetMatchBonusAnswer(match.id, question.id, v)
+                    }
+                    disabled={isLocked}
+                  />
                 ) : (
                   <>
                     <Input
