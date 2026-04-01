@@ -316,7 +316,7 @@ export default function JoinPageClient() {
             </p>
           </div>
           <SignedIn>
-            <UserButton afterSignOutUrl="/join" />
+            <UserButton />
           </SignedIn>
         </div>
 

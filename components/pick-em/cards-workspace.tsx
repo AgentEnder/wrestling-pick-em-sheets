@@ -266,7 +266,7 @@ export function CardsWorkspace() {
               </SignInButton>
             </SignedOut>
             <SignedIn>
-              <UserButton afterSignOutUrl="/" />
+              <UserButton />
             </SignedIn>
           </div>
         </div>

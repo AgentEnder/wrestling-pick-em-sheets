@@ -128,7 +128,7 @@ export function HomeHub() {
               </SignInButton>
             </SignedOut>
             <SignedIn>
-              <UserButton afterSignOutUrl="/" />
+              <UserButton />
             </SignedIn>
           </div>
         </div>

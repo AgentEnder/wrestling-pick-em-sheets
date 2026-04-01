@@ -4,8 +4,7 @@ import type { ComponentProps, PropsWithChildren } from 'react'
 
 import {
   SignInButton as ClerkSignInButton,
-  SignedIn as ClerkSignedIn,
-  SignedOut as ClerkSignedOut,
+  Show,
   UserButton as ClerkUserButton,
   useAuth as useClerkAuth,
   useUser as useClerkUser,
@@ -18,7 +17,7 @@ export function SignedIn({ children }: PropsWithChildren) {
     return null
   }
 
-  return <ClerkSignedIn>{children}</ClerkSignedIn>
+  return <Show when="signed-in">{children}</Show>
 }
 
 export function SignedOut({ children }: PropsWithChildren) {
@@ -26,7 +25,7 @@ export function SignedOut({ children }: PropsWithChildren) {
     return <>{children}</>
   }
 
-  return <ClerkSignedOut>{children}</ClerkSignedOut>
+  return <Show when="signed-out">{children}</Show>
 }
 
 export function SignInButton(props: PropsWithChildren<ComponentProps<typeof ClerkSignInButton>>) {
