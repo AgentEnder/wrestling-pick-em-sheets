@@ -18,7 +18,7 @@
     "build:deploy": "echo 'Running database migrations...' && pnpm run db:migrate:latest && echo 'Building Next.js app...' && next build"
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.0.7",
+    "@clerk/nextjs": "^7.2.1",
     "@hookform/resolvers": "^3.10.0",
     "@libsql/client": "^0.8.1",
     "@libsql/kysely-libsql": "^0.4.1",
