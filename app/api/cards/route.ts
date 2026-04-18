@@ -15,7 +15,11 @@ const createCardSchema = z.object({
 
 export async function GET(request: Request) {
   const userId = await getRequestUserId(request);
-  const cards = await listReadableCards(userId);
+
+  const url = new URL(request.url);
+  const includeArchived = url.searchParams.get("includeArchived") === "true";
+
+  const cards = await listReadableCards(userId, { includeArchived });
 
   return NextResponse.json({ data: cards });
 }

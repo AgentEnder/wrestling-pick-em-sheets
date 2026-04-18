@@ -22,16 +22,21 @@ import {
 } from "@/components/ui/card";
 import { AppNavbar } from "@/components/pick-em/app-navbar";
 import {
+  archiveCard as archiveCardRequest,
   createCard,
   createCardFromTemplate,
   listCards,
+  unarchiveCard as unarchiveCardRequest,
   type CardSummary,
 } from "@/lib/client/cards-api";
 import type { PickEmSheet } from "@/lib/types";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowRight,
   CalendarDays,
   FolderOpen,
+  MoreHorizontal,
   Plus,
   RefreshCcw,
   Sparkles,
@@ -39,9 +44,19 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 
 const ADMIN_EMAIL = "craigorycoppola@gmail.com";
 const LOCAL_DRAFT_STORAGE_KEY = "pick-em-editor-draft-v2";
+const SHOW_ARCHIVED_STORAGE_KEY = "pick-em-cards-workspace-show-archived";
 
 const INITIAL_LOCAL_SHEET: PickEmSheet = {
   eventName: "",
@@ -122,11 +137,45 @@ export function CardsWorkspace() {
   const [isUsingTemplateId, setIsUsingTemplateId] = useState<string | null>(
     null,
   );
+  const [showArchived, setShowArchived] = useState(false);
 
-  const ownedCards = useMemo(
-    () => cards.filter((card) => Boolean(card.ownerId) && !card.isTemplate),
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SHOW_ARCHIVED_STORAGE_KEY);
+      if (stored === "true") setShowArchived(true);
+    } catch {
+      /* localStorage may be unavailable; ignore. */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SHOW_ARCHIVED_STORAGE_KEY,
+        showArchived ? "true" : "false",
+      );
+    } catch {
+      /* noop */
+    }
+  }, [showArchived]);
+
+  const ownedActiveCards = useMemo(
+    () =>
+      cards.filter(
+        (card) =>
+          Boolean(card.ownerId) && !card.isTemplate && !card.archivedAt,
+      ),
     [cards],
   );
+  const ownedArchivedCards = useMemo(
+    () =>
+      cards.filter(
+        (card) =>
+          Boolean(card.ownerId) && !card.isTemplate && Boolean(card.archivedAt),
+      ),
+    [cards],
+  );
+  const ownedCards = ownedActiveCards;
 
   const publicTemplates = useMemo(
     () => cards.filter((card) => card.isTemplate && card.isPublic),
@@ -134,11 +183,19 @@ export function CardsWorkspace() {
   );
   const recentOwnedCards = useMemo(
     () =>
-      [...ownedCards].sort(
+      [...ownedActiveCards].sort(
         (left, right) =>
           toTimestamp(right.updatedAt) - toTimestamp(left.updatedAt),
       ),
-    [ownedCards],
+    [ownedActiveCards],
+  );
+  const recentArchivedCards = useMemo(
+    () =>
+      [...ownedArchivedCards].sort(
+        (left, right) =>
+          toTimestamp(right.updatedAt) - toTimestamp(left.updatedAt),
+      ),
+    [ownedArchivedCards],
   );
   const recentTemplates = useMemo(
     () =>
@@ -166,7 +223,7 @@ export function CardsWorkspace() {
   const loadCards = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await listCards();
+      const data = await listCards({ includeArchived: showArchived });
       setCards(data);
     } catch (error) {
       const message =
@@ -175,11 +232,41 @@ export function CardsWorkspace() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => {
     void loadCards();
   }, [loadCards]);
+
+  const handleArchive = useCallback(async (cardId: string) => {
+    try {
+      await archiveCardRequest(cardId);
+      setCards((prev) =>
+        prev.map((c) =>
+          c.id === cardId ? { ...c, archivedAt: new Date().toISOString() } : c,
+        ),
+      );
+      toast.success("Card archived");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not archive card";
+      toast.error(message);
+    }
+  }, []);
+
+  const handleUnarchive = useCallback(async (cardId: string) => {
+    try {
+      await unarchiveCardRequest(cardId);
+      setCards((prev) =>
+        prev.map((c) => (c.id === cardId ? { ...c, archivedAt: null } : c)),
+      );
+      toast.success("Card unarchived");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not unarchive card";
+      toast.error(message);
+    }
+  }, []);
 
   async function handleCreateCard() {
     setIsCreatingCard(true);
@@ -327,14 +414,30 @@ export function CardsWorkspace() {
         <section>
           <Card className="border-border/70 bg-card/70 shadow-[0_20px_40px_rgba(0,0,0,0.25)] backdrop-blur">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FolderOpen className="h-4 w-4 text-primary" />
-                Continue Editing
-              </CardTitle>
-              <CardDescription>
-                {ownedCards.length} saved card
-                {ownedCards.length === 1 ? "" : "s"}
-              </CardDescription>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <FolderOpen className="h-4 w-4 text-primary" />
+                    Continue Editing
+                  </CardTitle>
+                  <CardDescription>
+                    {ownedActiveCards.length} saved card
+                    {ownedActiveCards.length === 1 ? "" : "s"}
+                  </CardDescription>
+                </div>
+                {userId ? (
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="show-archived"
+                      checked={showArchived}
+                      onCheckedChange={setShowArchived}
+                    />
+                    <Label htmlFor="show-archived" className="text-xs">
+                      Show archived
+                    </Label>
+                  </div>
+                ) : null}
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               {recentOwnedCards.length === 0 ? (
@@ -356,18 +459,111 @@ export function CardsWorkspace() {
                           Updated {formatDate(card.updatedAt)}
                         </p>
                       </div>
-                      <Button asChild size="sm" variant="secondary">
-                        <Link href={`/cards/${card.id}`}>
-                          Edit
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Link>
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button asChild size="sm" variant="secondary">
+                          <Link href={`/cards/${card.id}`}>
+                            Edit
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label="Card actions"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                void handleArchive(card.id);
+                              }}
+                            >
+                              <Archive className="mr-2 h-4 w-4" />
+                              Archive
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   </div>
                 ))
               )}
             </CardContent>
           </Card>
+
+          {showArchived && recentArchivedCards.length > 0 ? (
+            <Card className="mt-6 border-border/70 bg-card/40 shadow-[0_20px_40px_rgba(0,0,0,0.25)] backdrop-blur">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Archive className="h-4 w-4 text-muted-foreground" />
+                  Archived
+                </CardTitle>
+                <CardDescription>
+                  {recentArchivedCards.length} archived card
+                  {recentArchivedCards.length === 1 ? "" : "s"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {recentArchivedCards.map((card) => (
+                  <div
+                    key={card.id}
+                    className="rounded-md border border-border/70 bg-background/30 px-3 py-2 opacity-80"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">
+                          {card.name}
+                          <Badge
+                            variant="outline"
+                            className="ml-2 text-[10px]"
+                          >
+                            Archived
+                          </Badge>
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Archived{" "}
+                          {formatDate(card.archivedAt ?? card.updatedAt)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button asChild size="sm" variant="secondary">
+                          <Link href={`/cards/${card.id}`}>
+                            View
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label="Card actions"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                void handleUnarchive(card.id);
+                              }}
+                            >
+                              <ArchiveRestore className="mr-2 h-4 w-4" />
+                              Unarchive
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
         </section>
 
         <section>

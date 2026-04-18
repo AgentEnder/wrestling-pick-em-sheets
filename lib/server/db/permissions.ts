@@ -19,3 +19,7 @@ export function isCardOwner(
 ) {
   return eb("owner_id", "=", userId);
 }
+
+export function isActiveCard(eb: ExpressionBuilder<DB, "cards">) {
+  return eb("archived_at", "is", null);
+}

@@ -11,7 +11,11 @@ import type {
   CardMatches,
   Cards,
 } from "@/lib/server/db/generated";
-import { canReadCard, isCardOwner } from "@/lib/server/db/permissions";
+import {
+  canReadCard,
+  isActiveCard,
+  isCardOwner,
+} from "@/lib/server/db/permissions";
 import {
   isBattleRoyalMatchType,
   requireDbId,
@@ -46,6 +50,7 @@ interface CardRow {
   event_bonus_questions_json: string;
   public: number;
   is_template: number;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -110,6 +115,7 @@ export interface CardSummary {
   name: string;
   isPublic: boolean;
   isTemplate: boolean;
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -130,6 +136,7 @@ export interface ResolvedCard {
   tiebreakerIsTimeBased: boolean;
   matches: Match[];
   eventBonusQuestions: BonusQuestion[];
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -150,6 +157,7 @@ function asCardRow(row: CardSelectable): CardRow {
     event_bonus_questions_json: row.event_bonus_questions_json,
     public: Number(row.public),
     is_template: Number(row.is_template),
+    archived_at: row.archived_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -325,6 +333,7 @@ function mapSummary(card: CardRow): CardSummary {
     name: card.name ?? "Untitled card",
     isPublic: card.public === 1,
     isTemplate: card.is_template === 1,
+    archivedAt: card.archived_at,
     createdAt: card.created_at,
     updatedAt: card.updated_at,
   };
@@ -344,11 +353,22 @@ function resolveCardValue<T>(
 
 export async function listReadableCards(
   userId: string | null,
+  options: { includeArchived?: boolean } = {},
 ): Promise<CardSummary[]> {
+  const { includeArchived = false } = options;
+
   const rows = await db
     .selectFrom("cards")
     .selectAll()
     .where((eb) => canReadCard(eb, userId))
+    .where((eb) => {
+      if (!includeArchived || !userId) {
+        return isActiveCard(eb);
+      }
+      // includeArchived widening is owner-scoped: show archived rows only
+      // when the viewer is the owner. Other users' archived cards stay hidden.
+      return eb.or([isActiveCard(eb), eb("owner_id", "=", userId)]);
+    })
     .orderBy("updated_at", "desc")
     .execute();
 
@@ -371,6 +391,7 @@ export async function createCardFromTemplate(
     .where("id", "=", templateCardId)
     .where("is_template", "=", 1)
     .where("public", "=", 1)
+    .where("archived_at", "is", null)
     .executeTakeFirst();
 
   if (!template) return null;
@@ -575,6 +596,7 @@ export async function findResolvedReadableCardById(
       tiebreakerIsTimeBased: card.tiebreaker_is_time_based === 1,
       matches: ownMatches,
       eventBonusQuestions: parseBonusQuestions(card.event_bonus_questions_json),
+      archivedAt: card.archived_at,
       createdAt: card.created_at,
       updatedAt: card.updated_at,
     };
@@ -610,6 +632,7 @@ export async function findResolvedReadableCardById(
       tiebreakerIsTimeBased: false,
       matches: [],
       eventBonusQuestions: [],
+      archivedAt: card.archived_at,
       createdAt: card.created_at,
       updatedAt: card.updated_at,
     };
@@ -737,6 +760,7 @@ export async function findResolvedReadableCardById(
         "[]",
       ),
     ),
+    archivedAt: card.archived_at,
     createdAt: card.created_at,
     updatedAt: card.updated_at,
   };
@@ -973,6 +997,68 @@ export async function persistOwnedCardSheet(
   });
 
   return findResolvedReadableCardById(cardId, ownerId);
+}
+
+export async function archiveCard(
+  cardId: string,
+  ownerId: string,
+): Promise<CardSummary | null> {
+  const now = new Date().toISOString();
+
+  const result = await db
+    .updateTable("cards")
+    .set({ archived_at: now, updated_at: now })
+    .where("id", "=", cardId)
+    .where((eb) => isCardOwner(eb, ownerId))
+    .where("archived_at", "is", null)
+    .executeTakeFirst();
+
+  if (Number(result.numUpdatedRows ?? 0) === 0) {
+    // Either not owner, not found, or already archived — disambiguate.
+    const row = await db
+      .selectFrom("cards")
+      .selectAll()
+      .where("id", "=", cardId)
+      .where((eb) => isCardOwner(eb, ownerId))
+      .executeTakeFirst();
+    if (!row) return null;
+    const card = asCardRow(row);
+    return { ...mapSummary(card), ownerId };
+  }
+
+  const row = await db
+    .selectFrom("cards")
+    .selectAll()
+    .where("id", "=", cardId)
+    .executeTakeFirstOrThrow();
+  const card = asCardRow(row);
+  return { ...mapSummary(card), ownerId };
+}
+
+export async function unarchiveCard(
+  cardId: string,
+  ownerId: string,
+): Promise<CardSummary | null> {
+  const now = new Date().toISOString();
+
+  const result = await db
+    .updateTable("cards")
+    .set({ archived_at: null, updated_at: now })
+    .where("id", "=", cardId)
+    .where((eb) => isCardOwner(eb, ownerId))
+    .executeTakeFirst();
+
+  if (Number(result.numUpdatedRows ?? 0) === 0) {
+    return null;
+  }
+
+  const row = await db
+    .selectFrom("cards")
+    .selectAll()
+    .where("id", "=", cardId)
+    .executeTakeFirstOrThrow();
+  const card = asCardRow(row);
+  return { ...mapSummary(card), ownerId };
 }
 
 export async function listTemplateCardsForAdmin(): Promise<CardSummary[]> {
