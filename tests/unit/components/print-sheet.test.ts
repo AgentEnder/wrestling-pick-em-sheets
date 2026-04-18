@@ -122,8 +122,9 @@ describe("PrintSheet", () => {
       }),
     );
 
-    assert.match(html, /Surprise 1:/);
-    assert.match(html, /Surprise guesses \(2 pts each\):/);
+    assert.match(html, /Surprise guesses \(2 pts each, check winner\):/);
+    assert.match(html, /class="print-surprise-num">1\./);
+    assert.match(html, /class="print-surprise-num">2\./);
   });
 
   test("marks low-complexity sheets as sparse and omits empty tiebreaker footer", () => {
