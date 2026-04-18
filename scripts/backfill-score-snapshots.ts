@@ -22,6 +22,8 @@
  * on and asks for typed confirmation before applying. Local env files
  * often point to prod — read carefully before confirming.
  */
+import "./_load-env-local.ts";
+
 import { createInterface } from "node:readline/promises";
 
 import { db } from "@/lib/server/db/client";
