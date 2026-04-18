@@ -1341,7 +1341,7 @@ interface ClosestBucket {
   entries: Array<{ playerId: string; distance: number }>;
 }
 
-function computeLeaderboard(
+export function computeLeaderboard(
   card: ResolvedCard,
   keyPayload: LiveGameKeyPayload,
   players: LiveGamePlayer[],
