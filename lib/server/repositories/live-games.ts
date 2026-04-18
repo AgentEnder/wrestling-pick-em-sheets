@@ -3299,7 +3299,10 @@ export async function getLiveGameState(
         let perQuestion: BreakdownRow[] = [];
         if (snap.breakdown_json) {
           try {
-            perQuestion = JSON.parse(snap.breakdown_json) as BreakdownRow[];
+            const parsed = JSON.parse(snap.breakdown_json);
+            if (Array.isArray(parsed)) {
+              perQuestion = parsed as BreakdownRow[];
+            }
           } catch {
             perQuestion = [];
           }
