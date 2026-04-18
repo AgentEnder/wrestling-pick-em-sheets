@@ -800,6 +800,21 @@ export function LiveGamePlayerApp({
             onSetTiebreakerAnswer={setTiebreakerAnswer}
           />
 
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => void handleSave()}
+              disabled={isSaving}
+            >
+              {isSaving
+                ? "Saving..."
+                : me.player.isSubmitted
+                  ? "Update Picks"
+                  : "Save Picks"}
+            </Button>
+          </div>
+
           <section className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
               <h3 className="font-semibold">Leaderboard</h3>
