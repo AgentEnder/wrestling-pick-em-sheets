@@ -1,8 +1,18 @@
 /**
  * One-off backfill: re-run snapshotScores for every ended game whose
- * snapshot rows were written before migration 0025 (i.e. have null
- * breakdown_json). This rewrites total_score, winner/bonus/surprise points,
- * rank, and breakdown_json using the current scoring engine.
+ * snapshot rows are inconsistent. A row is flagged when any of these hold:
+ *
+ *   - breakdown_json IS NULL (written pre-migration 0025 — can't verify
+ *     internally but definitely renders blank rows in the UI),
+ *   - breakdown_json is populated but sum(parsed.score) !== total_score
+ *     (the stored aggregate and the stored breakdown disagree — internal
+ *     inconsistency in the snapshot row itself),
+ *   - fresh computeLeaderboard disagrees with the stored total_score
+ *     (stored data is stale relative to the current scoring engine).
+ *
+ * Fixing a flagged row rewrites total_score, winner/bonus/surprise points,
+ * rank, and breakdown_json via snapshotScores — the exact path the app
+ * uses at game-end.
  *
  * Usage:
  *   pnpm tsx scripts/backfill-score-snapshots.ts            # dry-run (default)
@@ -21,7 +31,11 @@ import {
   snapshotScores,
 } from "@/lib/server/repositories/live-games";
 import { normalizeLiveKeyPayload } from "@/lib/server/repositories/live-keys";
-import type { LiveGameKeyPayload, LivePlayerPicksPayload } from "@/lib/types";
+import type {
+  BreakdownRow,
+  LiveGameKeyPayload,
+  LivePlayerPicksPayload,
+} from "@/lib/types";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -49,18 +63,16 @@ async function confirm(prompt: string, expected: string): Promise<boolean> {
   return answer.trim() === expected;
 }
 
-interface GameToBackfill {
+interface EndedGame {
   id: string;
   cardId: string;
   hostUserId: string;
   endedAt: string | null;
   keyPayload: LiveGameKeyPayload;
-  snapshotCount: number;
-  nullBreakdownCount: number;
 }
 
-async function findGamesNeedingBackfill(): Promise<GameToBackfill[]> {
-  const endedGames = await db
+async function listEndedGames(): Promise<EndedGame[]> {
+  const rows = await db
     .selectFrom("live_games")
     .select([
       "id",
@@ -72,51 +84,56 @@ async function findGamesNeedingBackfill(): Promise<GameToBackfill[]> {
     .where("status", "=", "ended")
     .execute();
 
-  const out: GameToBackfill[] = [];
-  for (const g of endedGames) {
-    const snapshots = await db
-      .selectFrom("live_game_score_snapshots")
-      .select(["breakdown_json"])
-      .where("game_id", "=", String(g.id))
-      .execute();
-
-    if (snapshots.length === 0) continue;
-    const nullCount = snapshots.filter((s) => !s.breakdown_json).length;
-    if (nullCount === 0) continue;
-
-    out.push({
-      id: String(g.id),
-      cardId: g.card_id,
-      hostUserId: g.host_user_id,
-      endedAt: g.ended_at,
-      keyPayload: normalizeLiveKeyPayload(
-        parseJson<unknown>(g.key_payload_json, {}),
-      ),
-      snapshotCount: snapshots.length,
-      nullBreakdownCount: nullCount,
-    });
-  }
-  return out;
+  return rows.map((g) => ({
+    id: String(g.id),
+    cardId: g.card_id,
+    hostUserId: g.host_user_id,
+    endedAt: g.ended_at,
+    keyPayload: normalizeLiveKeyPayload(
+      parseJson<unknown>(g.key_payload_json, {}),
+    ),
+  }));
 }
 
-interface DiffRow {
+type FlagReason = "null-breakdown" | "sum-mismatch" | "stale-vs-engine";
+
+interface PlayerDiff {
   playerId: string;
   nickname: string;
   oldTotal: number;
   newTotal: number;
+  oldBreakdownSum: number | null; // null when breakdown_json is absent/invalid
   oldWinner: number;
   newWinner: number;
   oldBonus: number;
   newBonus: number;
   oldSurprise: number;
   newSurprise: number;
+  reasons: FlagReason[];
 }
 
-async function buildDiff(game: GameToBackfill): Promise<DiffRow[] | null> {
-  const card = await findResolvedReadableCardById(
-    game.cardId,
-    game.hostUserId,
-  );
+interface GameDiff {
+  game: EndedGame;
+  snapshotCount: number;
+  players: PlayerDiff[];
+}
+
+function sumBreakdown(json: string | null): number | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed)) return null;
+    return (parsed as BreakdownRow[]).reduce(
+      (acc, r) => acc + (typeof r.score === "number" ? r.score : 0),
+      0,
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function buildGameDiff(game: EndedGame): Promise<GameDiff | null> {
+  const card = await findResolvedReadableCardById(game.cardId, game.hostUserId);
   if (!card) return null;
 
   const playerRows = await db
@@ -139,16 +156,14 @@ async function buildDiff(game: GameToBackfill): Promise<DiffRow[] | null> {
     }),
     updatedAt: row.updated_at,
     lastSeenAt: row.last_seen_at,
-    // computeLeaderboard only uses the fields above; the cast is safe here
   })) as unknown as Parameters<typeof computeLeaderboard>[2];
 
   const leaderboard = computeLeaderboard(card, game.keyPayload, players);
-  const nicknameToPlayerId = new Map<string, string>();
-  for (const p of playerRows) {
-    nicknameToPlayerId.set(p.nickname.trim().toLowerCase(), String(p.id));
-  }
+  const freshByNickname = new Map(
+    leaderboard.map((e) => [e.nickname.trim().toLowerCase(), e]),
+  );
 
-  const existing = await db
+  const snapshots = await db
     .selectFrom("live_game_score_snapshots")
     .select([
       "player_id",
@@ -156,31 +171,50 @@ async function buildDiff(game: GameToBackfill): Promise<DiffRow[] | null> {
       "winner_points",
       "bonus_points",
       "surprise_points",
+      "breakdown_json",
     ])
     .where("game_id", "=", game.id)
     .execute();
-  const existingById = new Map(existing.map((e) => [e.player_id, e]));
 
-  const rows: DiffRow[] = [];
-  for (const entry of leaderboard) {
-    if (!entry.isSubmitted) continue;
-    const playerId = nicknameToPlayerId.get(entry.nickname.trim().toLowerCase());
-    if (!playerId) continue;
-    const prev = existingById.get(playerId);
-    rows.push({
-      playerId,
-      nickname: entry.nickname,
-      oldTotal: prev?.total_score ?? 0,
-      newTotal: entry.score,
-      oldWinner: prev?.winner_points ?? 0,
-      newWinner: entry.breakdown.winnerPoints,
-      oldBonus: prev?.bonus_points ?? 0,
-      newBonus: entry.breakdown.bonusPoints,
-      oldSurprise: prev?.surprise_points ?? 0,
-      newSurprise: entry.breakdown.surprisePoints,
+  const nicknameById = new Map(
+    playerRows.map((p) => [String(p.id), p.nickname]),
+  );
+
+  const out: PlayerDiff[] = [];
+  for (const snap of snapshots) {
+    const nickname = nicknameById.get(snap.player_id) ?? "(unknown)";
+    const fresh = freshByNickname.get(nickname.trim().toLowerCase());
+    const breakdownSum = sumBreakdown(snap.breakdown_json);
+
+    const reasons: FlagReason[] = [];
+    if (snap.breakdown_json === null) {
+      reasons.push("null-breakdown");
+    } else if (breakdownSum !== null && breakdownSum !== snap.total_score) {
+      reasons.push("sum-mismatch");
+    }
+    if (fresh && fresh.score !== snap.total_score) {
+      reasons.push("stale-vs-engine");
+    }
+
+    if (reasons.length === 0) continue;
+
+    out.push({
+      playerId: snap.player_id,
+      nickname,
+      oldTotal: snap.total_score,
+      newTotal: fresh?.score ?? snap.total_score,
+      oldBreakdownSum: breakdownSum,
+      oldWinner: snap.winner_points,
+      newWinner: fresh?.breakdown.winnerPoints ?? snap.winner_points,
+      oldBonus: snap.bonus_points,
+      newBonus: fresh?.breakdown.bonusPoints ?? snap.bonus_points,
+      oldSurprise: snap.surprise_points,
+      newSurprise: fresh?.breakdown.surprisePoints ?? snap.surprise_points,
+      reasons,
     });
   }
-  return rows;
+
+  return { game, snapshotCount: snapshots.length, players: out };
 }
 
 function formatDelta(a: number, b: number): string {
@@ -197,54 +231,66 @@ async function main() {
   console.log(`Mode       : ${APPLY ? "APPLY (writes will occur)" : "dry-run"}`);
   console.log();
 
-  const games = await findGamesNeedingBackfill();
-  if (games.length === 0) {
-    console.log("No ended games with null breakdown_json. Nothing to do.");
-    return;
-  }
-
-  console.log(`Found ${games.length} ended game(s) with at least one null breakdown_json.`);
+  const endedGames = await listEndedGames();
+  console.log(`Scanning ${endedGames.length} ended game(s)...`);
   console.log();
 
-  let gamesWithChanges = 0;
-  let totalPlayerRowDelta = 0;
-
-  for (const game of games) {
-    const diff = await buildDiff(game);
+  const flaggedGames: GameDiff[] = [];
+  for (const game of endedGames) {
+    const diff = await buildGameDiff(game);
     if (!diff) {
       console.log(`[skip] game ${game.id} — could not load card ${game.cardId}`);
       continue;
     }
-    const changedRows = diff.filter(
-      (r) =>
-        r.oldTotal !== r.newTotal ||
-        r.oldWinner !== r.newWinner ||
-        r.oldBonus !== r.newBonus ||
-        r.oldSurprise !== r.newSurprise,
-    );
+    if (diff.players.length > 0) flaggedGames.push(diff);
+  }
+
+  if (flaggedGames.length === 0) {
+    console.log("No inconsistent snapshots. Nothing to do.");
+    return;
+  }
+
+  let totalPlayerRows = 0;
+  const reasonCounts = {
+    "null-breakdown": 0,
+    "sum-mismatch": 0,
+    "stale-vs-engine": 0,
+  };
+
+  for (const { game, snapshotCount, players } of flaggedGames) {
+    totalPlayerRows += players.length;
+    for (const p of players) for (const r of p.reasons) reasonCounts[r] += 1;
 
     console.log(`Game ${game.id}  (ended ${game.endedAt ?? "?"})`);
     console.log(
-      `  snapshots=${game.snapshotCount}  null_breakdown=${game.nullBreakdownCount}  changed=${changedRows.length}/${diff.length}`,
+      `  snapshots=${snapshotCount}  flagged=${players.length}`,
     );
-    if (changedRows.length > 0) {
-      gamesWithChanges += 1;
-      totalPlayerRowDelta += changedRows.length;
+    console.log(
+      "    player                total (old→new)   win     bonus   surp    reasons",
+    );
+    for (const p of players) {
+      const reasonLabel = p.reasons
+        .map((r) =>
+          r === "null-breakdown"
+            ? "null"
+            : r === "sum-mismatch"
+              ? `sum=${p.oldBreakdownSum ?? "?"}≠total=${p.oldTotal}`
+              : "stale",
+        )
+        .join(",");
       console.log(
-        "    player                total (old→new)   win   bonus   surprise",
+        `    ${p.nickname.padEnd(22).slice(0, 22)}  ${String(p.oldTotal).padStart(4)}→${String(p.newTotal).padEnd(4)}${formatDelta(p.oldTotal, p.newTotal)}${formatDelta(p.oldWinner, p.newWinner)}${formatDelta(p.oldBonus, p.newBonus)}${formatDelta(p.oldSurprise, p.newSurprise)}   ${reasonLabel}`,
       );
-      for (const r of changedRows) {
-        console.log(
-          `    ${r.nickname.padEnd(22).slice(0, 22)}  ${String(r.oldTotal).padStart(4)}→${String(r.newTotal).padEnd(4)}${formatDelta(r.oldTotal, r.newTotal)}${formatDelta(r.oldWinner, r.newWinner)}${formatDelta(r.oldBonus, r.newBonus)}${formatDelta(r.oldSurprise, r.newSurprise)}`,
-        );
-      }
     }
     console.log();
   }
 
   console.log("-".repeat(70));
   console.log(
-    `Summary: ${gamesWithChanges}/${games.length} game(s) would change; ${totalPlayerRowDelta} player row(s) affected.`,
+    `Summary: ${flaggedGames.length} game(s), ${totalPlayerRows} player row(s) flagged.`,
+  );
+  console.log(
+    `  null-breakdown=${reasonCounts["null-breakdown"]}  sum-mismatch=${reasonCounts["sum-mismatch"]}  stale-vs-engine=${reasonCounts["stale-vs-engine"]}`,
   );
 
   if (!APPLY) {
@@ -265,7 +311,7 @@ async function main() {
   }
 
   let applied = 0;
-  for (const game of games) {
+  for (const { game } of flaggedGames) {
     const card = await findResolvedReadableCardById(
       game.cardId,
       game.hostUserId,
