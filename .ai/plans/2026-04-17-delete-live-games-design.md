@@ -34,7 +34,7 @@ The deliberate divergence: archive used `POST /archive` + `POST /unarchive` sub-
 | Question | Decision |
 |---|---|
 | Hard vs soft delete | Soft (nullable `deleted_at`), with 30-day lazy purge into real `DELETE` + cascade |
-| Scope: room + solo? | Both. New `getOwnedLiveGame` helper drops the `mode === 'room'` gate kept by `getHostLiveGame` |
+| Scope: room + solo? | **Room only.** The `/cards/[cardId]/live` surface (our only delete entry point per Q9) already filters `mode === 'room'` via `listCardLiveGames`; solo games are managed in-place via `solo-key-app.tsx` and aren't listed anywhere. Solo deletion can be a separate issue once the room pattern ships. |
 | Allowed statuses | Any — lobby, live, ended |
 | Confirmation UX | `<AlertDialog>` explaining the 30-day trash + restore, single Cancel / Delete action |
 | Retention | 30 days, lazy purge on `listCardLiveGames` reads (no cron) |
@@ -94,24 +94,20 @@ Each change is a single `.where("deleted_at", "is", null)` clause. Downstream qu
 ### New repository functions (add to `live-games.ts`)
 
 ```ts
-// Broader ownership than getHostLiveGame — allows solo-mode, optionally includes soft-deleted rows (for restore).
-export async function getOwnedLiveGame(
-  gameId: string,
-  userId: string,
-  opts?: { includeDeleted?: boolean }
-): Promise<LiveGame | null>
-
+// Scoped to room-mode games owned by the caller. Mirrors getHostLiveGame's
+// filters (host_user_id + mode='room') and lets the caller opt into seeing
+// soft-deleted rows (needed for restore).
 export async function softDeleteLiveGame(
   gameId: string,
   userId: string
 ): Promise<LiveGame | null>
-// UPDATE live_games SET deleted_at = now() WHERE id=? AND host_user_id=? AND deleted_at IS NULL
+// UPDATE live_games SET deleted_at = now() WHERE id=? AND host_user_id=? AND mode='room' AND deleted_at IS NULL
 
 export async function restoreLiveGame(
   gameId: string,
   userId: string
 ): Promise<LiveGame | null>
-// UPDATE live_games SET deleted_at = NULL WHERE id=? AND host_user_id=? AND deleted_at IS NOT NULL
+// UPDATE live_games SET deleted_at = NULL WHERE id=? AND host_user_id=? AND mode='room' AND deleted_at IS NOT NULL
 
 export async function purgeExpiredLiveGames(): Promise<number>
 // DELETE FROM live_games WHERE deleted_at IS NOT NULL AND deleted_at < now() - 30d
@@ -119,6 +115,8 @@ export async function purgeExpiredLiveGames(): Promise<number>
 
 export const LIVE_GAME_SOFT_DELETE_RETENTION_DAYS = 30;
 ```
+
+No new "ownership helper" is needed. Both mutating functions replicate the `host_user_id + mode='room'` guard that `getHostLiveGame` uses today — consistent with the scope-narrowed Q1 decision.
 
 ### Lazy purge wiring
 
@@ -249,7 +247,7 @@ Model after `tests/unit/repositories/cards-archive.test.ts` (shipped with #16).
 3. **`listCardLiveGames({ includeDeleted: true })`** — surfaces the deleted game with `deletedAt`.
 4. **Restore** — flips `deleted_at` back; gatekeepers resume returning the game; children untouched.
 5. **Non-owner blocked** — 404-equivalent null return; row untouched.
-6. **Solo-mode deletable** — confirms the room-only gate was correctly dropped for this path.
+6. **Solo-mode blocked** — `softDeleteLiveGame` on a `mode='solo'` row returns null; row untouched. Scope is room-only per the amended Q1.
 7. **Idempotent re-delete** — re-delete returns null; `deleted_at` unchanged.
 8. **30-day purge** — insert a row with `deleted_at = now - 31d` + child rows; `purgeExpiredLiveGames` deletes the row AND the children (cascade fires). A row at 29d survives.
 
