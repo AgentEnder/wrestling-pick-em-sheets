@@ -247,7 +247,6 @@ describe("computeLeaderboard — perQuestion breakdown", () => {
       nickname: "Alice",
       picks: makePicks({
         eventBonusAnswers: [{ questionId: "q1", answer: "28" }],
-        tiebreakerAnswer: null,
       }),
     });
     const farther = makePlayer({
@@ -255,7 +254,6 @@ describe("computeLeaderboard — perQuestion breakdown", () => {
       nickname: "Bob",
       picks: makePicks({
         eventBonusAnswers: [{ questionId: "q1", answer: "50" }],
-        tiebreakerAnswer: null,
       }),
     });
 
