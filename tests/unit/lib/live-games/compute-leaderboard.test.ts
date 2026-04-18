@@ -228,6 +228,51 @@ describe("computeLeaderboard — perQuestion breakdown", () => {
     ]);
   });
 
+  test("closest-rule: winner's per-question row gets back-filled with the points", () => {
+    const question = makeQuestion({
+      id: "q1",
+      question: "Duration?",
+      points: 4,
+      valueType: "numerical",
+      gradingRule: "closest",
+    });
+    const card = makeCard({ eventBonusQuestions: [question] });
+    const key = makeKey({
+      eventBonusAnswers: [
+        { questionId: "q1", answer: "30", recordedAt: null, timerId: null },
+      ],
+    });
+    const closer = makePlayer({
+      id: "p1",
+      nickname: "Alice",
+      picks: makePicks({
+        eventBonusAnswers: [{ questionId: "q1", answer: "28" }],
+        tiebreakerAnswer: null,
+      }),
+    });
+    const farther = makePlayer({
+      id: "p2",
+      nickname: "Bob",
+      picks: makePicks({
+        eventBonusAnswers: [{ questionId: "q1", answer: "50" }],
+        tiebreakerAnswer: null,
+      }),
+    });
+
+    const leaderboard = computeLeaderboard(card, key, [closer, farther]);
+    const alice = leaderboard.find((e) => e.nickname === "Alice")!;
+    const bob = leaderboard.find((e) => e.nickname === "Bob")!;
+
+    assert.equal(alice.score, 4);
+    assert.deepEqual(alice.breakdown.perQuestion, [
+      { kind: "event-bonus", questionId: "q1", score: 4, maxPoints: 4 },
+    ]);
+    assert.equal(bob.score, 0);
+    assert.deepEqual(bob.breakdown.perQuestion, [
+      { kind: "event-bonus", questionId: "q1", score: 0, maxPoints: 4 },
+    ]);
+  });
+
   test("does not emit bonus row when host has not keyed an answer", () => {
     const question = makeQuestion({ id: "q1", question: "First finisher?", points: 3 });
     const match = makeMatch({ id: "m1", bonusQuestions: [question] });

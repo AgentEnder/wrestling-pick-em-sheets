@@ -1616,6 +1616,25 @@ export function computeLeaderboard(
       if (!score) continue;
       score.score += bucket.points;
       score.bonusPoints += bucket.points;
+
+      const parts = bucket.key.split(":");
+      if (parts[0] === "match" && parts[1] && parts[2]) {
+        const matchId = parts[1];
+        const questionId = parts[2];
+        const row = score.perQuestion.find(
+          (r) =>
+            r.kind === "match-bonus" &&
+            r.matchId === matchId &&
+            r.questionId === questionId,
+        );
+        if (row) row.score = bucket.points;
+      } else if (parts[0] === "event" && parts[1]) {
+        const questionId = parts[1];
+        const row = score.perQuestion.find(
+          (r) => r.kind === "event-bonus" && r.questionId === questionId,
+        );
+        if (row) row.score = bucket.points;
+      }
     }
   }
 
