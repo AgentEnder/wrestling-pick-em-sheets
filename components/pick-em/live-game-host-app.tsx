@@ -140,12 +140,20 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
   }
 
   async function handleRestore(gameId: string) {
+    const target = deletedGames.find((g) => g.id === gameId);
+    if (!target) return;
+    const gamesSnapshot = games;
+    const deletedSnapshot = deletedGames;
+    const optimistic: LiveGame = { ...target, deletedAt: null };
+    setDeletedGames((prev) => prev.filter((g) => g.id !== gameId));
+    setGames((prev) => [optimistic, ...prev]);
     try {
       await restoreLiveGame(gameId);
-      setDeletedGames((prev) => prev.filter((g) => g.id !== gameId));
-      await loadGames();
       toast.success("Game restored");
+      await loadGames();
     } catch (error) {
+      setGames(gamesSnapshot);
+      setDeletedGames(deletedSnapshot);
       const message =
         error instanceof Error ? error.message : "Failed to restore game";
       toast.error(message);
