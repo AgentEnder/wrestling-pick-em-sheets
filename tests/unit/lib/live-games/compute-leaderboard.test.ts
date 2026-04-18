@@ -3,10 +3,8 @@ import { describe, test } from "node:test";
 
 import { computeLeaderboard } from "@/lib/server/repositories/live-games";
 import type {
-  BonusQuestion,
   LiveGameKeyPayload,
   LiveGamePlayer,
-  Match,
 } from "@/lib/types";
 import type { ResolvedCard } from "@/lib/server/repositories/cards";
 
