@@ -348,6 +348,74 @@ describe("computeLeaderboard — perQuestion breakdown", () => {
     ]);
   });
 
+  test("invariant: sum of perQuestion.score equals winnerPoints + bonusPoints + surprisePoints for every entry", () => {
+    const question = makeQuestion({ id: "q1", question: "First finisher?", points: 3 });
+    const match = makeMatch({
+      id: "m1",
+      title: "Main Event",
+      points: 10,
+      bonusQuestions: [question],
+      isBattleRoyal: true,
+      surpriseSlots: 1,
+      surpriseEntrantPoints: 5,
+      type: "battle-royal",
+    });
+    const card = makeCard({ matches: [match], eventBonusQuestions: [] });
+    const key = makeKey({
+      matchResults: [
+        makeMatchResult({
+          matchId: "m1",
+          winnerName: "Cody",
+          battleRoyalEntryOrder: ["Sting"],
+          bonusAnswers: [
+            { questionId: "q1", answer: "Cross Rhodes", recordedAt: null, timerId: null },
+          ],
+        }),
+      ],
+    });
+    const alice = makePlayer({
+      id: "p1",
+      nickname: "Alice",
+      picks: makePicks({
+        matchPicks: [
+          makeMatchPick({
+            matchId: "m1",
+            winnerName: "Cody",
+            battleRoyalEntrants: ["Sting"],
+            bonusAnswers: [{ questionId: "q1", answer: "Cross Rhodes" }],
+          }),
+        ],
+      }),
+    });
+    const bob = makePlayer({
+      id: "p2",
+      nickname: "Bob",
+      picks: makePicks({
+        matchPicks: [
+          makeMatchPick({
+            matchId: "m1",
+            winnerName: "Roman",
+            battleRoyalEntrants: [],
+            bonusAnswers: [{ questionId: "q1", answer: "Wrong" }],
+          }),
+        ],
+      }),
+    });
+
+    for (const entry of computeLeaderboard(card, key, [alice, bob])) {
+      const perQuestionSum = entry.breakdown.perQuestion.reduce(
+        (s, r) => s + r.score,
+        0,
+      );
+      const aggregateSum =
+        entry.breakdown.winnerPoints +
+        entry.breakdown.bonusPoints +
+        entry.breakdown.surprisePoints;
+      assert.equal(perQuestionSum, aggregateSum, `Mismatch for ${entry.nickname}`);
+      assert.equal(perQuestionSum, entry.score, `Total mismatch for ${entry.nickname}`);
+    }
+  });
+
   test("surprise: entrant nobody picked produces no row", () => {
     const match = makeMatch({
       id: "m1",
