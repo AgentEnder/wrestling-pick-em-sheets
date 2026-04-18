@@ -30,6 +30,7 @@ import { DisplayHeader } from "./live-display/display-header";
 import { LobbyView } from "./live-display/lobby-view";
 import { ActiveGameView } from "./live-display/active-game-view";
 import { EndedView } from "./live-display/ended-view";
+import { DisplayCanceledView } from "./live-display/display-canceled-view";
 import {
   JoinOverlay,
   type JoinOverlayEntry,
@@ -465,7 +466,9 @@ export function LiveGameDisplayApp({
       />
 
       <div className="min-h-0 flex-1">
-        {state.game.status === "lobby" ? (
+        {state.game.status === "canceled" ? (
+          <DisplayCanceledView />
+        ) : state.game.status === "lobby" ? (
           <LobbyView
             state={state}
             joinQrCodeDataUrl={joinQrCodeDataUrl}

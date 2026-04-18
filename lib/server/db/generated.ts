@@ -182,6 +182,7 @@ export interface LiveGames {
   allow_late_joins: Generated<number>;
   card_id: string;
   created_at: Generated<string>;
+  deleted_at: string | null;
   ended_at: string | null;
   expires_at: string;
   geo_radius_km: Generated<number>;

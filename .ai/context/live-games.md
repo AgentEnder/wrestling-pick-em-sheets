@@ -47,6 +47,8 @@ Selectors live in `stores/selectors.ts`.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/live-games/:gameId/state?code=...` | Full state for player/display |
+| DELETE | `/api/live-games/:gameId` | Soft-delete (host-owner via `getRequestUserId`, CSRF enforced) |
+| POST | `/api/live-games/:gameId/restore` | Restore a soft-deleted game within 30 days (host-owner via `getRequestUserId`, CSRF enforced) |
 | GET / PUT | `/api/live-games/:gameId/status` | Lifecycle (lobby ↔ live ↔ ended) |
 | GET / PUT | `/api/live-games/:gameId/key` | Host's key payload (host only) |
 | GET / PUT | `/api/live-games/:gameId/locks` | Host lock controls |
@@ -55,10 +57,11 @@ Selectors live in `stores/selectors.ts`.
 | POST | `/api/live-games/:gameId/me/submit` | Submit (sets `is_submitted = true`) |
 | GET / POST / PUT | `/api/live-games/:gameId/join-requests` | Host approves late joiners |
 | GET / POST / DELETE | `/api/live-games/:gameId/push-subscriptions` | Web push |
+| GET | `/api/cards/:cardId/live-games` | Host's game list for a card. Accepts `?includeDeleted=true` to surface soft-deleted rows for the "Recently deleted" collapsible. |
 | POST | `/api/live-games/join` | Join from code |
 | POST | `/api/live-games/join-preview` | Preview join (before committing nickname) |
 
-**There is NO `app/api/live-games/[gameId]/route.ts`** — no top-level GET/DELETE for a game record. Issue #23 needs to add `DELETE` here.
+`app/api/live-games/[gameId]/route.ts` now exists and hosts the `DELETE` method added for issue #23; `app/api/live-games/[gameId]/restore/route.ts` hosts the companion restore endpoint.
 
 ## Authorization
 
@@ -76,7 +79,18 @@ Selectors live in `stores/selectors.ts`.
 - "Allow late joins" toggle
 - Scheduled start time input
 
-There is **no Delete button** today — issue #23.
+Delete is **not** in `game-lifecycle-controls.tsx`. The delete affordance lives on `LiveGameHostApp` (`components/pick-em/live-game-host-app.tsx`) at `/cards/[cardId]/live` as a kebab (three-dot) menu that opens an `AlertDialog` confirm flow (`components/pick-em/live-host/delete-live-game-dialog.tsx`). Confirming calls `DELETE /api/live-games/:gameId`, which sets `deleted_at` rather than hard-deleting; a sonner toast provides undo within the 30-day window by hitting `POST /api/live-games/:gameId/restore`. Lazy purge removes rows once `deleted_at` is older than 30 days (triggered by `listCardLiveGames`).
+
+### Soft-delete + recovery
+
+Soft-delete semantics for issue #23:
+
+- `live_games.deleted_at` column (nullable ISO timestamp). Non-null = soft-deleted.
+- Four repository gatekeepers filter `deleted_at IS NULL` on read/mutate paths: `getHostLiveGame`, `listCardLiveGames` (unless `includeDeleted: true`), `updateLiveGameStatus`/`updateLiveGameLocks`/`updateLiveGameKeyForHost` (mutators return `null` for deleted rows), and `/api/my-games` (player history hides deleted games immediately).
+- 30-day lazy purge: every call to `listCardLiveGames` opportunistically runs `purgeExpiredLiveGames()`, which hard-deletes rows where `deleted_at < now - 30d` and lets FK cascades clean up children (`live_game_events`, `live_game_players`, `live_game_score_snapshots`, `live_game_push_subscriptions`).
+- Canceled-view: connected players and displays see a dedicated "game canceled" state — `getLiveGameState` reports `status: "canceled"` to active session-token/clerk requesters on a soft-deleted game, and returns `null` to strangers.
+
+See `.ai/plans/2026-04-17-delete-live-games-design.md` for the full design.
 
 ## Player save / submit flow
 

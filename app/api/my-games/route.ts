@@ -41,6 +41,7 @@ export async function GET(request: Request) {
     ])
     .where("p.clerk_user_id", "=", userId)
     .where("p.join_status", "=", "approved")
+    .where("g.deleted_at", "is", null)
     .orderBy("g.created_at", "desc")
     .execute();
 

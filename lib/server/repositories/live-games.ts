@@ -117,6 +117,7 @@ export interface LiveGameViewerAccess {
   card: ResolvedCard;
   player: LiveGamePlayer | null;
   isHost: boolean;
+  isCanceled?: boolean;
 }
 
 interface PendingLiveGameEvent {
@@ -511,6 +512,7 @@ function mapLiveGame(row: LiveGameSelectable): LiveGame {
       : DEFAULT_GEO_RADIUS_KM,
     expiresAt: row.expires_at,
     endedAt: row.ended_at,
+    deletedAt: row.deleted_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     keyPayload: normalizeLiveKeyPayload(
@@ -2013,18 +2015,25 @@ export async function createLiveGame(
 export async function listCardLiveGames(
   cardId: string,
   hostUserId: string,
+  opts?: { includeDeleted?: boolean },
 ): Promise<LiveGame[] | null> {
   const ownsCard = await getHostOwnedCard(cardId, hostUserId);
   if (!ownsCard) return null;
 
-  const rows = await db
+  // Opportunistic purge of rows past the retention window. Indexed and cheap.
+  await purgeExpiredLiveGames();
+
+  let query = db
     .selectFrom("live_games")
     .selectAll()
     .where("card_id", "=", cardId)
-    .where("mode", "=", "room")
-    .orderBy("created_at", "desc")
-    .execute();
+    .where("mode", "=", "room");
 
+  if (!opts?.includeDeleted) {
+    query = query.where("deleted_at", "is", null);
+  }
+
+  const rows = await query.orderBy("created_at", "desc").execute();
   return rows.map((row) => mapLiveGame(row));
 }
 
@@ -2038,6 +2047,7 @@ export async function getHostLiveGame(
     .where("id", "=", gameId)
     .where("host_user_id", "=", hostUserId)
     .where("mode", "=", "room")
+    .where("deleted_at", "is", null)
     .executeTakeFirst();
 
   if (!row) return null;
@@ -2057,6 +2067,7 @@ export async function getLiveGameByJoinCode(
     .selectAll()
     .where("join_code", "=", joinCode.trim().toUpperCase())
     .where("mode", "=", "room")
+    .where("deleted_at", "is", null)
     .executeTakeFirst();
 
   if (!row) return null;
@@ -2108,6 +2119,7 @@ export async function updateLiveGameStatus(
     .selectAll()
     .where("id", "=", gameId)
     .where("host_user_id", "=", hostUserId)
+    .where("deleted_at", "is", null)
     .executeTakeFirst();
 
   if (!row) return null;
@@ -2188,6 +2200,7 @@ export async function updateLiveGameLocks(
     .selectAll()
     .where("id", "=", gameId)
     .where("host_user_id", "=", hostUserId)
+    .where("deleted_at", "is", null)
     .executeTakeFirst();
 
   if (!row) return null;
@@ -2254,6 +2267,7 @@ export async function updateLiveGameKeyForHost(
     .selectAll()
     .where("id", "=", gameId)
     .where("host_user_id", "=", hostUserId)
+    .where("deleted_at", "is", null)
     .executeTakeFirst();
 
   if (!row) return null;
@@ -3186,6 +3200,32 @@ export async function getLiveGameViewerAccess(
 
   if (!gameRow) return null;
 
+  // Soft-deleted games are visible only to existing players on that game, so
+  // they see the "canceled" view on their next poll. Strangers (no session,
+  // no matching Clerk user) get the normal not-found experience.
+  if (gameRow.deleted_at) {
+    const playerFromSession = options.sessionTokenHash
+      ? await findLiveGamePlayerBySession(gameId, options.sessionTokenHash)
+      : null;
+    const player =
+      playerFromSession ??
+      (options.clerkUserId
+        ? await findLiveGamePlayerByClerkUserId(gameId, options.clerkUserId)
+        : null);
+    if (!player) return null;
+
+    const card = await getCardForGame(gameRow.card_id, gameRow.host_user_id);
+    if (!card) return null;
+
+    return {
+      game: mapLiveGame(gameRow),
+      card,
+      player,
+      isHost: false,
+      isCanceled: true,
+    };
+  }
+
   const card = await getCardForGame(gameRow.card_id, gameRow.host_user_id);
   if (!card) return null;
   const hydratedGameRow = await autoStartGameForCardEvent(gameRow, card);
@@ -3254,6 +3294,20 @@ export async function getLiveGameState(
 ): Promise<LiveGameComputedState | null> {
   const access = await getLiveGameViewerAccess(gameId, options);
   if (!access) return null;
+
+  if (access.isCanceled) {
+    return {
+      game: { ...access.game, status: "canceled" },
+      card: access.card,
+      joinedPlayers: [],
+      pendingJoinRequests: [],
+      leaderboard: [],
+      events: [],
+      playerCount: 0,
+      submittedCount: 0,
+      playerAnswerSummaries: [],
+    };
+  }
 
   const [playerRows, eventRows, snapshotRows] = await Promise.all([
     db
@@ -3607,4 +3661,74 @@ export async function submitLiveGamePlayer(
     .executeTakeFirstOrThrow();
 
   return mapLiveGamePlayer(updated);
+}
+
+export const LIVE_GAME_SOFT_DELETE_RETENTION_DAYS = 30;
+
+export async function softDeleteLiveGame(
+  gameId: string,
+  hostUserId: string,
+): Promise<LiveGame | null> {
+  const now = nowIso();
+
+  const result = await db
+    .updateTable("live_games")
+    .set({ deleted_at: now, updated_at: now })
+    .where("id", "=", gameId)
+    .where("host_user_id", "=", hostUserId)
+    .where("mode", "=", "room")
+    .where("deleted_at", "is", null)
+    .executeTakeFirst();
+
+  if (Number(result.numUpdatedRows ?? 0) === 0) {
+    // Either not owner, not room-mode, already deleted, or missing.
+    // All callers treat null the same (404) — no disambiguation needed.
+    return null;
+  }
+
+  const row = await db
+    .selectFrom("live_games")
+    .selectAll()
+    .where("id", "=", gameId)
+    .executeTakeFirstOrThrow();
+  return mapLiveGame(row);
+}
+
+export async function restoreLiveGame(
+  gameId: string,
+  hostUserId: string,
+): Promise<LiveGame | null> {
+  const now = nowIso();
+
+  const result = await db
+    .updateTable("live_games")
+    .set({ deleted_at: null, updated_at: now })
+    .where("id", "=", gameId)
+    .where("host_user_id", "=", hostUserId)
+    .where("mode", "=", "room")
+    .where("deleted_at", "is not", null)
+    .executeTakeFirst();
+
+  if (Number(result.numUpdatedRows ?? 0) === 0) return null;
+
+  const row = await db
+    .selectFrom("live_games")
+    .selectAll()
+    .where("id", "=", gameId)
+    .executeTakeFirstOrThrow();
+  return mapLiveGame(row);
+}
+
+export async function purgeExpiredLiveGames(): Promise<number> {
+  const cutoff = new Date(
+    Date.now() - LIVE_GAME_SOFT_DELETE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const result = await db
+    .deleteFrom("live_games")
+    .where("deleted_at", "is not", null)
+    .where("deleted_at", "<", cutoff)
+    .executeTakeFirst();
+
+  return Number(result.numDeletedRows ?? 0);
 }

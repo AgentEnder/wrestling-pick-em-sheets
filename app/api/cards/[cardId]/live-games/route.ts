@@ -176,7 +176,9 @@ export async function GET(
   }
 
   const { cardId } = await context.params;
-  const games = await listCardLiveGames(cardId, userId);
+  const includeDeleted =
+    new URL(request.url).searchParams.get("includeDeleted") === "true";
+  const games = await listCardLiveGames(cardId, userId, { includeDeleted });
 
   if (!games) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

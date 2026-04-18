@@ -159,7 +159,7 @@ export interface CardLiveKey {
   payload: CardLiveKeyPayload;
 }
 
-export type LiveGameStatus = "lobby" | "live" | "ended";
+export type LiveGameStatus = "lobby" | "live" | "ended" | "canceled";
 export type LiveGameMode = "room" | "solo";
 export type LiveGameKeyPayload = CardLiveKeyPayload;
 
@@ -211,6 +211,7 @@ export interface LiveGame {
   geoRadiusKm: number;
   expiresAt: string;
   endedAt: string | null;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
   keyPayload: LiveGameKeyPayload;
