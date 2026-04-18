@@ -61,3 +61,13 @@ Then `pnpm db:codegen` to refresh `lib/server/db/generated.ts`.
 
 - See `.ai/context/cards.md` (APIs + repository function locations) and `.ai/context/data-model.md` (cards schema, permissions).
 - See `.ai/context/auth-and-ownership.md` for the owner-check pattern to reuse on the new endpoint.
+
+## Resolution (2026-04-17)
+
+Landed via plan `docs/plans/2026-04-17-archive-cards.md`. Decisions:
+
+- **Global hiding**, owner-scoped widening: archived cards are hidden from every viewer's list by default. `GET /api/cards?includeArchived=true` only widens the filter for the caller's *own* archived cards — other users' archived public cards stay hidden.
+- **Templates are archivable** (past-event use case). Archiving a public template drops it from the Start From Template gallery and `createCardFromTemplate` refuses to clone archived templates.
+- **Archive ≠ launch-block.** Existing live games on an archived card keep working (lobby, live, and ended). New live games cannot be launched until the card is unarchived — enforced at the page level in `app/cards/[cardId]/live/page.tsx` and `.../live/solo/page.tsx`, plus a disabled "Live Game" button on the editor.
+- **Archive is non-destructive.** No DELETE was introduced; `findResolvedReadableCardById` does not filter on `archived_at`, so deep links to archived cards still resolve.
+- **UI:** kebab menu on owned-card rows with Archive/Unarchive; a `Show archived` switch in the Continue Editing header persists to `localStorage` under `pick-em-cards-workspace-show-archived`.

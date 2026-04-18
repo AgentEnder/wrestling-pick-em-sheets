@@ -38,11 +38,11 @@ The schema is set up so that deleting a `live_games` row (issue #23) automatical
 
 So issue #23's server-side work is small: a single DELETE with the host check, plus the route handler. The cascade does the rest.
 
-For issue #16 (archive cards), we **don't** want a DELETE — we want a soft "hide from default listing". A new column + filter does the job.
+Archive (issue #16) is **not** a delete — it's a non-destructive "hide from default listing". Landed via migration `0025_cards_archived_at` + `POST /api/cards/:cardId/archive` and `.../unarchive` (owner-gated via `isCardOwner`). The partial index `idx_cards_active_owner_updated` keeps the common "active cards for this owner" query fast.
 
 ## Where to add new endpoints
 
 Follow the file colocation pattern:
 
 - New top-level method on a live game: `app/api/live-games/[gameId]/route.ts` (file does not exist yet — create it for issue #23 with `DELETE`).
-- New method on a card: `app/api/cards/[cardId]/route.ts` (already has `GET` and `PUT`; add `DELETE` or `POST .../archive` for #16).
+- New method on a card: `app/api/cards/[cardId]/route.ts` has `GET` + `PUT`. Archive lives at its own sub-route: `app/api/cards/[cardId]/archive/route.ts` and `.../unarchive/route.ts`.

@@ -20,9 +20,9 @@ Cards are the durable artifact: an event's matches, bonus questions, tiebreaker.
 
 `components/pick-em/cards-workspace.tsx:115-436`:
 
-- Memo-derives `ownedCards` (`!card.isTemplate` AND owner) → `recentOwnedCards` (sorted by `updatedAt desc`).
-- Renders each as a row: name, "Updated <date>", "Edit" button → `/cards/<id>`.
-- **No per-row action menu** — there's no delete, duplicate, or archive UI today.
+- Memo-derives `ownedActiveCards` / `ownedArchivedCards` (owner AND `!isTemplate`, split on `archivedAt`) → each sorted by `updatedAt desc`.
+- Renders each active card as a row with an `Edit` button → `/cards/<id>` and a kebab menu with **Archive**.
+- A `Show archived` switch in the header (persisted to `localStorage` under `pick-em-cards-workspace-show-archived`) reveals a separate "Archived" section with an **Unarchive** kebab action.
 - Workspace also shows total count + a separate template gallery.
 
 `components/pick-em/card-library.tsx:31-146` is a secondary picker used inside the editor (loaded-card dropdown, "create from template" links, refresh/auto-save status). Also no destructive actions.
@@ -31,24 +31,28 @@ Cards are the durable artifact: an event's matches, bonus questions, tiebreaker.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/cards` | `listReadableCards(userId)` — owned + public. **No filter params.** |
+| GET | `/api/cards` | `listReadableCards(userId, { includeArchived })` — owned + public. Accepts `?includeArchived=true` for an owner-scoped widening that surfaces the caller's own archived cards. |
 | POST | `/api/cards` | Create new owned card |
-| GET | `/api/cards/:cardId` | Single card via `findResolvedReadableCardById` |
+| GET | `/api/cards/:cardId` | Single card via `findResolvedReadableCardById` (does **not** filter on `archived_at` — archived cards stay readable by deep link) |
 | PUT | `/api/cards/:cardId` | `persistOwnedCardSheet` (saves the sheet) |
 | PUT | `/api/cards/:cardId/overrides` | Override fields when card is template-derived |
+| POST | `/api/cards/:cardId/archive` | Owner-only. Sets `archived_at = now()`; idempotent. |
+| POST | `/api/cards/:cardId/unarchive` | Owner-only. Clears `archived_at`. |
 | GET/PUT | `/api/cards/:cardId/live-key` | Host's solo-mode live key |
-| GET | `/api/cards/:cardId/live-games` | List live games for this card |
-| POST | `/api/cards/from-template` | Clone template into a new owned card |
+| GET | `/api/cards/:cardId/live-games` | List live games for this card (unaffected by archive — archived cards still show their live-game history) |
+| POST | `/api/cards/from-template` | Clone template into a new owned card. Refuses archived templates. |
 
-**No DELETE on `/api/cards/:cardId` exists.** No archive endpoint either.
+**No DELETE on `/api/cards/:cardId` exists** — archive is the non-destructive path.
 
 Repository file: `lib/server/repositories/cards.ts`. Key functions:
 
-- `listReadableCards(userId)` — line 345
-- `findResolvedReadableCardById(cardId, userId)` — line 534
-- `createOwnedCard(ownerId, input)` — line 416
-- `persistOwnedCardSheet(cardId, ownerId, input)` — line 803
-- `updateCardOverrides(...)` — line 461
+- `listReadableCards(userId, { includeArchived })` — filters on `archived_at IS NULL` by default
+- `findResolvedReadableCardById(cardId, userId)` — returns `archivedAt` on the resolved card; does not filter by it
+- `createOwnedCard(ownerId, input)`
+- `createCardFromTemplate(ownerId, templateCardId)` — refuses archived templates
+- `archiveCard(cardId, ownerId)` / `unarchiveCard(cardId, ownerId)`
+- `persistOwnedCardSheet(cardId, ownerId, input)`
+- `updateCardOverrides(...)`
 
 Client wrappers: `lib/client/cards-api.ts:82-154` (`listCards`, `CardSummary`, etc.).
 
@@ -84,4 +88,5 @@ Because checkboxes flow inline with the question text and wrap with it, multi-qu
 ## Tests
 
 - `tests/unit/components/print-sheet.test.ts` — covers threshold/MC rendering presence (does not verify alignment).
-- No existing tests for card CRUD or for the editor's grading-rule conditional.
+- `tests/unit/repositories/cards-archive.test.ts` — archive/unarchive repository tests (owner gate, includeArchived widening, template archive).
+- No existing tests for the rest of card CRUD or for the editor's grading-rule conditional.

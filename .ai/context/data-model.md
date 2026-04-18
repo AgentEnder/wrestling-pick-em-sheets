@@ -22,13 +22,14 @@ cards (
   -- later migrations also added:
   promotion_name           text,
   tiebreaker_is_time_based integer,
-  event_bonus_questions_json text  -- json blob
+  event_bonus_questions_json text,  -- json blob
+  archived_at              text    -- NULL = active; ISO timestamp = archived (0025)
 )
 ```
 
 Related tables (later migrations add overrides, match rows, bonus questions, etc.). The card's full sheet (matches, bonus questions, event bonuses) is reconstituted by `findResolvedReadableCardById` (`lib/server/repositories/cards.ts:534-743`).
 
-**No `archived` / `archived_at` column exists** — issue #16 needs to add one.
+**Archive** (migration 0025): `archived_at` is filtered out by `listReadableCards` by default; a partial index `idx_cards_active_owner_updated ON cards (owner_id, updated_at) WHERE archived_at IS NULL` accelerates the common "active cards for this owner" path. `findResolvedReadableCardById` deliberately does not filter on `archived_at`, so deep links still resolve.
 
 ### Permissions
 
