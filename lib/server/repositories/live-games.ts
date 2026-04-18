@@ -2119,6 +2119,7 @@ export async function updateLiveGameStatus(
     .selectAll()
     .where("id", "=", gameId)
     .where("host_user_id", "=", hostUserId)
+    .where("deleted_at", "is", null)
     .executeTakeFirst();
 
   if (!row) return null;
@@ -2199,6 +2200,7 @@ export async function updateLiveGameLocks(
     .selectAll()
     .where("id", "=", gameId)
     .where("host_user_id", "=", hostUserId)
+    .where("deleted_at", "is", null)
     .executeTakeFirst();
 
   if (!row) return null;
@@ -2265,6 +2267,7 @@ export async function updateLiveGameKeyForHost(
     .selectAll()
     .where("id", "=", gameId)
     .where("host_user_id", "=", hostUserId)
+    .where("deleted_at", "is", null)
     .executeTakeFirst();
 
   if (!row) return null;

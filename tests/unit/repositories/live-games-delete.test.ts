@@ -250,6 +250,53 @@ describe("live games soft delete", () => {
     assert.equal(state!.game.status, "canceled");
   });
 
+  test("updateLiveGameStatus refuses soft-deleted game", async () => {
+    await seedGame("game-mutator-status");
+    await liveGames.softDeleteLiveGame("game-mutator-status", HOST);
+    const result = await liveGames.updateLiveGameStatus(
+      "game-mutator-status",
+      HOST,
+      { status: "live" },
+    );
+    assert.equal(result, null);
+  });
+
+  test("updateLiveGameLocks refuses soft-deleted game", async () => {
+    await seedGame("game-mutator-locks");
+    await liveGames.softDeleteLiveGame("game-mutator-locks", HOST);
+    const result = await liveGames.updateLiveGameLocks(
+      "game-mutator-locks",
+      HOST,
+      {
+        globalLocked: false,
+        matchLocks: {},
+        matchBonusLocks: {},
+        eventBonusLocks: {},
+      },
+    );
+    assert.equal(result, null);
+  });
+
+  test("updateLiveGameKeyForHost refuses soft-deleted game", async () => {
+    await seedGame("game-mutator-key");
+    await liveGames.softDeleteLiveGame("game-mutator-key", HOST);
+    const result = await liveGames.updateLiveGameKeyForHost(
+      "game-mutator-key",
+      HOST,
+      {
+        timers: [],
+        matchResults: [],
+        eventBonusAnswers: [],
+        tiebreakerAnswer: "",
+        tiebreakerRecordedAt: null,
+        tiebreakerTimerId: null,
+        scoreOverrides: [],
+        winnerOverrides: [],
+      },
+    );
+    assert.equal(result, null);
+  });
+
   test("getLiveGameState returns null for deleted game to non-session requester", async () => {
     await seedGame("game-canceled-stranger");
     await liveGames.softDeleteLiveGame("game-canceled-stranger", HOST);
