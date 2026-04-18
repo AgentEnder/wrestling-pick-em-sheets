@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getRequestUserId } from "@/lib/server/auth";
 import { readLiveGameSessionTokenFromRequest } from "@/lib/server/live-game-session";
 import {
   getLiveGameMe,
@@ -11,15 +12,18 @@ export async function GET(
   context: { params: Promise<{ gameId: string }> },
 ) {
   const sessionToken = readLiveGameSessionTokenFromRequest(request);
-  if (!sessionToken) {
+  const clerkUserId = await getRequestUserId(request);
+  if (!sessionToken && !clerkUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { gameId } = await context.params;
-  const me = await getLiveGameMe(
-    gameId,
-    hashLiveGameSessionToken(sessionToken),
-  );
+  const me = await getLiveGameMe(gameId, {
+    sessionTokenHash: sessionToken
+      ? hashLiveGameSessionToken(sessionToken)
+      : null,
+    clerkUserId,
+  });
 
   if (!me) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

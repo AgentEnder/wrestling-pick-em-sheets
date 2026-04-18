@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { getRequestUserId } from "@/lib/server/auth";
 import { enforceSameOrigin } from "@/lib/server/csrf";
 import { readLiveGameSessionTokenFromRequest } from "@/lib/server/live-game-session";
 import {
@@ -30,7 +31,8 @@ export async function POST(
   if (csrfError) return csrfError;
 
   const sessionToken = readLiveGameSessionTokenFromRequest(request);
-  if (!sessionToken) {
+  const clerkUserId = await getRequestUserId(request);
+  if (!sessionToken && !clerkUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -46,7 +48,12 @@ export async function POST(
   const { gameId } = await context.params;
   const result = await upsertLiveGamePushSubscriptionForPlayer(
     gameId,
-    hashLiveGameSessionToken(sessionToken),
+    {
+      sessionTokenHash: sessionToken
+        ? hashLiveGameSessionToken(sessionToken)
+        : null,
+      clerkUserId,
+    },
     parsed.data,
   );
 
@@ -69,7 +76,8 @@ export async function DELETE(
   if (csrfError) return csrfError;
 
   const sessionToken = readLiveGameSessionTokenFromRequest(request);
-  if (!sessionToken) {
+  const clerkUserId = await getRequestUserId(request);
+  if (!sessionToken && !clerkUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -85,7 +93,12 @@ export async function DELETE(
   const { gameId } = await context.params;
   const ok = await removeLiveGamePushSubscriptionForPlayer(
     gameId,
-    hashLiveGameSessionToken(sessionToken),
+    {
+      sessionTokenHash: sessionToken
+        ? hashLiveGameSessionToken(sessionToken)
+        : null,
+      clerkUserId,
+    },
     parsed.data.endpoint,
   );
 

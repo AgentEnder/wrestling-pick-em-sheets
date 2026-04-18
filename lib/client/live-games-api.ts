@@ -284,8 +284,18 @@ export function reviewLiveGameJoinRequest(
   });
 }
 
-export function getLiveGameMe(gameId: string): Promise<LiveGameMeResponse> {
-  return requestJson<LiveGameMeResponse>(`/api/live-games/${gameId}/me`);
+export async function getLiveGameMe(
+  gameId: string,
+): Promise<LiveGameMeResponse | null> {
+  const response = await fetch(`/api/live-games/${gameId}/me`);
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+  const body = (await response.json()) as { data: LiveGameMeResponse };
+  return body.data;
 }
 
 export function getLiveGameJoinPreview(
