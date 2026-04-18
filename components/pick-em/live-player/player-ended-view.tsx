@@ -1,17 +1,37 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Trophy } from "lucide-react";
 
 import type { LiveGameStateResponse } from "@/lib/client/live-games-api";
 import { LeaderboardPanel } from "@/components/pick-em/shared/leaderboard-panel";
+import { ScoreBreakdown } from "@/components/pick-em/shared/score-breakdown";
 
 interface PlayerEndedViewProps {
   state: LiveGameStateResponse;
+  meNickname: string | null;
   myRank: { rank: number; score: number } | null;
 }
 
-function PlayerEndedViewInner({ state, myRank }: PlayerEndedViewProps) {
+function PlayerEndedViewInner({
+  state,
+  meNickname,
+  myRank,
+}: PlayerEndedViewProps) {
+  const initialSelected = useMemo(
+    () => (meNickname ? [meNickname] : []),
+    [meNickname],
+  );
+  const [selected, setSelected] = useState<string[]>(initialSelected);
+
+  const toggle = (nickname: string) => {
+    setSelected((prev) =>
+      prev.includes(nickname)
+        ? prev.filter((n) => n !== nickname)
+        : [...prev, nickname],
+    );
+  };
+
   return (
     <div className="flex flex-col items-center gap-6 py-8">
       <div className="text-center">
@@ -37,6 +57,17 @@ function PlayerEndedViewInner({ state, myRank }: PlayerEndedViewProps) {
         <LeaderboardPanel
           leaderboard={state.leaderboard}
           variant="compact"
+          onRowToggle={toggle}
+          selectedNicknames={selected}
+        />
+      </div>
+      <div className="w-full rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
+        <h3 className="mb-2 font-semibold">Score Breakdown</h3>
+        <ScoreBreakdown
+          card={state.card}
+          leaderboard={state.leaderboard}
+          selectedNicknames={selected}
+          meNickname={meNickname}
         />
       </div>
     </div>

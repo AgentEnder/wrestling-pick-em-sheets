@@ -775,6 +775,7 @@ export function LiveGamePlayerApp({
       {state.game.status === "ended" ? (
         <PlayerEndedView
           state={state}
+          meNickname={me?.player.nickname ?? null}
           myRank={myRank ? { rank: myRank.rank, score: myRank.score } : null}
         />
       ) : me.player.isSubmitted && !isEditing ? (
