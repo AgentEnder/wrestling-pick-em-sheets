@@ -17,12 +17,18 @@ interface LeaderboardPanelProps {
   maxItems?: number;
   /** Variant controls visual density: "display" for TV-style, "compact" for player sidebar */
   variant?: "display" | "compact";
+  /** When provided (compact variant only), rows become buttons that fire this callback with the row's nickname. */
+  onRowToggle?: (nickname: string) => void;
+  /** When provided alongside `onRowToggle`, rows whose nickname is in this list render in the selected visual state. */
+  selectedNicknames?: string[];
 }
 
 function LeaderboardPanelInner({
   leaderboard,
   maxItems,
   variant = "compact",
+  onRowToggle,
+  selectedNicknames,
 }: LeaderboardPanelProps) {
   const entries = maxItems ? leaderboard.slice(0, maxItems) : leaderboard;
 
@@ -97,11 +103,18 @@ function LeaderboardPanelInner({
             : presence.state === "idle"
               ? "bg-amber-500"
               : "bg-slate-400";
-        return (
-          <div
-            key={`${entry.rank}:${entry.nickname}`}
-            className="flex items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1 text-sm"
-          >
+        const isSelected =
+          selectedNicknames?.includes(entry.nickname) ?? false;
+        const baseRowClass =
+          "flex items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1 text-sm";
+        const interactiveRowClass = `flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-sm transition-colors cursor-pointer ${
+          isSelected
+            ? "border-primary/60 bg-primary/10 ring-1 ring-primary/40"
+            : "border-transparent"
+        }`;
+
+        const content = (
+          <>
             <div className="min-w-0">
               <p className="truncate">
                 #{entry.rank} {entry.nickname}
@@ -115,6 +128,29 @@ function LeaderboardPanelInner({
             <div className="shrink-0">
               <span className="font-mono">{entry.score}</span>
             </div>
+          </>
+        );
+
+        if (onRowToggle) {
+          return (
+            <button
+              key={`${entry.rank}:${entry.nickname}`}
+              type="button"
+              onClick={() => onRowToggle(entry.nickname)}
+              className={`${interactiveRowClass} w-full text-left`}
+              aria-pressed={isSelected}
+            >
+              {content}
+            </button>
+          );
+        }
+
+        return (
+          <div
+            key={`${entry.rank}:${entry.nickname}`}
+            className={baseRowClass}
+          >
+            {content}
           </div>
         );
       })}

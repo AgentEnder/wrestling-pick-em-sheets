@@ -1,4 +1,5 @@
 import type {
+  BreakdownRow,
   LiveGame,
   LiveGameKeyPayload,
   LiveGameLockState,
@@ -60,6 +61,7 @@ export interface LiveGameStateResponse {
       winnerPoints: number;
       bonusPoints: number;
       surprisePoints: number;
+      perQuestion: BreakdownRow[];
     };
     isSubmitted: boolean;
     lastUpdatedAt: string;

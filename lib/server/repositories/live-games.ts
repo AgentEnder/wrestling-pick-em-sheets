@@ -23,6 +23,7 @@ import {
 } from "@/lib/server/scoring";
 import type {
   BonusQuestion,
+  BreakdownRow,
   LiveGame,
   LiveGameKeyPayload,
   LiveGameLeaderboardEntry,
@@ -1329,6 +1330,7 @@ interface ScoreAccumulator {
   winnerPoints: number;
   bonusPoints: number;
   surprisePoints: number;
+  perQuestion: BreakdownRow[];
   isSubmitted: boolean;
   updatedAt: string;
   lastSeenAt: string;
@@ -1340,7 +1342,7 @@ interface ClosestBucket {
   entries: Array<{ playerId: string; distance: number }>;
 }
 
-function computeLeaderboard(
+export function computeLeaderboard(
   card: ResolvedCard,
   keyPayload: LiveGameKeyPayload,
   players: LiveGamePlayer[],
@@ -1357,6 +1359,7 @@ function computeLeaderboard(
       winnerPoints: 0,
       bonusPoints: 0,
       surprisePoints: 0,
+      perQuestion: [],
       isSubmitted: player.isSubmitted,
       updatedAt: player.updatedAt,
       lastSeenAt: player.lastSeenAt,
@@ -1384,50 +1387,31 @@ function computeLeaderboard(
           normalizeText(o.playerNickname) === normalizeText(player.nickname),
       );
 
+      let matchWinnerScore = 0;
       if (winnerOverride) {
         if (winnerOverride.accepted) {
-          score.score += winnerPoints;
-          score.winnerPoints += winnerPoints;
+          matchWinnerScore = winnerPoints;
         }
       } else if (
         keyMatchResult.winnerName.trim() &&
         playerMatchPick?.winnerName &&
         answerEquals(keyMatchResult.winnerName, playerMatchPick.winnerName)
       ) {
-        score.score += winnerPoints;
-        score.winnerPoints += winnerPoints;
+        matchWinnerScore = winnerPoints;
       }
 
-      if (
-        match.isBattleRoyal &&
-        keyMatchResult.battleRoyalEntryOrder.length > 0
-      ) {
-        const keyedEntrants = new Set(
-          keyMatchResult.battleRoyalEntryOrder.map((entrant) =>
-            normalizeText(entrant),
-          ),
-        );
-        const playerSet = new Set(
-          (playerMatchPick?.battleRoyalEntrants ?? []).map((entrant) =>
-            normalizeText(entrant),
-          ),
-        );
-        let matchesCount = 0;
-        for (const entrant of playerSet) {
-          if (keyedEntrants.has(entrant)) {
-            matchesCount += 1;
-          }
-        }
+      if (matchWinnerScore > 0) {
+        score.score += matchWinnerScore;
+        score.winnerPoints += matchWinnerScore;
+      }
 
-        const cappedMatches = Math.min(
-          matchesCount,
-          Math.max(0, match.surpriseSlots),
-        );
-        const points = cappedMatches * surprisePoints;
-        if (points > 0) {
-          score.score += points;
-          score.surprisePoints += points;
-        }
+      if (keyMatchResult.winnerName.trim() || winnerOverride) {
+        score.perQuestion.push({
+          kind: "match-winner",
+          matchId: match.id,
+          score: matchWinnerScore,
+          maxPoints: winnerPoints,
+        });
       }
 
       for (const question of match.bonusQuestions) {
@@ -1444,6 +1428,10 @@ function computeLeaderboard(
             o.questionId === question.id &&
             normalizeText(o.playerNickname) === normalizeText(player.nickname),
         );
+        const hasKey = keyAnswer.trim() !== "" || !!override;
+        if (!hasKey) continue;
+
+        const maxPoints = question.points ?? card.defaultPoints;
         const result = scoreForQuestion(
           question,
           card.defaultPoints,
@@ -1455,12 +1443,19 @@ function computeLeaderboard(
         if (result.score > 0) {
           score.score += result.score;
           score.bonusPoints += result.score;
+          score.perQuestion.push({
+            kind: "match-bonus",
+            matchId: match.id,
+            questionId: question.id,
+            score: result.score,
+            maxPoints,
+          });
           continue;
         }
 
         if (result.isClosestCandidate && typeof result.distance === "number") {
           const key = `match:${match.id}:${question.id}`;
-          const points = question.points ?? card.defaultPoints;
+          const points = maxPoints;
           const existing = closestBuckets.get(key);
           if (existing) {
             existing.entries.push({
@@ -1474,6 +1469,73 @@ function computeLeaderboard(
               entries: [{ playerId: player.id, distance: result.distance }],
             });
           }
+          // Placeholder row — Task 6 back-fills score for the winner
+          score.perQuestion.push({
+            kind: "match-bonus",
+            matchId: match.id,
+            questionId: question.id,
+            score: 0,
+            maxPoints,
+          });
+          continue;
+        }
+
+        // Keyed but player got 0 and not a closest candidate
+        score.perQuestion.push({
+          kind: "match-bonus",
+          matchId: match.id,
+          questionId: question.id,
+          score: 0,
+          maxPoints,
+        });
+      }
+    }
+
+    if (
+      match.isBattleRoyal &&
+      keyMatchResult.battleRoyalEntryOrder.length > 0
+    ) {
+      const keyedEntrants = keyMatchResult.battleRoyalEntryOrder;
+      const pickedByAnyNorm = new Set<string>();
+      const pickedByPlayerNorm = new Map<string, Set<string>>();
+      for (const player of submittedPlayers) {
+        const pick = pickMatchPick(player.picks.matchPicks, match.id);
+        const normSet = new Set(
+          (pick?.battleRoyalEntrants ?? []).map((entrant) =>
+            normalizeText(entrant),
+          ),
+        );
+        pickedByPlayerNorm.set(player.id, normSet);
+        for (const entrantNorm of normSet) pickedByAnyNorm.add(entrantNorm);
+      }
+
+      const cappedMax = Math.max(0, match.surpriseSlots);
+      const awardedByPlayer = new Map<string, number>();
+
+      for (const keyedRaw of keyedEntrants) {
+        const keyedNorm = normalizeText(keyedRaw);
+        if (!pickedByAnyNorm.has(keyedNorm)) continue;
+
+        for (const player of submittedPlayers) {
+          const acc = accumulators.get(player.id);
+          if (!acc) continue;
+          const guessed =
+            pickedByPlayerNorm.get(player.id)?.has(keyedNorm) ?? false;
+          const prior = awardedByPlayer.get(player.id) ?? 0;
+          const canAward = guessed && prior < cappedMax;
+          const earned = canAward ? surprisePoints : 0;
+          if (earned > 0) {
+            acc.score += earned;
+            acc.surprisePoints += earned;
+            awardedByPlayer.set(player.id, prior + 1);
+          }
+          acc.perQuestion.push({
+            kind: "match-surprise",
+            matchId: match.id,
+            entrantName: keyedRaw,
+            score: earned,
+            maxPoints: surprisePoints,
+          });
         }
       }
     }
@@ -1498,6 +1560,10 @@ function computeLeaderboard(
           o.questionId === question.id &&
           normalizeText(o.playerNickname) === normalizeText(player.nickname),
       );
+      const hasKey = keyAnswer.trim() !== "" || !!override;
+      if (!hasKey) continue;
+
+      const maxPoints = question.points ?? card.defaultPoints;
       const result = scoreForQuestion(
         question,
         card.defaultPoints,
@@ -1509,12 +1575,18 @@ function computeLeaderboard(
       if (result.score > 0) {
         score.score += result.score;
         score.bonusPoints += result.score;
+        score.perQuestion.push({
+          kind: "event-bonus",
+          questionId: question.id,
+          score: result.score,
+          maxPoints,
+        });
         continue;
       }
 
       if (result.isClosestCandidate && typeof result.distance === "number") {
         const key = `event:${question.id}`;
-        const points = question.points ?? card.defaultPoints;
+        const points = maxPoints;
         const existing = closestBuckets.get(key);
         if (existing) {
           existing.entries.push({
@@ -1528,7 +1600,23 @@ function computeLeaderboard(
             entries: [{ playerId: player.id, distance: result.distance }],
           });
         }
+        // Placeholder row — Task 6 back-fills score for the winner
+        score.perQuestion.push({
+          kind: "event-bonus",
+          questionId: question.id,
+          score: 0,
+          maxPoints,
+        });
+        continue;
       }
+
+      // Keyed but player got 0 and not a closest candidate
+      score.perQuestion.push({
+        kind: "event-bonus",
+        questionId: question.id,
+        score: 0,
+        maxPoints,
+      });
     }
   }
 
@@ -1545,6 +1633,25 @@ function computeLeaderboard(
       if (!score) continue;
       score.score += bucket.points;
       score.bonusPoints += bucket.points;
+
+      const parts = bucket.key.split(":");
+      if (parts[0] === "match" && parts[1] && parts[2]) {
+        const matchId = parts[1];
+        const questionId = parts[2];
+        const row = score.perQuestion.find(
+          (r) =>
+            r.kind === "match-bonus" &&
+            r.matchId === matchId &&
+            r.questionId === questionId,
+        );
+        if (row) row.score = bucket.points;
+      } else if (parts[0] === "event" && parts[1]) {
+        const questionId = parts[1];
+        const row = score.perQuestion.find(
+          (r) => r.kind === "event-bonus" && r.questionId === questionId,
+        );
+        if (row) row.score = bucket.points;
+      }
     }
   }
 
@@ -1570,6 +1677,7 @@ function computeLeaderboard(
         winnerPoints: entry.winnerPoints,
         bonusPoints: entry.bonusPoints,
         surprisePoints: entry.surprisePoints,
+        perQuestion: entry.perQuestion,
       },
       isSubmitted: entry.isSubmitted,
       lastUpdatedAt: entry.updatedAt,
@@ -2261,6 +2369,7 @@ export async function snapshotScores(
         rank: entry.rank,
         player_count: submittedCount,
         score_percentage: Math.round(percentage * 100) / 100,
+        breakdown_json: JSON.stringify(entry.breakdown.perQuestion),
         updated_at: now,
       })
       .onConflict((oc) =>
@@ -2273,6 +2382,7 @@ export async function snapshotScores(
           rank: entry.rank,
           player_count: submittedCount,
           score_percentage: Math.round(percentage * 100) / 100,
+          breakdown_json: JSON.stringify(entry.breakdown.perQuestion),
           updated_at: now,
         }),
       )
@@ -3186,6 +3296,17 @@ export async function getLiveGameState(
       .map((snap) => {
         const player = playerIdToPlayer.get(snap.player_id);
         if (!player) return null;
+        let perQuestion: BreakdownRow[] = [];
+        if (snap.breakdown_json) {
+          try {
+            const parsed = JSON.parse(snap.breakdown_json);
+            if (Array.isArray(parsed)) {
+              perQuestion = parsed as BreakdownRow[];
+            }
+          } catch {
+            perQuestion = [];
+          }
+        }
         return {
           rank: snap.rank,
           nickname: player.nickname,
@@ -3194,6 +3315,7 @@ export async function getLiveGameState(
             winnerPoints: snap.winner_points,
             bonusPoints: snap.bonus_points,
             surprisePoints: snap.surprise_points,
+            perQuestion,
           },
           isSubmitted: player.isSubmitted,
           lastUpdatedAt: player.updatedAt,
@@ -3202,6 +3324,27 @@ export async function getLiveGameState(
       })
       .filter((entry): entry is LiveGameLeaderboardEntry => entry !== null)
       .sort((a, b) => a.rank - b.rank);
+
+    // A null breakdown_json means the snapshot was written before this
+    // migration, potentially by an older scoring engine. Its aggregate
+    // totals (score / winnerPoints / bonusPoints / surprisePoints) may
+    // disagree with the current engine, so we can't just patch perQuestion
+    // onto stale totals — that would produce rows that don't sum to the
+    // displayed total. Replace the whole entry (including rank) with the
+    // recomputed version for any such rows.
+    if (snapshotRows.some((snap) => !snap.breakdown_json)) {
+      const recomputed = computeLeaderboard(
+        access.card,
+        access.game.keyPayload,
+        approvedPlayers,
+      );
+      const recomputedByNickname = new Map(
+        recomputed.map((entry) => [entry.nickname, entry]),
+      );
+      leaderboard = leaderboard
+        .map((entry) => recomputedByNickname.get(entry.nickname) ?? entry)
+        .sort((a, b) => a.rank - b.rank);
+    }
   } else {
     // Fallback: compute on the fly (no key updates yet)
     leaderboard = computeLeaderboard(

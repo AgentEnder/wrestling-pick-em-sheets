@@ -56,6 +56,7 @@ import { PlayerMatchPicks } from "./live-player/player-match-picks";
 import { PlayerEventBonusPicks } from "./live-player/player-event-bonus-picks";
 import { PlayerTiebreakerInput } from "./live-player/player-tiebreaker-input";
 import { PlayerEndedView } from "./live-player/player-ended-view";
+import { PlayerSubmittedView } from "./live-player/player-submitted-view";
 
 interface LiveGamePlayerAppProps {
   gameId: string;
@@ -93,6 +94,7 @@ export function LiveGamePlayerApp({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [me, setMe] = useState<LiveGameMeResponse | null>(null);
   const [state, setState] = useState<LiveGameStateResponse | null>(null);
   const [picks, setPicks] = useState<LivePlayerPicksPayload | null>(null);
@@ -773,7 +775,15 @@ export function LiveGamePlayerApp({
       {state.game.status === "ended" ? (
         <PlayerEndedView
           state={state}
+          meNickname={me?.player.nickname ?? null}
           myRank={myRank ? { rank: myRank.rank, score: myRank.score } : null}
+        />
+      ) : me.player.isSubmitted && !isEditing ? (
+        <PlayerSubmittedView
+          state={state}
+          meNickname={me?.player.nickname ?? null}
+          myRank={myRank ? { rank: myRank.rank, score: myRank.score } : null}
+          onEdit={() => setIsEditing(true)}
         />
       ) : (
         <>
@@ -853,6 +863,18 @@ export function LiveGamePlayerApp({
               </div>
             </div>
           </section>
+
+          {me.player.isSubmitted && isEditing ? (
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                variant="secondary"
+              >
+                Done editing
+              </Button>
+            </div>
+          ) : null}
         </>
       )}
     </div>

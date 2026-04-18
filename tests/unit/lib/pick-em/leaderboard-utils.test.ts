@@ -17,7 +17,12 @@ function makeEntry(
     nickname,
     rank,
     score,
-    breakdown: { winnerPoints: 0, bonusPoints: 0, surprisePoints: 0 },
+    breakdown: {
+      winnerPoints: 0,
+      bonusPoints: 0,
+      surprisePoints: 0,
+      perQuestion: [],
+    },
     isSubmitted: true,
     lastUpdatedAt: "2025-01-01T00:00:00Z",
     lastSeenAt: "2025-01-01T00:00:00Z",
