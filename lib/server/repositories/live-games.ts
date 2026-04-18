@@ -1460,6 +1460,10 @@ export function computeLeaderboard(
             o.questionId === question.id &&
             normalizeText(o.playerNickname) === normalizeText(player.nickname),
         );
+        const hasKey = keyAnswer.trim() !== "" || !!override;
+        if (!hasKey) continue;
+
+        const maxPoints = question.points ?? card.defaultPoints;
         const result = scoreForQuestion(
           question,
           card.defaultPoints,
@@ -1471,12 +1475,19 @@ export function computeLeaderboard(
         if (result.score > 0) {
           score.score += result.score;
           score.bonusPoints += result.score;
+          score.perQuestion.push({
+            kind: "match-bonus",
+            matchId: match.id,
+            questionId: question.id,
+            score: result.score,
+            maxPoints,
+          });
           continue;
         }
 
         if (result.isClosestCandidate && typeof result.distance === "number") {
           const key = `match:${match.id}:${question.id}`;
-          const points = question.points ?? card.defaultPoints;
+          const points = maxPoints;
           const existing = closestBuckets.get(key);
           if (existing) {
             existing.entries.push({
@@ -1490,7 +1501,25 @@ export function computeLeaderboard(
               entries: [{ playerId: player.id, distance: result.distance }],
             });
           }
+          // Placeholder row — Task 6 back-fills score for the winner
+          score.perQuestion.push({
+            kind: "match-bonus",
+            matchId: match.id,
+            questionId: question.id,
+            score: 0,
+            maxPoints,
+          });
+          continue;
         }
+
+        // Keyed but player got 0 and not a closest candidate
+        score.perQuestion.push({
+          kind: "match-bonus",
+          matchId: match.id,
+          questionId: question.id,
+          score: 0,
+          maxPoints,
+        });
       }
     }
   }
@@ -1514,6 +1543,10 @@ export function computeLeaderboard(
           o.questionId === question.id &&
           normalizeText(o.playerNickname) === normalizeText(player.nickname),
       );
+      const hasKey = keyAnswer.trim() !== "" || !!override;
+      if (!hasKey) continue;
+
+      const maxPoints = question.points ?? card.defaultPoints;
       const result = scoreForQuestion(
         question,
         card.defaultPoints,
@@ -1525,12 +1558,18 @@ export function computeLeaderboard(
       if (result.score > 0) {
         score.score += result.score;
         score.bonusPoints += result.score;
+        score.perQuestion.push({
+          kind: "event-bonus",
+          questionId: question.id,
+          score: result.score,
+          maxPoints,
+        });
         continue;
       }
 
       if (result.isClosestCandidate && typeof result.distance === "number") {
         const key = `event:${question.id}`;
-        const points = question.points ?? card.defaultPoints;
+        const points = maxPoints;
         const existing = closestBuckets.get(key);
         if (existing) {
           existing.entries.push({
@@ -1544,7 +1583,23 @@ export function computeLeaderboard(
             entries: [{ playerId: player.id, distance: result.distance }],
           });
         }
+        // Placeholder row — Task 6 back-fills score for the winner
+        score.perQuestion.push({
+          kind: "event-bonus",
+          questionId: question.id,
+          score: 0,
+          maxPoints,
+        });
+        continue;
       }
+
+      // Keyed but player got 0 and not a closest candidate
+      score.perQuestion.push({
+        kind: "event-bonus",
+        questionId: question.id,
+        score: 0,
+        maxPoints,
+      });
     }
   }
 
