@@ -171,6 +171,44 @@ function ScoreBreakdownInner({
           </tfoot>
         </table>
       </div>
+      {/* Mobile: card list */}
+      <div className="md:hidden space-y-3">
+        <div className="rounded-lg border border-border/70 bg-card/80 px-3 py-2">
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+            Totals
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            {selectedNicknames.map((nick) => (
+              <span key={nick} className="font-mono">
+                {columnHeader(nick)}: <strong>{totals.get(nick) ?? 0}</strong>
+              </span>
+            ))}
+          </div>
+        </div>
+        {rows.map((row) => (
+          <div
+            key={row.key}
+            className="rounded-lg border border-border/70 bg-card/90 p-3 shadow-sm"
+          >
+            <div className="font-medium">{row.label}</div>
+            <ul className="mt-2 space-y-1 text-sm">
+              {selectedNicknames.map((nick) => (
+                <li
+                  key={nick}
+                  className="flex items-center justify-between"
+                >
+                  <span className="text-muted-foreground">
+                    {columnHeader(nick)}
+                  </span>
+                  <span className="font-mono">
+                    {formatCell(row.scoresByNickname.get(nick))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
