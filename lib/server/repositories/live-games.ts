@@ -2369,6 +2369,7 @@ export async function snapshotScores(
         rank: entry.rank,
         player_count: submittedCount,
         score_percentage: Math.round(percentage * 100) / 100,
+        breakdown_json: JSON.stringify(entry.breakdown.perQuestion),
         updated_at: now,
       })
       .onConflict((oc) =>
@@ -2381,6 +2382,7 @@ export async function snapshotScores(
           rank: entry.rank,
           player_count: submittedCount,
           score_percentage: Math.round(percentage * 100) / 100,
+          breakdown_json: JSON.stringify(entry.breakdown.perQuestion),
           updated_at: now,
         }),
       )
