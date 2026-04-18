@@ -570,7 +570,7 @@ body[data-scroll-locked] {
   flex: 1;
 }
 
-.print-sheet[data-density="sparse"] .print-matches {
+.print-sheet .print-matches {
   justify-content: space-between;
 }
 
@@ -820,6 +820,7 @@ body[data-scroll-locked] {
 
 .print-bonus-main {
   display: flex;
+  flex-direction: row;
   align-items: baseline;
   gap: calc(4px + var(--print-dyn-line-gap));
   min-width: 0;
@@ -835,7 +836,7 @@ body[data-scroll-locked] {
   display: inline-flex;
   flex-wrap: wrap;
   gap: calc(1px + var(--print-dyn-line-gap)) 8px;
-  margin-left: 4px;
+  margin-left: auto;
 }
 
 .print-mc-option {
