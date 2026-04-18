@@ -12,7 +12,7 @@
 
 ## Where it lives
 
-`components/match-editor.tsx`. Same control set is reused via `event-settings.tsx` for event-level bonus questions — both surfaces inherit the bug.
+`components/match-editor.tsx` (match-level bonuses) and `components/pick-em/editor-view.tsx` (event-level bonuses). Both surfaces carry a duplicated copy of the grading-rule block.
 
 The conditional that's wrong:
 
