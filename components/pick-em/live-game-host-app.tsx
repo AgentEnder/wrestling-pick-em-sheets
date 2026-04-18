@@ -5,6 +5,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -18,7 +23,16 @@ import {
   updateLiveGameStatus,
 } from "@/lib/client/live-games-api";
 import type { LiveGame } from "@/lib/types";
-import { MoreVertical, RefreshCcw, Trash2, Tv, Users } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  MoreVertical,
+  RefreshCcw,
+  RotateCcw,
+  Trash2,
+  Tv,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { DeleteLiveGameDialog } from "./live-host/delete-live-game-dialog";
@@ -33,6 +47,13 @@ function formatDate(value: string): string {
   return parsed.toLocaleString();
 }
 
+function daysUntilPurge(deletedAt: string | null): number {
+  if (!deletedAt) return 0;
+  const cutoff = new Date(deletedAt).getTime() + 30 * 24 * 60 * 60 * 1000;
+  const remaining = Math.max(0, cutoff - Date.now());
+  return Math.max(1, Math.ceil(remaining / (24 * 60 * 60 * 1000)));
+}
+
 export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
   const [games, setGames] = useState<LiveGame[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,6 +63,9 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
     null,
   );
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deletedGames, setDeletedGames] = useState<LiveGame[]>([]);
+  const [isDeletedOpen, setIsDeletedOpen] = useState(false);
+  const [hasLoadedDeleted, setHasLoadedDeleted] = useState(false);
 
   const loadGames = useCallback(async () => {
     setIsLoading(true);
@@ -56,6 +80,28 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
       setIsLoading(false);
     }
   }, [cardId]);
+
+  const loadDeletedGames = useCallback(async () => {
+    try {
+      const all = await listLiveGames(cardId, { includeDeleted: true });
+      const onlyDeleted = all.filter((g) => g.deletedAt !== null);
+      setDeletedGames(onlyDeleted);
+      setHasLoadedDeleted(true);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load deleted games";
+      toast.error(message);
+    }
+  }, [cardId]);
+
+  function handleDeletedOpenChange(open: boolean) {
+    setIsDeletedOpen(open);
+    if (open && !hasLoadedDeleted) {
+      void loadDeletedGames();
+    }
+  }
 
   useEffect(() => {
     void loadGames();
@@ -96,6 +142,7 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
   async function handleRestore(gameId: string) {
     try {
       await restoreLiveGame(gameId);
+      setDeletedGames((prev) => prev.filter((g) => g.id !== gameId));
       await loadGames();
       toast.success("Game restored");
     } catch (error) {
@@ -108,9 +155,21 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
   async function handleDelete(gameId: string) {
     setIsDeleting(true);
     const snapshot = games;
+    const deletedSnapshot = deletedGames;
+    const target = games.find((g) => g.id === gameId);
     setGames((prev) => prev.filter((g) => g.id !== gameId));
     try {
+      const nowIso = new Date().toISOString();
       await deleteLiveGame(gameId);
+      if (target) {
+        const optimistic: LiveGame = {
+          ...target,
+          deletedAt: nowIso,
+          updatedAt: nowIso,
+        };
+        setDeletedGames((prev) => [optimistic, ...prev]);
+        setHasLoadedDeleted(true);
+      }
       toast.success("Game deleted", {
         action: {
           label: "Undo",
@@ -120,6 +179,7 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
       });
     } catch (error) {
       setGames(snapshot);
+      setDeletedGames(deletedSnapshot);
       const message =
         error instanceof Error ? error.message : "Failed to delete game";
       toast.error(message);
@@ -263,6 +323,58 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
             );
           })}
         </div>
+      )}
+
+      {(!hasLoadedDeleted || deletedGames.length > 0) && (
+        <Collapsible
+          open={isDeletedOpen}
+          onOpenChange={handleDeletedOpenChange}
+        >
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="w-full justify-start">
+              {isDeletedOpen ? (
+                <ChevronDown className="mr-2 h-4 w-4" />
+              ) : (
+                <ChevronRight className="mr-2 h-4 w-4" />
+              )}
+              Recently deleted
+              {hasLoadedDeleted ? ` (${deletedGames.length})` : ""}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 space-y-2">
+            {deletedGames.length === 0 && hasLoadedDeleted ? (
+              <p className="px-2 text-sm text-muted-foreground">
+                No recently-deleted games.
+              </p>
+            ) : (
+              deletedGames.map((game) => (
+                <section
+                  key={game.id}
+                  className="rounded-lg border border-border bg-muted/40 p-3 opacity-80"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-sm font-semibold">
+                        {game.joinCode}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Deletes in {daysUntilPurge(game.deletedAt)} day(s)
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleRestore(game.id)}
+                    >
+                      <RotateCcw className="mr-1 h-4 w-4" />
+                      Restore
+                    </Button>
+                  </div>
+                </section>
+              ))
+            )}
+          </CollapsibleContent>
+        </Collapsible>
       )}
 
       <DeleteLiveGameDialog
