@@ -451,4 +451,49 @@ describe("computeLeaderboard — perQuestion breakdown", () => {
       { kind: "match-surprise", matchId: "m1", entrantName: "Sting", score: 7, maxPoints: 7 },
     ]);
   });
+
+  test("threshold question keyed with a label awards points to matching pick", () => {
+    // Regression: observed in the Elimination Chamber 2026 game where a
+    // threshold-time question (points=2, thresholdValue=1200) was keyed
+    // with "Over" and players picked "Over" — engine must emit a +2 row
+    // AND add +2 to entry.score/bonusPoints so aggregate matches perQuestion.
+    const question = makeQuestion({
+      id: "qt",
+      question: "Match longer than 20 minutes?",
+      points: 2,
+      answerType: "threshold",
+      valueType: "time",
+      thresholdValue: 1200,
+    });
+    const match = makeMatch({ id: "m1", bonusQuestions: [question] });
+    const card = makeCard({ matches: [match] });
+    const key = makeKey({
+      matchResults: [
+        makeMatchResult({
+          matchId: "m1",
+          bonusAnswers: [
+            { questionId: "qt", answer: "Over", recordedAt: null, timerId: null },
+          ],
+        }),
+      ],
+    });
+    const player = makePlayer({
+      picks: makePicks({
+        matchPicks: [
+          makeMatchPick({
+            matchId: "m1",
+            bonusAnswers: [{ questionId: "qt", answer: "Over" }],
+          }),
+        ],
+      }),
+    });
+
+    const [entry] = computeLeaderboard(card, key, [player]);
+
+    assert.equal(entry.score, 2);
+    assert.equal(entry.breakdown.bonusPoints, 2);
+    assert.deepEqual(entry.breakdown.perQuestion, [
+      { kind: "match-bonus", matchId: "m1", questionId: "qt", score: 2, maxPoints: 2 },
+    ]);
+  });
 });

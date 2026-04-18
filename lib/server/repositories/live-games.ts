@@ -3325,9 +3325,13 @@ export async function getLiveGameState(
       .filter((entry): entry is LiveGameLeaderboardEntry => entry !== null)
       .sort((a, b) => a.rank - b.rank);
 
-    // If any snapshot was missing breakdown_json, recompute the whole
-    // leaderboard (cheap — pure function over already-loaded data) so
-    // perQuestion is always populated.
+    // A null breakdown_json means the snapshot was written before this
+    // migration, potentially by an older scoring engine. Its aggregate
+    // totals (score / winnerPoints / bonusPoints / surprisePoints) may
+    // disagree with the current engine, so we can't just patch perQuestion
+    // onto stale totals — that would produce rows that don't sum to the
+    // displayed total. Replace the whole entry (including rank) with the
+    // recomputed version for any such rows.
     if (snapshotRows.some((snap) => !snap.breakdown_json)) {
       const recomputed = computeLeaderboard(
         access.card,
@@ -3337,18 +3341,9 @@ export async function getLiveGameState(
       const recomputedByNickname = new Map(
         recomputed.map((entry) => [entry.nickname, entry]),
       );
-      leaderboard = leaderboard.map((entry) => {
-        if (entry.breakdown.perQuestion.length > 0) return entry;
-        const fresh = recomputedByNickname.get(entry.nickname);
-        if (!fresh) return entry;
-        return {
-          ...entry,
-          breakdown: {
-            ...entry.breakdown,
-            perQuestion: fresh.breakdown.perQuestion,
-          },
-        };
-      });
+      leaderboard = leaderboard
+        .map((entry) => recomputedByNickname.get(entry.nickname) ?? entry)
+        .sort((a, b) => a.rank - b.rank);
     }
   } else {
     // Fallback: compute on the fly (no key updates yet)
