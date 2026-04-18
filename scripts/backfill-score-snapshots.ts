@@ -51,11 +51,17 @@ function parseJson<T>(value: string | null, fallback: T): T {
 }
 
 function dbTarget(): string {
-  return (
-    process.env.TURSO_DATABASE_URL ??
-    process.env.DATABASE_URL ??
-    "(unset — using default libsql client)"
-  );
+  // Mirror the resolution logic in lib/server/db/client.ts: when
+  // USE_TURSO_IN_DEV=1 (set by _load-env-local.ts if credentials are
+  // present) or NODE_ENV=production, we hit Turso; otherwise a local
+  // sqlite file under .local-db/.
+  const useTurso =
+    process.env.USE_TURSO_IN_DEV === "1" ||
+    process.env.NODE_ENV === "production";
+  if (useTurso && process.env.TURSO_DATABASE_URL) {
+    return process.env.TURSO_DATABASE_URL;
+  }
+  return "(local sqlite — set TURSO_DATABASE_URL+TURSO_AUTH_TOKEN in .env.local to target prod)";
 }
 
 async function confirm(prompt: string, expected: string): Promise<boolean> {
