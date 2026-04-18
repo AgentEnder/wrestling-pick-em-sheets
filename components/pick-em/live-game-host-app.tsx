@@ -5,13 +5,23 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   createLiveGame,
+  deleteLiveGame,
   listLiveGames,
+  restoreLiveGame,
   updateLiveGameStatus,
 } from "@/lib/client/live-games-api";
 import type { LiveGame } from "@/lib/types";
-import { RefreshCcw, Tv, Users } from "lucide-react";
+import { MoreVertical, RefreshCcw, Trash2, Tv, Users } from "lucide-react";
 import { toast } from "sonner";
+
+import { DeleteLiveGameDialog } from "./live-host/delete-live-game-dialog";
 
 interface LiveGameHostAppProps {
   cardId: string;
@@ -28,6 +38,10 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [endingGameId, setEndingGameId] = useState<string | null>(null);
+  const [deletingCandidateId, setDeletingCandidateId] = useState<string | null>(
+    null,
+  );
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadGames = useCallback(async () => {
     setIsLoading(true);
@@ -76,6 +90,42 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
       toast.error(message);
     } finally {
       setEndingGameId(null);
+    }
+  }
+
+  async function handleRestore(gameId: string) {
+    try {
+      await restoreLiveGame(gameId);
+      await loadGames();
+      toast.success("Game restored");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to restore game";
+      toast.error(message);
+    }
+  }
+
+  async function handleDelete(gameId: string) {
+    setIsDeleting(true);
+    const snapshot = games;
+    setGames((prev) => prev.filter((g) => g.id !== gameId));
+    try {
+      await deleteLiveGame(gameId);
+      toast.success("Game deleted", {
+        action: {
+          label: "Undo",
+          onClick: () => void handleRestore(gameId),
+        },
+        duration: 8000,
+      });
+    } catch (error) {
+      setGames(snapshot);
+      const message =
+        error instanceof Error ? error.message : "Failed to delete game";
+      toast.error(message);
+    } finally {
+      setIsDeleting(false);
+      setDeletingCandidateId(null);
     }
   }
 
@@ -168,6 +218,30 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
                           ? "Ending..."
                           : "End Game"}
                     </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Game actions"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            setDeletingCandidateId(game.id);
+                          }}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete game
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
 
@@ -190,6 +264,17 @@ export function LiveGameHostApp({ cardId }: LiveGameHostAppProps) {
           })}
         </div>
       )}
+
+      <DeleteLiveGameDialog
+        open={deletingCandidateId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingCandidateId(null);
+        }}
+        onConfirm={() => {
+          if (deletingCandidateId) void handleDelete(deletingCandidateId);
+        }}
+        isDeleting={isDeleting}
+      />
     </div>
   );
 }

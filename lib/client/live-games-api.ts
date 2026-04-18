@@ -163,8 +163,22 @@ async function requestJson<T>(
   return body.data;
 }
 
-export function listLiveGames(cardId: string): Promise<LiveGame[]> {
-  return requestJson<LiveGame[]>(`/api/cards/${cardId}/live-games`);
+export function listLiveGames(
+  cardId: string,
+  opts?: { includeDeleted?: boolean },
+): Promise<LiveGame[]> {
+  const suffix = opts?.includeDeleted ? "?includeDeleted=true" : "";
+  return requestJson<LiveGame[]>(`/api/cards/${cardId}/live-games${suffix}`);
+}
+
+export function deleteLiveGame(gameId: string): Promise<void> {
+  return requestJson<void>(`/api/live-games/${gameId}`, { method: "DELETE" });
+}
+
+export function restoreLiveGame(gameId: string): Promise<void> {
+  return requestJson<void>(`/api/live-games/${gameId}/restore`, {
+    method: "POST",
+  });
 }
 
 export function createLiveGame(
