@@ -437,6 +437,11 @@ function getEventBonusLineUnits(sheet: PickEmSheet): number {
 
 function getSparseExpansionVars(sheet: PickEmSheet): CSSProperties {
   const sheetHeightPx = 10.2 * 96;
+  // Baseline content row height in print: 10pt × ~1.33 line-height ≈ 13.3px.
+  // Used as the unit for visually-grounded safety caps so variables scale with
+  // content instead of via magic numbers.
+  const rowPx = 14;
+
   const matchCount = Math.max(1, sheet.matches.length);
   const lineUnits = sheet.matches.reduce(
     (sum, match) => sum + getMatchLineUnits(match),
@@ -448,25 +453,51 @@ function getSparseExpansionVars(sheet: PickEmSheet): CSSProperties {
   const estimatedUsedPx =
     (lineUnits + eventBonusUnits + headerUnits + footerUnits) * 11.8 +
     matchCount * 8;
-  const leftoverPx = Math.max(
-    0,
-    Math.min(420, sheetHeightPx - estimatedUsedPx),
+
+  // Reserve ~12px so the footer doesn't kiss the last content block.
+  const leftoverPx = Math.max(0, sheetHeightPx - estimatedUsedPx - 12);
+
+  // Allocate leftover to variables by visual-impact weight.
+  // Inter-match gaps dominate — they drive the "space is used well" perception.
+  // Font bump is intentionally the smallest share: it also affects wrapping.
+  const MATCH_GAP_SHARE = 0.55;
+  const LINE_GAP_SHARE = 0.25;
+  const BLOCK_PAD_SHARE = 0.12;
+  const FONT_SHARE = 0.08;
+
+  // Slot counts — how many instances of each variable consume vertical space.
+  const matchGapSlots = Math.max(1, matchCount);
+  const lineGapSlots = Math.max(8, lineUnits + eventBonusUnits);
+  const blockPadSlots = Math.max(2, (matchCount + 1) * 2);
+
+  // Per-slot px, capped at content-proportional maxes (multiples of a row):
+  //  - match-gap ≤ 3 rows: anything bigger reads as blank paper, not breathing
+  //  - line-gap ≤ 0.8 rows: a gap shouldn't rival the content it separates
+  //  - block-pad ≤ 0.7 rows: frames the block without doubling its height
+  const matchGapPx = Math.min(
+    rowPx * 3.0,
+    (leftoverPx * MATCH_GAP_SHARE) / matchGapSlots,
+  );
+  const lineGapPx = Math.min(
+    rowPx * 0.8,
+    (leftoverPx * LINE_GAP_SHARE) / lineGapSlots,
+  );
+  const blockPadPx = Math.min(
+    rowPx * 0.7,
+    (leftoverPx * BLOCK_PAD_SHARE) / blockPadSlots,
   );
 
-  const lineGapPx = Math.max(
-    0,
-    Math.min(7, leftoverPx / Math.max(24, lineUnits * 2.1)),
-  );
-  const matchGapPx = Math.max(
-    0,
-    Math.min(16, leftoverPx / Math.max(10, matchCount * 3.8)),
-  );
-  const blockPadPx = Math.max(0, Math.min(6, lineGapPx * 0.85));
-  const lineHeightPx = Math.max(0, Math.min(5, lineGapPx * 1.25));
-  const participantBumpPt = Math.max(0, Math.min(2.2, leftoverPx / 210));
-  const titleBumpPt = Math.max(0, Math.min(2, participantBumpPt * 0.85));
-  const eventBumpPt = Math.max(0, Math.min(2.8, leftoverPx / 165));
-  const checkboxBumpPx = Math.max(0, Math.min(2.5, lineGapPx * 0.45));
+  // Font bump scales with its share but caps at empirically safe values
+  // (the previous design's 2.0/1.8/2.4pt are demonstrated not to cause wrapping
+  // in current sparse cards — see issue #14 screenshot).
+  const fontSignal = leftoverPx * FONT_SHARE;
+  const participantBumpPt = Math.min(2.0, fontSignal / 30);
+  const titleBumpPt = Math.min(1.8, participantBumpPt * 0.85);
+  const eventBumpPt = Math.min(2.4, fontSignal / 22);
+
+  // Proportional to lineGap — no independent caps needed since lineGap is capped.
+  const lineHeightPx = lineGapPx * 1.25;
+  const checkboxBumpPx = lineGapPx * 0.45;
 
   return {
     "--print-dyn-match-gap": `${matchGapPx.toFixed(2)}px`,
