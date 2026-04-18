@@ -3296,6 +3296,14 @@ export async function getLiveGameState(
       .map((snap) => {
         const player = playerIdToPlayer.get(snap.player_id);
         if (!player) return null;
+        let perQuestion: BreakdownRow[] = [];
+        if (snap.breakdown_json) {
+          try {
+            perQuestion = JSON.parse(snap.breakdown_json) as BreakdownRow[];
+          } catch {
+            perQuestion = [];
+          }
+        }
         return {
           rank: snap.rank,
           nickname: player.nickname,
@@ -3304,7 +3312,7 @@ export async function getLiveGameState(
             winnerPoints: snap.winner_points,
             bonusPoints: snap.bonus_points,
             surprisePoints: snap.surprise_points,
-            perQuestion: [] as BreakdownRow[],
+            perQuestion,
           },
           isSubmitted: player.isSubmitted,
           lastUpdatedAt: player.updatedAt,
@@ -3313,6 +3321,32 @@ export async function getLiveGameState(
       })
       .filter((entry): entry is LiveGameLeaderboardEntry => entry !== null)
       .sort((a, b) => a.rank - b.rank);
+
+    // If any snapshot was missing breakdown_json, recompute the whole
+    // leaderboard (cheap — pure function over already-loaded data) so
+    // perQuestion is always populated.
+    if (snapshotRows.some((snap) => !snap.breakdown_json)) {
+      const recomputed = computeLeaderboard(
+        access.card,
+        access.game.keyPayload,
+        approvedPlayers,
+      );
+      const recomputedByNickname = new Map(
+        recomputed.map((entry) => [entry.nickname, entry]),
+      );
+      leaderboard = leaderboard.map((entry) => {
+        if (entry.breakdown.perQuestion.length > 0) return entry;
+        const fresh = recomputedByNickname.get(entry.nickname);
+        if (!fresh) return entry;
+        return {
+          ...entry,
+          breakdown: {
+            ...entry.breakdown,
+            perQuestion: fresh.breakdown.perQuestion,
+          },
+        };
+      });
+    }
   } else {
     // Fallback: compute on the fly (no key updates yet)
     leaderboard = computeLeaderboard(
