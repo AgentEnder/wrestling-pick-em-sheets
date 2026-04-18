@@ -811,7 +811,7 @@ export function LiveGamePlayerApp({
                 ? "Saving..."
                 : me.player.isSubmitted
                   ? "Update Picks"
-                  : "Save & Submit"}
+                  : "Save Picks"}
             </Button>
           </div>
 
