@@ -211,6 +211,7 @@ export interface LiveGame {
   geoRadiusKm: number;
   expiresAt: string;
   endedAt: string | null;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
   keyPayload: LiveGameKeyPayload;
