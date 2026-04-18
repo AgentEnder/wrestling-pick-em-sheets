@@ -57,6 +57,7 @@ import { PlayerEventBonusPicks } from "./live-player/player-event-bonus-picks";
 import { PlayerTiebreakerInput } from "./live-player/player-tiebreaker-input";
 import { PlayerEndedView } from "./live-player/player-ended-view";
 import { PlayerSubmittedView } from "./live-player/player-submitted-view";
+import { PlayerCanceledView } from "./live-player/player-canceled-view";
 
 interface LiveGamePlayerAppProps {
   gameId: string;
@@ -692,6 +693,11 @@ export function LiveGamePlayerApp({
         Loading game...
       </div>
     );
+  }
+
+  /* ---- Canceled gate (host soft-deleted the game mid-session) ---- */
+  if (state.game.status === "canceled") {
+    return <PlayerCanceledView />;
   }
 
   /* ---- Render ---- */

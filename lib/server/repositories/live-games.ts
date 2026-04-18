@@ -117,6 +117,7 @@ export interface LiveGameViewerAccess {
   card: ResolvedCard;
   player: LiveGamePlayer | null;
   isHost: boolean;
+  isCanceled?: boolean;
 }
 
 interface PendingLiveGameEvent {
@@ -3196,9 +3197,31 @@ export async function getLiveGameViewerAccess(
 
   if (!gameRow) return null;
 
-  // Soft-deleted games are not visible to any viewer for now. Task 6 will
-  // carve out an exception for already-connected players (canceled view).
-  if (gameRow.deleted_at) return null;
+  // Soft-deleted games are visible only to existing players on that game, so
+  // they see the "canceled" view on their next poll. Strangers (no session,
+  // no matching Clerk user) get the normal not-found experience.
+  if (gameRow.deleted_at) {
+    const playerFromSession = options.sessionTokenHash
+      ? await findLiveGamePlayerBySession(gameId, options.sessionTokenHash)
+      : null;
+    const player =
+      playerFromSession ??
+      (options.clerkUserId
+        ? await findLiveGamePlayerByClerkUserId(gameId, options.clerkUserId)
+        : null);
+    if (!player) return null;
+
+    const card = await getCardForGame(gameRow.card_id, gameRow.host_user_id);
+    if (!card) return null;
+
+    return {
+      game: mapLiveGame(gameRow),
+      card,
+      player,
+      isHost: false,
+      isCanceled: true,
+    };
+  }
 
   const card = await getCardForGame(gameRow.card_id, gameRow.host_user_id);
   if (!card) return null;
@@ -3268,6 +3291,20 @@ export async function getLiveGameState(
 ): Promise<LiveGameComputedState | null> {
   const access = await getLiveGameViewerAccess(gameId, options);
   if (!access) return null;
+
+  if (access.isCanceled) {
+    return {
+      game: { ...access.game, status: "canceled" },
+      card: access.card,
+      joinedPlayers: [],
+      pendingJoinRequests: [],
+      leaderboard: [],
+      events: [],
+      playerCount: 0,
+      submittedCount: 0,
+      playerAnswerSummaries: [],
+    };
+  }
 
   const [playerRows, eventRows, snapshotRows] = await Promise.all([
     db

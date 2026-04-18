@@ -213,4 +213,54 @@ describe("live games soft delete", () => {
       .executeTakeFirst();
     assert.ok(row, "recent soft-deleted game survives");
   });
+
+  test("getLiveGameState exposes canceled status to in-game player session", async () => {
+    // Seed a game, a player on it, then soft-delete.
+    await seedGame("game-canceled");
+    const sessionTokenHash = "hash-player-a";
+    const now = new Date().toISOString();
+    await db
+      .insertInto("live_game_players")
+      .values({
+        id: "player-a",
+        game_id: "game-canceled",
+        nickname: "Alice",
+        normalized_nickname: "alice",
+        session_token_hash: sessionTokenHash,
+        join_status: "approved",
+        is_submitted: 0,
+        picks_json: "{}",
+        auth_method: "guest",
+        clerk_user_id: null,
+        joined_at: now,
+        last_seen_at: now,
+        updated_at: now,
+      })
+      .execute();
+    await liveGames.softDeleteLiveGame("game-canceled", HOST);
+
+    const state = await liveGames.getLiveGameState("game-canceled", {
+      hostUserId: null,
+      sessionTokenHash,
+      clerkUserId: null,
+      joinCode: null,
+    });
+
+    assert.ok(state, "returns state");
+    assert.equal(state!.game.status, "canceled");
+  });
+
+  test("getLiveGameState returns null for deleted game to non-session requester", async () => {
+    await seedGame("game-canceled-stranger");
+    await liveGames.softDeleteLiveGame("game-canceled-stranger", HOST);
+
+    const state = await liveGames.getLiveGameState("game-canceled-stranger", {
+      hostUserId: null,
+      sessionTokenHash: null,
+      clerkUserId: null,
+      joinCode: null,
+    });
+
+    assert.equal(state, null);
+  });
 });
