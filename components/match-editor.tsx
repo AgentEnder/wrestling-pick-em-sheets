@@ -1044,8 +1044,9 @@ export const MatchEditor = memo(function MatchEditor({
                       </button>
                     </div>
 
-                    {(q.valueType === "time" ||
-                      q.valueType === "numerical") && (
+                    {q.answerType !== "threshold" &&
+                      (q.valueType === "time" ||
+                        q.valueType === "numerical") && (
                       <>
                         <span className="text-xs text-muted-foreground">
                           Grading:

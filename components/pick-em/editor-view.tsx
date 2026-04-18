@@ -481,8 +481,9 @@ export function EditorView() {
                   </button>
                 </div>
               </div>
-              {question.valueType === "time" ||
-              question.valueType === "numerical" ? (
+              {question.answerType !== "threshold" &&
+              (question.valueType === "time" ||
+                question.valueType === "numerical") ? (
                 <div className="flex flex-wrap items-center gap-2 pl-6">
                   <Label className="text-xs text-muted-foreground">
                     Grading:

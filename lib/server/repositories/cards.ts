@@ -5,6 +5,7 @@ import {
   DEFAULT_MATCH_TYPE_ID,
   normalizeMatchTypeId,
 } from "@/lib/match-types";
+import { normalizeBonusQuestionForWrite } from "@/lib/server/bonus-question-normalize";
 import { db } from "@/lib/server/db/client";
 import type {
   CardMatchOverrides,
@@ -848,6 +849,14 @@ export async function persistOwnedCardSheet(
 
   if (!card) return null;
 
+  const normalizedEventBonuses = input.eventBonusQuestions.map(
+    normalizeBonusQuestionForWrite,
+  );
+  const normalizedMatches = input.matches.map((match) => ({
+    ...match,
+    bonusQuestions: match.bonusQuestions.map(normalizeBonusQuestionForWrite),
+  }));
+
   const now = new Date().toISOString();
   const name = input.eventName.trim() ? input.eventName.trim() : null;
 
@@ -869,7 +878,7 @@ export async function persistOwnedCardSheet(
             : 0,
         event_bonus_questions_json: card.template_card_id
           ? "[]"
-          : JSON.stringify(input.eventBonusQuestions),
+          : JSON.stringify(normalizedEventBonuses),
         updated_at: now,
       })
       .where("id", "=", cardId)
@@ -888,7 +897,7 @@ export async function persistOwnedCardSheet(
           default_points: input.defaultPoints,
           tiebreaker_label: input.tiebreakerLabel,
           tiebreaker_is_time_based: input.tiebreakerIsTimeBased ? 1 : 0,
-          event_bonus_questions_json: JSON.stringify(input.eventBonusQuestions),
+          event_bonus_questions_json: JSON.stringify(normalizedEventBonuses),
           updated_at: now,
         })
         .onConflict((oc) =>
@@ -901,9 +910,7 @@ export async function persistOwnedCardSheet(
             default_points: input.defaultPoints,
             tiebreaker_label: input.tiebreakerLabel,
             tiebreaker_is_time_based: input.tiebreakerIsTimeBased ? 1 : 0,
-            event_bonus_questions_json: JSON.stringify(
-              input.eventBonusQuestions,
-            ),
+            event_bonus_questions_json: JSON.stringify(normalizedEventBonuses),
             updated_at: now,
           }),
         )
@@ -959,7 +966,7 @@ export async function persistOwnedCardSheet(
         await trx
           .insertInto("card_matches")
           .values(
-            input.matches.map((match, index) =>
+            normalizedMatches.map((match, index) =>
               toCardMatchInsert(cardId, match, index + 1, 1, now),
             ),
           )
@@ -988,7 +995,7 @@ export async function persistOwnedCardSheet(
       await trx
         .insertInto("card_matches")
         .values(
-          input.matches.map((match, index) =>
+          normalizedMatches.map((match, index) =>
             toCardMatchInsert(cardId, match, index + 1, 0, now),
           ),
         )
