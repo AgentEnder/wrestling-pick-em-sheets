@@ -435,8 +435,8 @@ function getEventBonusLineUnits(sheet: PickEmSheet): number {
   return baseUnits + questionUnits;
 }
 
-function getSparseExpansionVars(sheet: PickEmSheet): CSSProperties {
-  const sheetHeightPx = 10.2 * 96;
+function getPageFillExpansionVars(sheet: PickEmSheet): CSSProperties {
+  const pageContentHeightPx = 10.2 * 96;
   // Baseline content row height in print: 10pt × ~1.33 line-height ≈ 13.3px.
   // Used as the unit for visually-grounded safety caps so variables scale with
   // content instead of via magic numbers.
@@ -454,8 +454,22 @@ function getSparseExpansionVars(sheet: PickEmSheet): CSSProperties {
     (lineUnits + eventBonusUnits + headerUnits + footerUnits) * 11.8 +
     matchCount * 8;
 
-  // Reserve ~12px so the footer doesn't kiss the last content block.
-  const leftoverPx = Math.max(0, sheetHeightPx - estimatedUsedPx - 12);
+  // Target expansion to fill the number of pages this card naturally occupies
+  // — a 1.3-page card expands to 2 pages, a 0.6-page card expands to 1 page.
+  // This is the "each page is full" requirement: rather than clamping to a
+  // single page's leftover, we let content stretch to the next whole-page
+  // boundary.
+  const pagesUsed = Math.max(
+    1,
+    Math.ceil(estimatedUsedPx / pageContentHeightPx),
+  );
+  const targetTotalPx = pagesUsed * pageContentHeightPx;
+
+  // Reserve ~12px per page so the footer doesn't kiss the last content block.
+  const leftoverPx = Math.max(
+    0,
+    targetTotalPx - estimatedUsedPx - 12 * pagesUsed,
+  );
 
   // Allocate leftover to variables by visual-impact weight.
   // Inter-match gaps dominate — they drive the "space is used well" perception.
@@ -513,8 +527,7 @@ function getSparseExpansionVars(sheet: PickEmSheet): CSSProperties {
 
 export function PrintSheet({ sheet }: PrintSheetProps) {
   const density = getPrintDensity(sheet);
-  const printSheetStyle =
-    density === "sparse" ? getSparseExpansionVars(sheet) : undefined;
+  const printSheetStyle = getPageFillExpansionVars(sheet);
   const totalPoints =
     sheet.matches.reduce((sum, m) => {
       return sum + getMatchTotalPoints(m, sheet.defaultPoints);

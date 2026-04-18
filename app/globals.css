@@ -570,7 +570,7 @@ body[data-scroll-locked] {
   flex: 1;
 }
 
-.print-sheet[data-density="sparse"] .print-matches {
+.print-sheet .print-matches {
   justify-content: space-between;
 }
 
