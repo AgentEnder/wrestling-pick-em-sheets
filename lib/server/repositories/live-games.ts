@@ -1330,6 +1330,7 @@ interface ScoreAccumulator {
   winnerPoints: number;
   bonusPoints: number;
   surprisePoints: number;
+  perQuestion: BreakdownRow[];
   isSubmitted: boolean;
   updatedAt: string;
   lastSeenAt: string;
@@ -1358,6 +1359,7 @@ export function computeLeaderboard(
       winnerPoints: 0,
       bonusPoints: 0,
       surprisePoints: 0,
+      perQuestion: [],
       isSubmitted: player.isSubmitted,
       updatedAt: player.updatedAt,
       lastSeenAt: player.lastSeenAt,
@@ -1385,18 +1387,31 @@ export function computeLeaderboard(
           normalizeText(o.playerNickname) === normalizeText(player.nickname),
       );
 
+      let matchWinnerScore = 0;
       if (winnerOverride) {
         if (winnerOverride.accepted) {
-          score.score += winnerPoints;
-          score.winnerPoints += winnerPoints;
+          matchWinnerScore = winnerPoints;
         }
       } else if (
         keyMatchResult.winnerName.trim() &&
         playerMatchPick?.winnerName &&
         answerEquals(keyMatchResult.winnerName, playerMatchPick.winnerName)
       ) {
-        score.score += winnerPoints;
-        score.winnerPoints += winnerPoints;
+        matchWinnerScore = winnerPoints;
+      }
+
+      if (matchWinnerScore > 0) {
+        score.score += matchWinnerScore;
+        score.winnerPoints += matchWinnerScore;
+      }
+
+      if (keyMatchResult.winnerName.trim() || winnerOverride) {
+        score.perQuestion.push({
+          kind: "match-winner",
+          matchId: match.id,
+          score: matchWinnerScore,
+          maxPoints: winnerPoints,
+        });
       }
 
       if (
@@ -1571,7 +1586,7 @@ export function computeLeaderboard(
         winnerPoints: entry.winnerPoints,
         bonusPoints: entry.bonusPoints,
         surprisePoints: entry.surprisePoints,
-        perQuestion: [], // TODO: populated in subsequent tasks
+        perQuestion: entry.perQuestion,
       },
       isSubmitted: entry.isSubmitted,
       lastUpdatedAt: entry.updatedAt,

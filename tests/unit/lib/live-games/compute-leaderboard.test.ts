@@ -5,6 +5,7 @@ import { computeLeaderboard } from "@/lib/server/repositories/live-games";
 import type {
   LiveGameKeyPayload,
   LiveGamePlayer,
+  Match,
 } from "@/lib/types";
 import type { ResolvedCard } from "@/lib/server/repositories/cards";
 
@@ -56,5 +57,42 @@ describe("computeLeaderboard — perQuestion breakdown", () => {
   test("scaffolding compiles and runs", () => {
     const result = computeLeaderboard(makeCard(), makeKey(), []);
     assert.deepEqual(result, []);
+  });
+
+  test("emits match-winner row when host keyed the winner and player picked correctly", () => {
+    const match = { id: "m1", title: "Main Event", points: 10, bonusQuestions: [], isBattleRoyal: false, surpriseSlots: 0, surpriseEntrantPoints: null, participants: [], type: "standard", typeLabelOverride: null, isEliminationStyle: false, description: null } as unknown as Match;
+    const card = makeCard({ matches: [match] });
+    const key = makeKey({ matchResults: [{ matchId: "m1", winnerName: "Cody", battleRoyalEntryOrder: [], bonusAnswers: [] }] });
+    const player = makePlayer({ picks: { matchPicks: [{ matchId: "m1", winnerName: "Cody", battleRoyalEntrants: [], bonusAnswers: [] }], eventBonusAnswers: [], tiebreakerAnswer: null } });
+
+    const [entry] = computeLeaderboard(card, key, [player]);
+
+    assert.equal(entry.score, 10);
+    assert.deepEqual(entry.breakdown.perQuestion, [
+      { kind: "match-winner", matchId: "m1", score: 10, maxPoints: 10 },
+    ]);
+  });
+
+  test("does not emit match-winner row when host has not keyed the match", () => {
+    const match = { id: "m1", title: "Main Event", points: 10, bonusQuestions: [], isBattleRoyal: false, surpriseSlots: 0, surpriseEntrantPoints: null, participants: [], type: "standard", typeLabelOverride: null, isEliminationStyle: false, description: null } as unknown as Match;
+    const card = makeCard({ matches: [match] });
+    const player = makePlayer({ picks: { matchPicks: [{ matchId: "m1", winnerName: "Cody", battleRoyalEntrants: [], bonusAnswers: [] }], eventBonusAnswers: [], tiebreakerAnswer: null } });
+
+    const [entry] = computeLeaderboard(card, makeKey(), [player]);
+
+    assert.deepEqual(entry.breakdown.perQuestion, []);
+  });
+
+  test("emits match-winner row with score=0 when player picked wrong", () => {
+    const match = { id: "m1", title: "Main Event", points: 10, bonusQuestions: [], isBattleRoyal: false, surpriseSlots: 0, surpriseEntrantPoints: null, participants: [], type: "standard", typeLabelOverride: null, isEliminationStyle: false, description: null } as unknown as Match;
+    const card = makeCard({ matches: [match] });
+    const key = makeKey({ matchResults: [{ matchId: "m1", winnerName: "Cody", battleRoyalEntryOrder: [], bonusAnswers: [] }] });
+    const player = makePlayer({ picks: { matchPicks: [{ matchId: "m1", winnerName: "Roman", battleRoyalEntrants: [], bonusAnswers: [] }], eventBonusAnswers: [], tiebreakerAnswer: null } });
+
+    const [entry] = computeLeaderboard(card, key, [player]);
+
+    assert.deepEqual(entry.breakdown.perQuestion, [
+      { kind: "match-winner", matchId: "m1", score: 0, maxPoints: 10 },
+    ]);
   });
 });
