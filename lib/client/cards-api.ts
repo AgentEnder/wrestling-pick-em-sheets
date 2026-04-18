@@ -15,6 +15,7 @@ export interface CardSummary {
   name: string;
   isPublic: boolean;
   isTemplate: boolean;
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +36,7 @@ export interface ResolvedCard {
   tiebreakerIsTimeBased: boolean;
   matches: Match[];
   eventBonusQuestions: BonusQuestion[];
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -79,8 +81,23 @@ async function requestJson<T>(
   return body.data;
 }
 
-export function listCards(): Promise<CardSummary[]> {
-  return requestJson<CardSummary[]>("/api/cards");
+export function listCards(
+  options: { includeArchived?: boolean } = {},
+): Promise<CardSummary[]> {
+  const qs = options.includeArchived ? "?includeArchived=true" : "";
+  return requestJson<CardSummary[]>(`/api/cards${qs}`);
+}
+
+export function archiveCard(cardId: string): Promise<CardSummary> {
+  return requestJson<CardSummary>(`/api/cards/${cardId}/archive`, {
+    method: "POST",
+  });
+}
+
+export function unarchiveCard(cardId: string): Promise<CardSummary> {
+  return requestJson<CardSummary>(`/api/cards/${cardId}/unarchive`, {
+    method: "POST",
+  });
 }
 
 export function getCard(cardId: string): Promise<ResolvedCard> {

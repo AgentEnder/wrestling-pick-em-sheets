@@ -39,9 +39,13 @@ function isEditableField(element: Element | null): boolean {
 
 interface PickEmEditorAppProps {
   cardId: string;
+  archivedAt?: string | null;
 }
 
-export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
+export function PickEmEditorApp({
+  cardId,
+  archivedAt = null,
+}: PickEmEditorAppProps) {
   const { userId, isLoaded: isAuthLoaded } = useAuth();
 
   const {
@@ -350,6 +354,13 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
       />
 
       <main className="no-print relative z-10 mx-auto max-w-5xl px-4 py-6 lg:py-8">
+        {archivedAt ? (
+          <div className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+            This card is archived. Editing is allowed, but new live games
+            can&apos;t be launched until you unarchive it from the Cards
+            workspace.
+          </div>
+        ) : null}
         <section className="rounded-2xl border border-border/70 bg-card/65 p-4 shadow-[0_24px_50px_rgba(0,0,0,0.28)] backdrop-blur lg:p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -369,12 +380,19 @@ export function PickEmEditorApp({ cardId }: PickEmEditorAppProps) {
                     Print Preview
                   </TabsTrigger>
                 </TabsList>
-                <Button asChild size="sm" variant="outline">
-                  <Link href={`/cards/${cardId}/live`}>
+                {archivedAt ? (
+                  <Button size="sm" variant="outline" disabled>
                     <Timer className="h-4 w-4 mr-1" />
                     Live Game
-                  </Link>
-                </Button>
+                  </Button>
+                ) : (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/cards/${cardId}/live`}>
+                      <Timer className="h-4 w-4 mr-1" />
+                      Live Game
+                    </Link>
+                  </Button>
+                )}
               </div>
               <div className="w-full rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-xs text-muted-foreground sm:w-auto sm:max-w-md">
                 <p>

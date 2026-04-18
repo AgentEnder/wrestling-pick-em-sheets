@@ -103,6 +103,7 @@ export interface CardOverrides {
 }
 
 export interface Cards {
+  archived_at: string | null;
   created_at: Generated<string>;
   default_points: number | null;
   event_bonus_questions_json: Generated<string>;
@@ -182,7 +183,6 @@ export interface LiveGames {
   card_id: string;
   created_at: Generated<string>;
   ended_at: string | null;
-  event_start_at: string | null;
   expires_at: string;
   geo_radius_km: Generated<number>;
   host_geo_city: string | null;
