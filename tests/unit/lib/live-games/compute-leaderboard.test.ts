@@ -291,4 +291,96 @@ describe("computeLeaderboard — perQuestion breakdown", () => {
 
     assert.deepEqual(entry.breakdown.perQuestion, []);
   });
+
+  test("surprise: emits one row per entrant guessed by >=1 player", () => {
+    const match = makeMatch({
+      id: "m1",
+      title: "Royal Rumble",
+      isBattleRoyal: true,
+      surpriseSlots: 2,
+      surpriseEntrantPoints: 7,
+      type: "battle-royal",
+    });
+    const card = makeCard({ matches: [match] });
+    const key = makeKey({
+      matchResults: [
+        makeMatchResult({
+          matchId: "m1",
+          battleRoyalEntryOrder: ["Sting", "Jarrett"],
+        }),
+      ],
+    });
+    const alice = makePlayer({
+      id: "p1",
+      nickname: "Alice",
+      picks: makePicks({
+        matchPicks: [
+          makeMatchPick({ matchId: "m1", battleRoyalEntrants: ["Sting"] }),
+        ],
+      }),
+    });
+    const bob = makePlayer({
+      id: "p2",
+      nickname: "Bob",
+      picks: makePicks({
+        matchPicks: [
+          makeMatchPick({
+            matchId: "m1",
+            battleRoyalEntrants: ["Sting", "Jarrett"],
+          }),
+        ],
+      }),
+    });
+
+    const leaderboard = computeLeaderboard(card, key, [alice, bob]);
+    const aliceRows = leaderboard.find((e) => e.nickname === "Alice")!
+      .breakdown.perQuestion;
+    const bobRows = leaderboard.find((e) => e.nickname === "Bob")!
+      .breakdown.perQuestion;
+
+    assert.deepEqual(aliceRows, [
+      { kind: "match-surprise", matchId: "m1", entrantName: "Sting", score: 7, maxPoints: 7 },
+      { kind: "match-surprise", matchId: "m1", entrantName: "Jarrett", score: 0, maxPoints: 7 },
+    ]);
+    assert.deepEqual(bobRows, [
+      { kind: "match-surprise", matchId: "m1", entrantName: "Sting", score: 7, maxPoints: 7 },
+      { kind: "match-surprise", matchId: "m1", entrantName: "Jarrett", score: 7, maxPoints: 7 },
+    ]);
+  });
+
+  test("surprise: entrant nobody picked produces no row", () => {
+    const match = makeMatch({
+      id: "m1",
+      title: "Royal Rumble",
+      isBattleRoyal: true,
+      surpriseSlots: 2,
+      surpriseEntrantPoints: 7,
+      type: "battle-royal",
+    });
+    const card = makeCard({ matches: [match] });
+    const key = makeKey({
+      matchResults: [
+        makeMatchResult({
+          matchId: "m1",
+          battleRoyalEntryOrder: ["Sting", "Jarrett"],
+        }),
+      ],
+    });
+    const alice = makePlayer({
+      picks: makePicks({
+        matchPicks: [
+          makeMatchPick({ matchId: "m1", battleRoyalEntrants: ["Sting"] }),
+        ],
+      }),
+    });
+
+    const [entry] = computeLeaderboard(card, key, [alice]);
+    const surpriseRows = entry.breakdown.perQuestion.filter(
+      (r) => r.kind === "match-surprise",
+    );
+
+    assert.deepEqual(surpriseRows, [
+      { kind: "match-surprise", matchId: "m1", entrantName: "Sting", score: 7, maxPoints: 7 },
+    ]);
+  });
 });

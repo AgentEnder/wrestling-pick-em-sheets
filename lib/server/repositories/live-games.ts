@@ -1414,38 +1414,6 @@ export function computeLeaderboard(
         });
       }
 
-      if (
-        match.isBattleRoyal &&
-        keyMatchResult.battleRoyalEntryOrder.length > 0
-      ) {
-        const keyedEntrants = new Set(
-          keyMatchResult.battleRoyalEntryOrder.map((entrant) =>
-            normalizeText(entrant),
-          ),
-        );
-        const playerSet = new Set(
-          (playerMatchPick?.battleRoyalEntrants ?? []).map((entrant) =>
-            normalizeText(entrant),
-          ),
-        );
-        let matchesCount = 0;
-        for (const entrant of playerSet) {
-          if (keyedEntrants.has(entrant)) {
-            matchesCount += 1;
-          }
-        }
-
-        const cappedMatches = Math.min(
-          matchesCount,
-          Math.max(0, match.surpriseSlots),
-        );
-        const points = cappedMatches * surprisePoints;
-        if (points > 0) {
-          score.score += points;
-          score.surprisePoints += points;
-        }
-      }
-
       for (const question of match.bonusQuestions) {
         const keyAnswer =
           keyMatchResult.bonusAnswers.find(
@@ -1520,6 +1488,55 @@ export function computeLeaderboard(
           score: 0,
           maxPoints,
         });
+      }
+    }
+
+    if (
+      match.isBattleRoyal &&
+      keyMatchResult.battleRoyalEntryOrder.length > 0
+    ) {
+      const keyedEntrants = keyMatchResult.battleRoyalEntryOrder;
+      const pickedByAnyNorm = new Set<string>();
+      const pickedByPlayerNorm = new Map<string, Set<string>>();
+      for (const player of submittedPlayers) {
+        const pick = pickMatchPick(player.picks.matchPicks, match.id);
+        const normSet = new Set(
+          (pick?.battleRoyalEntrants ?? []).map((entrant) =>
+            normalizeText(entrant),
+          ),
+        );
+        pickedByPlayerNorm.set(player.id, normSet);
+        for (const entrantNorm of normSet) pickedByAnyNorm.add(entrantNorm);
+      }
+
+      const cappedMax = Math.max(0, match.surpriseSlots);
+      const awardedByPlayer = new Map<string, number>();
+
+      for (const keyedRaw of keyedEntrants) {
+        const keyedNorm = normalizeText(keyedRaw);
+        if (!pickedByAnyNorm.has(keyedNorm)) continue;
+
+        for (const player of submittedPlayers) {
+          const acc = accumulators.get(player.id);
+          if (!acc) continue;
+          const guessed =
+            pickedByPlayerNorm.get(player.id)?.has(keyedNorm) ?? false;
+          const prior = awardedByPlayer.get(player.id) ?? 0;
+          const canAward = guessed && prior < cappedMax;
+          const earned = canAward ? surprisePoints : 0;
+          if (earned > 0) {
+            acc.score += earned;
+            acc.surprisePoints += earned;
+            awardedByPlayer.set(player.id, prior + 1);
+          }
+          acc.perQuestion.push({
+            kind: "match-surprise",
+            matchId: match.id,
+            entrantName: keyedRaw,
+            score: earned,
+            maxPoints: surprisePoints,
+          });
+        }
       }
     }
   }
