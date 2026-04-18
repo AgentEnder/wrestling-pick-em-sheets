@@ -44,7 +44,7 @@ export function makePlayer(overrides: Partial<LiveGamePlayer> = {}): LiveGamePla
     joinStatus: "approved" as const,
     nickname: "Alice",
     isSubmitted: true,
-    picks: { matchPicks: [], eventBonusAnswers: [], tiebreakerAnswer: null },
+    picks: { matchPicks: [], eventBonusAnswers: [], tiebreakerAnswer: "" },
     updatedAt: "2026-04-17T00:00:00Z",
     lastSeenAt: "2026-04-17T00:00:00Z",
     submittedAt: "2026-04-17T00:00:00Z",
@@ -62,8 +62,8 @@ describe("computeLeaderboard — perQuestion breakdown", () => {
   test("emits match-winner row when host keyed the winner and player picked correctly", () => {
     const match = { id: "m1", title: "Main Event", points: 10, bonusQuestions: [], isBattleRoyal: false, surpriseSlots: 0, surpriseEntrantPoints: null, participants: [], type: "standard", typeLabelOverride: null, isEliminationStyle: false, description: null } as unknown as Match;
     const card = makeCard({ matches: [match] });
-    const key = makeKey({ matchResults: [{ matchId: "m1", winnerName: "Cody", battleRoyalEntryOrder: [], bonusAnswers: [] }] });
-    const player = makePlayer({ picks: { matchPicks: [{ matchId: "m1", winnerName: "Cody", battleRoyalEntrants: [], bonusAnswers: [] }], eventBonusAnswers: [], tiebreakerAnswer: null } });
+    const key = makeKey({ matchResults: [{ matchId: "m1", winnerName: "Cody", winnerRecordedAt: null, battleRoyalEntryOrder: [], battleRoyalEliminationOrder: [], bonusAnswers: [] }] });
+    const player = makePlayer({ picks: { matchPicks: [{ matchId: "m1", winnerName: "Cody", battleRoyalEntrants: [], bonusAnswers: [] }], eventBonusAnswers: [], tiebreakerAnswer: "" } });
 
     const [entry] = computeLeaderboard(card, key, [player]);
 
@@ -76,7 +76,7 @@ describe("computeLeaderboard — perQuestion breakdown", () => {
   test("does not emit match-winner row when host has not keyed the match", () => {
     const match = { id: "m1", title: "Main Event", points: 10, bonusQuestions: [], isBattleRoyal: false, surpriseSlots: 0, surpriseEntrantPoints: null, participants: [], type: "standard", typeLabelOverride: null, isEliminationStyle: false, description: null } as unknown as Match;
     const card = makeCard({ matches: [match] });
-    const player = makePlayer({ picks: { matchPicks: [{ matchId: "m1", winnerName: "Cody", battleRoyalEntrants: [], bonusAnswers: [] }], eventBonusAnswers: [], tiebreakerAnswer: null } });
+    const player = makePlayer({ picks: { matchPicks: [{ matchId: "m1", winnerName: "Cody", battleRoyalEntrants: [], bonusAnswers: [] }], eventBonusAnswers: [], tiebreakerAnswer: "" } });
 
     const [entry] = computeLeaderboard(card, makeKey(), [player]);
 
@@ -86,8 +86,8 @@ describe("computeLeaderboard — perQuestion breakdown", () => {
   test("emits match-winner row with score=0 when player picked wrong", () => {
     const match = { id: "m1", title: "Main Event", points: 10, bonusQuestions: [], isBattleRoyal: false, surpriseSlots: 0, surpriseEntrantPoints: null, participants: [], type: "standard", typeLabelOverride: null, isEliminationStyle: false, description: null } as unknown as Match;
     const card = makeCard({ matches: [match] });
-    const key = makeKey({ matchResults: [{ matchId: "m1", winnerName: "Cody", battleRoyalEntryOrder: [], bonusAnswers: [] }] });
-    const player = makePlayer({ picks: { matchPicks: [{ matchId: "m1", winnerName: "Roman", battleRoyalEntrants: [], bonusAnswers: [] }], eventBonusAnswers: [], tiebreakerAnswer: null } });
+    const key = makeKey({ matchResults: [{ matchId: "m1", winnerName: "Cody", winnerRecordedAt: null, battleRoyalEntryOrder: [], battleRoyalEliminationOrder: [], bonusAnswers: [] }] });
+    const player = makePlayer({ picks: { matchPicks: [{ matchId: "m1", winnerName: "Roman", battleRoyalEntrants: [], bonusAnswers: [] }], eventBonusAnswers: [], tiebreakerAnswer: "" } });
 
     const [entry] = computeLeaderboard(card, key, [player]);
 
