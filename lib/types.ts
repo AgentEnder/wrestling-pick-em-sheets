@@ -249,6 +249,12 @@ export interface LiveGamePlayer {
   architecture: string | null;
 }
 
+export type BreakdownRow =
+  | { kind: "match-winner"; matchId: string; score: number; maxPoints: number }
+  | { kind: "match-bonus"; matchId: string; questionId: string; score: number; maxPoints: number }
+  | { kind: "event-bonus"; questionId: string; score: number; maxPoints: number }
+  | { kind: "match-surprise"; matchId: string; entrantName: string; score: number; maxPoints: number };
+
 export interface LiveGameLeaderboardEntry {
   rank: number;
   nickname: string;
@@ -257,6 +263,7 @@ export interface LiveGameLeaderboardEntry {
     winnerPoints: number;
     bonusPoints: number;
     surprisePoints: number;
+    perQuestion: BreakdownRow[];
   };
   isSubmitted: boolean;
   lastUpdatedAt: string;

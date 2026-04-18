@@ -23,6 +23,7 @@ import {
 } from "@/lib/server/scoring";
 import type {
   BonusQuestion,
+  BreakdownRow,
   LiveGame,
   LiveGameKeyPayload,
   LiveGameLeaderboardEntry,
@@ -1570,6 +1571,7 @@ function computeLeaderboard(
         winnerPoints: entry.winnerPoints,
         bonusPoints: entry.bonusPoints,
         surprisePoints: entry.surprisePoints,
+        perQuestion: [], // TODO: populated in subsequent tasks
       },
       isSubmitted: entry.isSubmitted,
       lastUpdatedAt: entry.updatedAt,
@@ -3194,6 +3196,7 @@ export async function getLiveGameState(
             winnerPoints: snap.winner_points,
             bonusPoints: snap.bonus_points,
             surprisePoints: snap.surprise_points,
+            perQuestion: [] as BreakdownRow[],
           },
           isSubmitted: player.isSubmitted,
           lastUpdatedAt: player.updatedAt,
