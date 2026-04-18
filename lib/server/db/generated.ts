@@ -203,6 +203,7 @@ export interface LiveGames {
 
 export interface LiveGameScoreSnapshots {
   bonus_points: Generated<number>;
+  breakdown_json: string | null;
   game_id: string;
   id: Generated<number | null>;
   max_possible_points: Generated<number>;
