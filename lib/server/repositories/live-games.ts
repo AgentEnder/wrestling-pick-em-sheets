@@ -2299,6 +2299,25 @@ export async function findLiveGamePlayerBySession(
   return mapLiveGamePlayer(row);
 }
 
+export async function findLiveGamePlayerByClerkUserId(
+  gameId: string,
+  clerkUserId: string,
+  options?: { includeNonApproved?: boolean },
+): Promise<LiveGamePlayer | null> {
+  let query = db
+    .selectFrom("live_game_players")
+    .selectAll()
+    .where("game_id", "=", gameId)
+    .where("clerk_user_id", "=", clerkUserId);
+  if (!options?.includeNonApproved) {
+    query = query.where("join_status", "=", "approved");
+  }
+  const row = await query.executeTakeFirst();
+
+  if (!row) return null;
+  return mapLiveGamePlayer(row);
+}
+
 function evaluateJoinDecision(
   game: LiveGame,
   options?: JoinLiveGameOptions,
@@ -3045,6 +3064,7 @@ export async function getLiveGameViewerAccess(
   options: {
     hostUserId?: string | null;
     sessionTokenHash?: string | null;
+    clerkUserId?: string | null;
     joinCode?: string | null;
   },
 ): Promise<LiveGameViewerAccess | null> {
@@ -3082,34 +3102,35 @@ export async function getLiveGameViewerAccess(
     };
   }
 
-  if (options.sessionTokenHash) {
-    const player = await findLiveGamePlayerBySession(
-      game.id,
-      options.sessionTokenHash,
-    );
-    if (!player) return null;
+  const playerFromSession = options.sessionTokenHash
+    ? await findLiveGamePlayerBySession(game.id, options.sessionTokenHash)
+    : null;
+  const player =
+    playerFromSession ??
+    (options.clerkUserId
+      ? await findLiveGamePlayerByClerkUserId(game.id, options.clerkUserId)
+      : null);
 
-    const now = nowIso();
-    await db
-      .updateTable("live_game_players")
-      .set({
-        last_seen_at: now,
-      })
-      .where("id", "=", player.id)
-      .execute();
+  if (!player) return null;
 
-    return {
-      game,
-      card,
-      player: {
-        ...player,
-        lastSeenAt: now,
-      },
-      isHost: false,
-    };
-  }
+  const now = nowIso();
+  await db
+    .updateTable("live_game_players")
+    .set({
+      last_seen_at: now,
+    })
+    .where("id", "=", player.id)
+    .execute();
 
-  return null;
+  return {
+    game,
+    card,
+    player: {
+      ...player,
+      lastSeenAt: now,
+    },
+    isHost: false,
+  };
 }
 
 export async function getLiveGameState(
@@ -3117,6 +3138,7 @@ export async function getLiveGameState(
   options: {
     hostUserId?: string | null;
     sessionTokenHash?: string | null;
+    clerkUserId?: string | null;
     joinCode?: string | null;
   },
 ): Promise<LiveGameComputedState | null> {
@@ -3276,18 +3298,21 @@ export async function reviewLiveGameJoinRequest(
   return "ok";
 }
 
+export interface LiveGamePlayerCredentials {
+  sessionTokenHash?: string | null;
+  clerkUserId?: string | null;
+}
+
 export async function getLiveGameMe(
   gameId: string,
-  sessionTokenHash: string,
+  credentials: LiveGamePlayerCredentials,
 ): Promise<{
   game: LiveGame;
   card: ResolvedCard;
   player: LiveGamePlayer;
   locks: ReturnType<typeof buildEffectiveLockSnapshot>;
 } | null> {
-  const access = await getLiveGameViewerAccess(gameId, {
-    sessionTokenHash,
-  });
+  const access = await getLiveGameViewerAccess(gameId, credentials);
 
   if (!access?.player) return null;
 
@@ -3301,12 +3326,10 @@ export async function getLiveGameMe(
 
 export async function upsertLiveGamePushSubscriptionForPlayer(
   gameId: string,
-  sessionTokenHash: string,
+  credentials: LiveGamePlayerCredentials,
   subscription: LiveGamePushSubscriptionInput,
 ): Promise<"ok" | "unauthorized" | "inactive"> {
-  const access = await getLiveGameViewerAccess(gameId, {
-    sessionTokenHash,
-  });
+  const access = await getLiveGameViewerAccess(gameId, credentials);
 
   if (!access?.player) return "unauthorized";
   if (access.game.status === "ended") return "inactive";
@@ -3345,12 +3368,10 @@ export async function upsertLiveGamePushSubscriptionForPlayer(
 
 export async function removeLiveGamePushSubscriptionForPlayer(
   gameId: string,
-  sessionTokenHash: string,
+  credentials: LiveGamePlayerCredentials,
   endpoint: string,
 ): Promise<boolean> {
-  const access = await getLiveGameViewerAccess(gameId, {
-    sessionTokenHash,
-  });
+  const access = await getLiveGameViewerAccess(gameId, credentials);
 
   if (!access?.player) return false;
 
@@ -3365,15 +3386,13 @@ export async function removeLiveGamePushSubscriptionForPlayer(
 
 export async function saveLiveGamePlayerPicks(
   gameId: string,
-  sessionTokenHash: string,
+  credentials: LiveGamePlayerCredentials,
   incoming: LivePlayerPicksPayload,
   expectedUpdatedAt?: string,
 ): Promise<
   { player: LiveGamePlayer; ignoredLocks: string[] } | "conflict" | null
 > {
-  const access = await getLiveGameViewerAccess(gameId, {
-    sessionTokenHash,
-  });
+  const access = await getLiveGameViewerAccess(gameId, credentials);
 
   if (!access?.player) return null;
   if (expectedUpdatedAt && access.player.updatedAt !== expectedUpdatedAt) {
@@ -3413,11 +3432,9 @@ export async function saveLiveGamePlayerPicks(
 
 export async function submitLiveGamePlayer(
   gameId: string,
-  sessionTokenHash: string,
+  credentials: LiveGamePlayerCredentials,
 ): Promise<LiveGamePlayer | null> {
-  const access = await getLiveGameViewerAccess(gameId, {
-    sessionTokenHash,
-  });
+  const access = await getLiveGameViewerAccess(gameId, credentials);
 
   if (!access?.player) return null;
 

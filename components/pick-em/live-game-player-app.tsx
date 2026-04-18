@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -86,6 +87,8 @@ export function LiveGamePlayerApp({
   gameId,
   joinCodeFromUrl,
 }: LiveGamePlayerAppProps) {
+  const router = useRouter();
+
   /* ---- Local state ---- */
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -287,6 +290,14 @@ export function LiveGamePlayerApp({
         getLiveGameMe(gameId),
         getLiveGameState(gameId, joinCodeFromUrl ?? undefined),
       ]);
+      if (!loadedMe) {
+        router.replace(
+          joinCodeFromUrl
+            ? `/join?code=${encodeURIComponent(joinCodeFromUrl)}`
+            : "/join",
+        );
+        return;
+      }
       applyGameUpdate(loadedState, loadedMe, false);
       setLastRefreshAtMs(Date.now());
     } catch (error) {
@@ -296,7 +307,7 @@ export function LiveGamePlayerApp({
     } finally {
       setIsLoading(false);
     }
-  }, [applyGameUpdate, gameId, joinCodeFromUrl]);
+  }, [applyGameUpdate, gameId, joinCodeFromUrl, router]);
 
   /* ---- Effects ---- */
   useEffect(() => {
@@ -375,6 +386,11 @@ export function LiveGamePlayerApp({
         getLiveGameMe(gameId),
       ])
         .then(([nextState, nextMe]) => {
+          if (!nextMe) {
+            // Player row is gone (deauth'd, kicked, or cookie invalidated);
+            // stop applying updates and let the next load() redirect.
+            return;
+          }
           applyGameUpdate(nextState, nextMe, true);
           setLastRefreshAtMs(Date.now());
         })

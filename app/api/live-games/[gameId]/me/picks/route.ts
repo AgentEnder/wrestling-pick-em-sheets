@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { getRequestUserId } from "@/lib/server/auth";
 import { enforceSameOrigin } from "@/lib/server/csrf";
 import { readLiveGameSessionTokenFromRequest } from "@/lib/server/live-game-session";
 import { checkRateLimit } from "@/lib/server/rate-limit";
@@ -36,9 +37,19 @@ const picksEnvelopeSchema = z.object({
   expectedUpdatedAt: z.string().datetime().optional(),
 });
 
-function requestKey(request: Request, sessionToken: string): string {
+function requestKey(
+  request: Request,
+  identity: { sessionToken?: string | null; clerkUserId?: string | null },
+): string {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return `${ip && ip.length > 0 ? ip : "anon"}:${sessionToken.slice(0, 12)}`;
+  const ipPart = ip && ip.length > 0 ? ip : "anon";
+  if (identity.sessionToken) {
+    return `${ipPart}:s:${identity.sessionToken.slice(0, 12)}`;
+  }
+  if (identity.clerkUserId) {
+    return `${ipPart}:c:${identity.clerkUserId.slice(0, 24)}`;
+  }
+  return ipPart;
 }
 
 export async function PUT(
@@ -51,12 +62,13 @@ export async function PUT(
   }
 
   const sessionToken = readLiveGameSessionTokenFromRequest(request);
-  if (!sessionToken) {
+  const clerkUserId = await getRequestUserId(request);
+  if (!sessionToken && !clerkUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const rate = checkRateLimit(
-    `picks:${requestKey(request, sessionToken)}`,
+    `picks:${requestKey(request, { sessionToken, clerkUserId })}`,
     120,
     60_000,
   );
@@ -98,7 +110,12 @@ export async function PUT(
   const { gameId } = await context.params;
   const saved = await saveLiveGamePlayerPicks(
     gameId,
-    hashLiveGameSessionToken(sessionToken),
+    {
+      sessionTokenHash: sessionToken
+        ? hashLiveGameSessionToken(sessionToken)
+        : null,
+      clerkUserId,
+    },
     picks,
     expectedUpdatedAt,
   );

@@ -21,6 +21,7 @@ export async function GET(
     sessionTokenHash: sessionToken
       ? hashLiveGameSessionToken(sessionToken)
       : null,
+    clerkUserId: userId,
     joinCode,
   });
 
