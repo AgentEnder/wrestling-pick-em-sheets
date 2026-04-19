@@ -63,10 +63,7 @@ import {
 } from "@/lib/pick-em/payload-utils";
 import {
   filterRosterMemberSuggestions,
-  formatWinnerName,
-  isNoContestWinner,
-  NO_CONTEST_WINNER_LABEL,
-  NO_CONTEST_WINNER_VALUE,
+  NO_CONTEST_WINNER_NAME,
 } from "@/lib/pick-em/text-utils";
 import { ThresholdButtons } from "@/components/pick-em/shared/threshold-buttons";
 import { CounterInput } from "@/components/pick-em/shared/counter-input";
@@ -169,19 +166,21 @@ function KeyMatchSectionInner({
   const winnerName = matchResult?.winnerName ?? "";
   const [winnerComboboxOpen, setWinnerComboboxOpen] = React.useState(false);
 
-  /* Build deduped winner candidates: participants + keyed entrants + player guesses */
+  /* Build deduped winner candidates: participants + keyed entrants + player guesses + No Contest */
   const winnerCandidates = useMemo(() => {
     const entryOrder = matchResult?.battleRoyalEntryOrder ?? [];
     const playerGuesses = (gameState?.playerAnswerSummaries ?? [])
       .map(
         (p) => p.matchPicks.find((mp) => mp.matchId === match.id)?.winnerName,
       )
-      .filter(
-        (name): name is string =>
-          !!name && name.trim().length > 0 && !isNoContestWinner(name),
-      );
+      .filter((name): name is string => !!name && name.trim().length > 0);
     return Array.from(
-      new Set([...participants, ...entryOrder, ...playerGuesses]),
+      new Set([
+        ...participants,
+        ...entryOrder,
+        ...playerGuesses,
+        NO_CONTEST_WINNER_NAME,
+      ]),
     );
   }, [
     participants,
@@ -504,7 +503,7 @@ function KeyMatchSectionInner({
                   aria-expanded={winnerComboboxOpen}
                   className="w-full justify-between font-normal"
                 >
-                  {formatWinnerName(winnerName) || "Select winner..."}
+                  {winnerName || "Select winner..."}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
@@ -533,26 +532,6 @@ function KeyMatchSectionInner({
                           )}
                         />
                         Unanswered
-                      </CommandItem>
-                      <CommandItem
-                        value={NO_CONTEST_WINNER_LABEL}
-                        onSelect={() => {
-                          liveSetMatchWinner(
-                            match.id,
-                            NO_CONTEST_WINNER_VALUE,
-                          );
-                          setWinnerComboboxOpen(false);
-                        }}
-                      >
-                        <Check
-                          className={cn(
-                            "mr-2 h-4 w-4",
-                            isNoContestWinner(winnerName)
-                              ? "opacity-100"
-                              : "opacity-0",
-                          )}
-                        />
-                        {NO_CONTEST_WINNER_LABEL}
                       </CommandItem>
                       {winnerCandidates.map((candidate) => (
                         <CommandItem
