@@ -7,6 +7,7 @@ import type { ResolvedCard } from "@/lib/server/repositories/cards";
 import { findResolvedReadableCardById } from "@/lib/server/repositories/cards";
 import { db } from "@/lib/server/db/client";
 import { computeMaxPossiblePoints } from "@/lib/server/scoring-utils";
+import { formatWinnerName } from "@/lib/pick-em/text-utils";
 import type {
   LiveGameEvents,
   LiveGamePlayers,
@@ -880,8 +881,14 @@ function buildKeyMutationEvents(
     const nextWinner = nextResult?.winnerName ?? "";
 
     if (!valuesEqualByType("string", previousWinner, nextWinner)) {
-      const previousWinnerTrimmed = abbreviateLabel(previousWinner, 56);
-      const nextWinnerTrimmed = abbreviateLabel(nextWinner, 56);
+      const previousWinnerTrimmed = abbreviateLabel(
+        formatWinnerName(previousWinner),
+        56,
+      );
+      const nextWinnerTrimmed = abbreviateLabel(
+        formatWinnerName(nextWinner),
+        56,
+      );
 
       if (!nextWinnerTrimmed) {
         events.push({

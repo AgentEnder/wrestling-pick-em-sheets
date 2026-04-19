@@ -1,3 +1,16 @@
+export const NO_CONTEST_WINNER_VALUE = "__no_contest__";
+export const NO_CONTEST_WINNER_LABEL = "No Contest";
+
+export function isNoContestWinner(winnerName: string | null | undefined): boolean {
+  return winnerName === NO_CONTEST_WINNER_VALUE;
+}
+
+export function formatWinnerName(winnerName: string | null | undefined): string {
+  if (!winnerName) return "";
+  if (isNoContestWinner(winnerName)) return NO_CONTEST_WINNER_LABEL;
+  return winnerName;
+}
+
 export function filterRosterMemberSuggestions(
   input: string,
   candidates: string[],

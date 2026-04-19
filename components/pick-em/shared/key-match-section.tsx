@@ -61,7 +61,13 @@ import {
   findAnswer,
   toLockKey,
 } from "@/lib/pick-em/payload-utils";
-import { filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import {
+  filterRosterMemberSuggestions,
+  formatWinnerName,
+  isNoContestWinner,
+  NO_CONTEST_WINNER_LABEL,
+  NO_CONTEST_WINNER_VALUE,
+} from "@/lib/pick-em/text-utils";
 import { ThresholdButtons } from "@/components/pick-em/shared/threshold-buttons";
 import { CounterInput } from "@/components/pick-em/shared/counter-input";
 import { BonusTimerCapture } from "@/components/pick-em/shared/bonus-timer-capture";
@@ -170,7 +176,10 @@ function KeyMatchSectionInner({
       .map(
         (p) => p.matchPicks.find((mp) => mp.matchId === match.id)?.winnerName,
       )
-      .filter((name): name is string => !!name && name.trim().length > 0);
+      .filter(
+        (name): name is string =>
+          !!name && name.trim().length > 0 && !isNoContestWinner(name),
+      );
     return Array.from(
       new Set([...participants, ...entryOrder, ...playerGuesses]),
     );
@@ -495,7 +504,7 @@ function KeyMatchSectionInner({
                   aria-expanded={winnerComboboxOpen}
                   className="w-full justify-between font-normal"
                 >
-                  {winnerName || "Select winner..."}
+                  {formatWinnerName(winnerName) || "Select winner..."}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
@@ -524,6 +533,26 @@ function KeyMatchSectionInner({
                           )}
                         />
                         Unanswered
+                      </CommandItem>
+                      <CommandItem
+                        value={NO_CONTEST_WINNER_LABEL}
+                        onSelect={() => {
+                          liveSetMatchWinner(
+                            match.id,
+                            NO_CONTEST_WINNER_VALUE,
+                          );
+                          setWinnerComboboxOpen(false);
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            isNoContestWinner(winnerName)
+                              ? "opacity-100"
+                              : "opacity-0",
+                          )}
+                        />
+                        {NO_CONTEST_WINNER_LABEL}
                       </CommandItem>
                       {winnerCandidates.map((candidate) => (
                         <CommandItem

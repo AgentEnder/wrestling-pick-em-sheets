@@ -23,7 +23,11 @@ import type {
   LiveGameStateResponse,
 } from "@/lib/client/live-games-api";
 import type { UseRosterSuggestionsReturn } from "@/hooks/use-roster-suggestions";
-import { filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import {
+  filterRosterMemberSuggestions,
+  NO_CONTEST_WINNER_LABEL,
+  NO_CONTEST_WINNER_VALUE,
+} from "@/lib/pick-em/text-utils";
 import { ThresholdButtons } from "@/components/pick-em/shared/threshold-buttons";
 import { MultipleChoiceSelect } from "@/components/pick-em/shared/multiple-choice-select";
 
@@ -90,9 +94,11 @@ function PlayerMatchPicksInner({
     ? Array.from(new Set([...match.participants, ...battleRoyalEntrants]))
     : match.participants;
   const winnerSelectValue = matchPick?.winnerName
-    ? allWinnerOptions.includes(matchPick.winnerName)
-      ? matchPick.winnerName
-      : "__none__"
+    ? matchPick.winnerName === NO_CONTEST_WINNER_VALUE
+      ? NO_CONTEST_WINNER_VALUE
+      : allWinnerOptions.includes(matchPick.winnerName)
+        ? matchPick.winnerName
+        : "__none__"
     : "__none__";
   const battleRoyalInputRef = React.useRef<HTMLInputElement>(null);
   const battleRoyalFieldKey = `battleRoyal:${match.id}`;
@@ -154,6 +160,9 @@ function PlayerMatchPicksInner({
                 {participant}
               </SelectItem>
             ))}
+            <SelectItem value={NO_CONTEST_WINNER_VALUE}>
+              {NO_CONTEST_WINNER_LABEL}
+            </SelectItem>
           </SelectContent>
         </Select>
 
