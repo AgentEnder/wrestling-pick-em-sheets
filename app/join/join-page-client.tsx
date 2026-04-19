@@ -323,13 +323,14 @@ export default function JoinPageClient() {
         <div className="mt-3 rounded-md border border-border/70 bg-background/40 px-3 py-2">
           <SignedIn>
             <p className="text-sm">
-              Joining as{" "}
+              Signed in as{" "}
               <span className="font-medium">
                 {accountLabel ?? "Signed-in user"}
               </span>
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Your account is linked to this room entry.
+              Your account is linked to this room entry. Pick any nickname
+              below — it doesn&apos;t have to match your account name.
             </p>
           </SignedIn>
           <SignedOut>
@@ -370,9 +371,23 @@ export default function JoinPageClient() {
           </div>
 
           <div className="space-y-1.5">
-            <label htmlFor="nickname" className="text-xs text-muted-foreground">
-              Nickname
-            </label>
+            <div className="flex items-center justify-between gap-2">
+              <label
+                htmlFor="nickname"
+                className="text-xs text-muted-foreground"
+              >
+                Nickname
+              </label>
+              {isSignedIn && clerkNickname && nickname !== clerkNickname ? (
+                <button
+                  type="button"
+                  onClick={() => setNickname(clerkNickname)}
+                  className="text-xs text-primary underline-offset-2 hover:underline"
+                >
+                  Use account name
+                </button>
+              ) : null}
+            </div>
             <Input
               id="nickname"
               value={nickname}
@@ -381,6 +396,11 @@ export default function JoinPageClient() {
               maxLength={60}
               required
             />
+            {isSignedIn ? (
+              <p className="text-[11px] text-muted-foreground">
+                Shown on the leaderboard. You can change it each time you join.
+              </p>
+            ) : null}
           </div>
         </div>
 
