@@ -258,6 +258,15 @@ export const MatchEditor = memo(function MatchEditor({
       gradingRule: template.gradingRule ?? "exact",
     };
 
+    if (template.answerType === "threshold") {
+      if (template.thresholdValue != null) {
+        q.thresholdValue = template.thresholdValue;
+      }
+      q.thresholdLabels = template.thresholdLabels
+        ? [template.thresholdLabels[0], template.thresholdLabels[1]]
+        : ["Over", "Under"];
+    }
+
     if (!match) return;
     replaceMatch(index, { ...match, bonusQuestions: [...match.bonusQuestions, q] });
   }

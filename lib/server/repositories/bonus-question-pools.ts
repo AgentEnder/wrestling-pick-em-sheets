@@ -10,6 +10,7 @@ import type {
 import { requireDbId } from "@/lib/server/db/types";
 import type {
   BonusPoolRuleSet,
+  BonusQuestionAnswerType,
   BonusQuestionPool,
   BonusQuestionTemplate,
   BonusQuestionValueType,
@@ -85,13 +86,37 @@ function normalizeValueType(
   return "string";
 }
 
+function normalizeAnswerType(value: unknown): BonusQuestionAnswerType {
+  if (value === "multiple-choice") return "multiple-choice";
+  if (value === "threshold") return "threshold";
+  return "write-in";
+}
+
+function parseThresholdLabels(
+  json: string | null | undefined,
+): [string, string] | undefined {
+  if (!json) return undefined;
+
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (!Array.isArray(parsed) || parsed.length < 2) return undefined;
+
+    const first = typeof parsed[0] === "string" ? parsed[0] : "";
+    const second = typeof parsed[1] === "string" ? parsed[1] : "";
+    if (!first && !second) return undefined;
+
+    return [first || "Over", second || "Under"];
+  } catch {
+    return undefined;
+  }
+}
+
 function mapTemplate(
   row: BonusQuestionTemplateSelectable,
 ): BonusQuestionTemplate {
-  const answerType =
-    row.answer_type === "multiple-choice" ? "multiple-choice" : "write-in";
+  const answerType = normalizeAnswerType(row.answer_type);
 
-  return {
+  const template: BonusQuestionTemplate = {
     id: requireDbId(row.id, "bonus_question_templates.id"),
     poolId: row.pool_id,
     label: row.label,
@@ -109,6 +134,18 @@ function mapTemplate(
     sortOrder: row.sort_order,
     isActive: Number(row.is_active) === 1,
   };
+
+  if (answerType === "threshold") {
+    if (row.threshold_value != null) {
+      template.thresholdValue = Number(row.threshold_value);
+    }
+    const labels = parseThresholdLabels(row.threshold_labels_json);
+    if (labels) {
+      template.thresholdLabels = labels;
+    }
+  }
+
+  return template;
 }
 
 function mapPool(
@@ -272,17 +309,29 @@ export async function deleteBonusQuestionPool(
   return Number(result.numDeletedRows ?? 0) > 0;
 }
 
+function normalizeThresholdLabels(
+  labels: readonly [string, string] | undefined,
+): [string, string] | undefined {
+  if (!labels) return undefined;
+  const first = (labels[0] ?? "").trim();
+  const second = (labels[1] ?? "").trim();
+  if (!first && !second) return undefined;
+  return [first || "Over", second || "Under"];
+}
+
 export async function createBonusQuestionTemplate(input: {
   poolId: string;
   label: string;
   questionTemplate: string;
   defaultPoints: number | null;
-  answerType: "write-in" | "multiple-choice";
+  answerType: BonusQuestionAnswerType;
   options: string[];
   valueType: BonusQuestionValueType;
   defaultSection: "match" | "event";
   sortOrder: number;
   isActive: boolean;
+  thresholdValue?: number | null;
+  thresholdLabels?: [string, string] | null;
 }): Promise<BonusQuestionTemplate | null> {
   const pool = await db
     .selectFrom("bonus_question_pools")
@@ -297,9 +346,20 @@ export async function createBonusQuestionTemplate(input: {
   const now = new Date().toISOString();
   const id = randomUUID();
   const options = input.answerType === "multiple-choice" ? input.options : [];
-  const valueType = normalizeValueType(input.valueType, false, false);
+  const requestedValueType = normalizeValueType(input.valueType, false, false);
+  const valueType =
+    input.answerType === "threshold" && requestedValueType !== "time"
+      ? "numerical"
+      : requestedValueType;
   const isTimeBased = valueType === "time";
   const isCountBased = valueType === "numerical";
+  const isThreshold = input.answerType === "threshold";
+  const thresholdValue = isThreshold
+    ? (input.thresholdValue ?? null)
+    : null;
+  const thresholdLabels = isThreshold
+    ? normalizeThresholdLabels(input.thresholdLabels ?? undefined)
+    : undefined;
 
   const values: Insertable<BonusQuestionTemplates> = {
     id,
@@ -315,13 +375,17 @@ export async function createBonusQuestionTemplate(input: {
     default_section: input.defaultSection,
     sort_order: input.sortOrder,
     is_active: input.isActive ? 1 : 0,
+    threshold_value: thresholdValue,
+    threshold_labels_json: thresholdLabels
+      ? JSON.stringify(thresholdLabels)
+      : null,
     created_at: now,
     updated_at: now,
   };
 
   await db.insertInto("bonus_question_templates").values(values).execute();
 
-  return {
+  const result: BonusQuestionTemplate = {
     id,
     poolId: input.poolId,
     label: input.label,
@@ -334,6 +398,13 @@ export async function createBonusQuestionTemplate(input: {
     sortOrder: input.sortOrder,
     isActive: input.isActive,
   };
+
+  if (isThreshold) {
+    if (thresholdValue != null) result.thresholdValue = thresholdValue;
+    if (thresholdLabels) result.thresholdLabels = thresholdLabels;
+  }
+
+  return result;
 }
 
 export async function updateBonusQuestionTemplate(
@@ -343,12 +414,14 @@ export async function updateBonusQuestionTemplate(
     label?: string;
     questionTemplate?: string;
     defaultPoints?: number | null;
-    answerType?: "write-in" | "multiple-choice";
+    answerType?: BonusQuestionAnswerType;
     options?: string[];
     valueType?: BonusQuestionValueType;
     defaultSection?: "match" | "event";
     sortOrder?: number;
     isActive?: boolean;
+    thresholdValue?: number | null;
+    thresholdLabels?: [string, string] | null;
   },
 ): Promise<boolean> {
   if (input.poolId) {
@@ -378,6 +451,10 @@ export async function updateBonusQuestionTemplate(
     if (input.answerType !== "multiple-choice" && input.options === undefined) {
       update.options_json = "[]";
     }
+    if (input.answerType !== "threshold") {
+      update.threshold_value = null;
+      update.threshold_labels_json = null;
+    }
   }
   if (input.options !== undefined)
     update.options_json = JSON.stringify(input.options);
@@ -391,6 +468,20 @@ export async function updateBonusQuestionTemplate(
     update.default_section = input.defaultSection;
   if (input.sortOrder !== undefined) update.sort_order = input.sortOrder;
   if (input.isActive !== undefined) update.is_active = input.isActive ? 1 : 0;
+  if (input.thresholdValue !== undefined) {
+    update.threshold_value =
+      input.thresholdValue === null ? null : Number(input.thresholdValue);
+  }
+  if (input.thresholdLabels !== undefined) {
+    if (input.thresholdLabels === null) {
+      update.threshold_labels_json = null;
+    } else {
+      const normalized = normalizeThresholdLabels(input.thresholdLabels);
+      update.threshold_labels_json = normalized
+        ? JSON.stringify(normalized)
+        : null;
+    }
+  }
 
   const result = await db
     .updateTable("bonus_question_templates")

@@ -35,6 +35,8 @@ export interface BonusQuestionTemplates {
   pool_id: string;
   question_template: string;
   sort_order: Generated<number>;
+  threshold_labels_json: string | null;
+  threshold_value: number | null;
   updated_at: Generated<string>;
   value_type: Generated<string>;
 }

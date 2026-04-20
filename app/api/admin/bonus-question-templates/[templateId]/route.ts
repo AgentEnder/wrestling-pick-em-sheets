@@ -9,6 +9,7 @@ import {
 } from "@/lib/server/repositories/bonus-question-pools";
 
 const optionSchema = z.string().trim().min(1).max(120);
+const thresholdLabelSchema = z.string().trim().min(1).max(40);
 
 const updateTemplateSchema = z
   .object({
@@ -16,7 +17,7 @@ const updateTemplateSchema = z
     label: z.string().trim().min(1).max(120).optional(),
     questionTemplate: z.string().trim().min(1).max(260).optional(),
     defaultPoints: z.number().int().min(1).max(100).nullable().optional(),
-    answerType: z.enum(["write-in", "multiple-choice"]).optional(),
+    answerType: z.enum(["write-in", "multiple-choice", "threshold"]).optional(),
     options: z.array(optionSchema).max(20).optional(),
     valueType: z
       .enum(["string", "numerical", "time", "rosterMember"])
@@ -24,6 +25,11 @@ const updateTemplateSchema = z
     defaultSection: z.enum(["match", "event"]).optional(),
     sortOrder: z.number().int().min(0).max(10000).optional(),
     isActive: z.boolean().optional(),
+    thresholdValue: z.number().finite().nullable().optional(),
+    thresholdLabels: z
+      .tuple([thresholdLabelSchema, thresholdLabelSchema])
+      .nullable()
+      .optional(),
   })
   .refine(
     (value) =>
@@ -36,7 +42,9 @@ const updateTemplateSchema = z
       value.valueType !== undefined ||
       value.defaultSection !== undefined ||
       value.sortOrder !== undefined ||
-      value.isActive !== undefined,
+      value.isActive !== undefined ||
+      value.thresholdValue !== undefined ||
+      value.thresholdLabels !== undefined,
     { message: "At least one field must be provided" },
   );
 

@@ -115,6 +115,8 @@ export function createBonusQuestionTemplate(input: {
   defaultSection?: "match" | "event";
   sortOrder?: number;
   isActive?: boolean;
+  thresholdValue?: number | null;
+  thresholdLabels?: [string, string] | null;
 }): Promise<BonusQuestionTemplate> {
   return requestJson<BonusQuestionTemplate>(
     "/api/admin/bonus-question-templates",
@@ -141,6 +143,8 @@ export function updateBonusQuestionTemplate(
     defaultSection?: "match" | "event";
     sortOrder?: number;
     isActive?: boolean;
+    thresholdValue?: number | null;
+    thresholdLabels?: [string, string] | null;
   },
 ): Promise<void> {
   return requestNoContent(`/api/admin/bonus-question-templates/${templateId}`, {

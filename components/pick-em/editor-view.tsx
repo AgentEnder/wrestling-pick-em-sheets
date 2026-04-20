@@ -207,6 +207,15 @@ export function EditorView() {
       gradingRule: template.gradingRule ?? "exact",
     };
 
+    if (template.answerType === "threshold") {
+      if (template.thresholdValue != null) {
+        question.thresholdValue = template.thresholdValue;
+      }
+      question.thresholdLabels = template.thresholdLabels
+        ? [template.thresholdLabels[0], template.thresholdLabels[1]]
+        : ["Over", "Under"];
+    }
+
     setEventBonusQuestions([...eventBonusQuestions, question]);
   }
 

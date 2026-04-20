@@ -6,6 +6,7 @@ import { enforceSameOrigin } from "@/lib/server/csrf";
 import { createBonusQuestionTemplate } from "@/lib/server/repositories/bonus-question-pools";
 
 const optionSchema = z.string().trim().min(1).max(120);
+const thresholdLabelSchema = z.string().trim().min(1).max(40);
 
 const createTemplateSchema = z
   .object({
@@ -20,7 +21,7 @@ const createTemplateSchema = z
       .nullable()
       .optional()
       .default(null),
-    answerType: z.enum(["write-in", "multiple-choice"]),
+    answerType: z.enum(["write-in", "multiple-choice", "threshold"]),
     options: z.array(optionSchema).max(20).optional().default([]),
     valueType: z
       .enum(["string", "numerical", "time", "rosterMember"])
@@ -29,6 +30,11 @@ const createTemplateSchema = z
     defaultSection: z.enum(["match", "event"]).optional().default("match"),
     sortOrder: z.number().int().min(0).max(10000).optional().default(0),
     isActive: z.boolean().optional().default(true),
+    thresholdValue: z.number().finite().nullable().optional(),
+    thresholdLabels: z
+      .tuple([thresholdLabelSchema, thresholdLabelSchema])
+      .nullable()
+      .optional(),
   })
   .refine(
     (value) =>
@@ -36,6 +42,16 @@ const createTemplateSchema = z
     {
       path: ["options"],
       message: "Multiple-choice templates require at least two options",
+    },
+  )
+  .refine(
+    (value) =>
+      value.answerType !== "threshold" ||
+      value.valueType === "numerical" ||
+      value.valueType === "time",
+    {
+      path: ["valueType"],
+      message: "Threshold templates require a numerical or time value type",
     },
   );
 
@@ -96,6 +112,14 @@ export async function POST(request: Request) {
   const created = await createBonusQuestionTemplate({
     ...parsed.data,
     options,
+    thresholdValue:
+      parsed.data.answerType === "threshold"
+        ? (parsed.data.thresholdValue ?? null)
+        : null,
+    thresholdLabels:
+      parsed.data.answerType === "threshold"
+        ? (parsed.data.thresholdLabels ?? null)
+        : null,
   });
 
   if (!created) {

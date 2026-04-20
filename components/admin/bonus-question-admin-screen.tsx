@@ -27,6 +27,7 @@ import {
 import { DEFAULT_MATCH_TYPES } from "@/lib/match-types";
 import type {
   BonusPoolRuleSet,
+  BonusQuestionAnswerType,
   BonusQuestionPool,
   BonusQuestionTemplate,
   BonusQuestionValueType,
@@ -66,12 +67,15 @@ interface NewTemplateState {
   label: string;
   questionTemplate: string;
   defaultPoints: string;
-  answerType: "write-in" | "multiple-choice";
+  answerType: BonusQuestionAnswerType;
   valueType: BonusQuestionValueType;
   defaultSection: "match" | "event";
   optionsText: string;
   sortOrder: string;
   isActive: boolean;
+  thresholdValue: string;
+  thresholdOverLabel: string;
+  thresholdUnderLabel: string;
 }
 
 interface NewMatchTypeState {
@@ -105,6 +109,9 @@ const EMPTY_NEW_TEMPLATE: NewTemplateState = {
   optionsText: "",
   sortOrder: "0",
   isActive: true,
+  thresholdValue: "",
+  thresholdOverLabel: "Over",
+  thresholdUnderLabel: "Under",
 };
 
 const EMPTY_NEW_MATCH_TYPE: NewMatchTypeState = {
@@ -127,6 +134,31 @@ function parseDefaultPoints(value: string): number | null {
   const parsed = parseInt(trimmed, 10);
   if (Number.isNaN(parsed)) return null;
   return Math.max(1, parsed);
+}
+
+function parseThresholdValue(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.includes(":")) {
+    const parts = trimmed.split(":").map((part) => Number(part));
+    if (parts.some((part) => Number.isNaN(part))) return null;
+    let total = 0;
+    for (const part of parts) total = total * 60 + part;
+    return Number.isFinite(total) ? total : null;
+  }
+
+  const parsed = Number.parseFloat(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildThresholdLabels(
+  overLabel: string,
+  underLabel: string,
+): [string, string] {
+  const over = overLabel.trim() || "Over";
+  const under = underLabel.trim() || "Under";
+  return [over, under];
 }
 
 function parseOptionsText(value: string): string[] {
@@ -651,6 +683,25 @@ export function BonusQuestionAdminScreen() {
       return;
     }
 
+    const isThreshold = draft.answerType === "threshold";
+    const thresholdValue = isThreshold
+      ? parseThresholdValue(draft.thresholdValue)
+      : null;
+    if (isThreshold && thresholdValue === null) {
+      toast.error("Threshold templates require a threshold value");
+      return;
+    }
+    if (
+      isThreshold &&
+      draft.valueType !== "numerical" &&
+      draft.valueType !== "time"
+    ) {
+      toast.error(
+        "Threshold templates require a numerical or time value type",
+      );
+      return;
+    }
+
     const key = `create-template-${poolId}`;
     setBusy(key, true);
 
@@ -666,6 +717,13 @@ export function BonusQuestionAdminScreen() {
         defaultSection: draft.defaultSection,
         sortOrder: parseIntegerInput(draft.sortOrder, 0),
         isActive: draft.isActive,
+        thresholdValue: isThreshold ? thresholdValue : null,
+        thresholdLabels: isThreshold
+          ? buildThresholdLabels(
+              draft.thresholdOverLabel,
+              draft.thresholdUnderLabel,
+            )
+          : null,
       });
 
       setNewTemplatesByPoolId((prev) => ({
@@ -695,6 +753,22 @@ export function BonusQuestionAdminScreen() {
       return;
     }
 
+    const isThreshold = template.answerType === "threshold";
+    if (isThreshold && template.thresholdValue == null) {
+      toast.error("Threshold templates require a threshold value");
+      return;
+    }
+    if (
+      isThreshold &&
+      template.valueType !== "numerical" &&
+      template.valueType !== "time"
+    ) {
+      toast.error(
+        "Threshold templates require a numerical or time value type",
+      );
+      return;
+    }
+
     const key = `save-template-${template.id}`;
     setBusy(key, true);
 
@@ -710,6 +784,10 @@ export function BonusQuestionAdminScreen() {
         defaultSection: template.defaultSection,
         sortOrder: template.sortOrder,
         isActive: template.isActive,
+        thresholdValue: isThreshold ? (template.thresholdValue ?? null) : null,
+        thresholdLabels: isThreshold
+          ? (template.thresholdLabels ?? ["Over", "Under"])
+          : null,
       });
       await loadPools();
       toast.success("Template saved");
@@ -1453,16 +1531,39 @@ export function BonusQuestionAdminScreen() {
                               <Select
                                 value={template.answerType}
                                 onValueChange={(
-                                  value: "write-in" | "multiple-choice",
-                                ) =>
-                                  updateTemplateInState(pool.id, template.id, {
-                                    answerType: value,
-                                    options:
-                                      value === "write-in"
-                                        ? []
-                                        : template.options,
-                                  })
-                                }
+                                  value: BonusQuestionAnswerType,
+                                ) => {
+                                  const updates: Partial<BonusQuestionTemplate> =
+                                    {
+                                      answerType: value,
+                                      options:
+                                        value === "multiple-choice"
+                                          ? template.options
+                                          : [],
+                                    };
+                                  if (value === "threshold") {
+                                    if (
+                                      template.valueType !== "numerical" &&
+                                      template.valueType !== "time"
+                                    ) {
+                                      updates.valueType = "numerical";
+                                    }
+                                    if (!template.thresholdLabels) {
+                                      updates.thresholdLabels = [
+                                        "Over",
+                                        "Under",
+                                      ];
+                                    }
+                                  } else {
+                                    updates.thresholdValue = undefined;
+                                    updates.thresholdLabels = undefined;
+                                  }
+                                  updateTemplateInState(
+                                    pool.id,
+                                    template.id,
+                                    updates,
+                                  );
+                                }}
                               >
                                 <SelectTrigger className="w-full">
                                   <SelectValue />
@@ -1473,6 +1574,9 @@ export function BonusQuestionAdminScreen() {
                                   </SelectItem>
                                   <SelectItem value="multiple-choice">
                                     Multiple Choice
+                                  </SelectItem>
+                                  <SelectItem value="threshold">
+                                    Threshold (Over/Under)
                                   </SelectItem>
                                 </SelectContent>
                               </Select>
@@ -1589,6 +1693,80 @@ export function BonusQuestionAdminScreen() {
                             </div>
                           ) : null}
 
+                          {template.answerType === "threshold" ? (
+                            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                              <div className="space-y-1.5">
+                                <Label>
+                                  Threshold Value
+                                  {template.valueType === "time"
+                                    ? " (MM:SS or seconds)"
+                                    : null}
+                                </Label>
+                                <Input
+                                  placeholder={
+                                    template.valueType === "time"
+                                      ? "e.g. 15:00"
+                                      : "e.g. 3"
+                                  }
+                                  value={template.thresholdValue ?? ""}
+                                  onChange={(event) => {
+                                    const parsed = parseThresholdValue(
+                                      event.target.value,
+                                    );
+                                    updateTemplateInState(
+                                      pool.id,
+                                      template.id,
+                                      {
+                                        thresholdValue:
+                                          parsed === null ? undefined : parsed,
+                                      },
+                                    );
+                                  }}
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label>Over Label</Label>
+                                <Input
+                                  placeholder="Over"
+                                  value={template.thresholdLabels?.[0] ?? ""}
+                                  onChange={(event) =>
+                                    updateTemplateInState(
+                                      pool.id,
+                                      template.id,
+                                      {
+                                        thresholdLabels: [
+                                          event.target.value || "Over",
+                                          template.thresholdLabels?.[1] ??
+                                            "Under",
+                                        ],
+                                      },
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label>Under Label</Label>
+                                <Input
+                                  placeholder="Under"
+                                  value={template.thresholdLabels?.[1] ?? ""}
+                                  onChange={(event) =>
+                                    updateTemplateInState(
+                                      pool.id,
+                                      template.id,
+                                      {
+                                        thresholdLabels: [
+                                          template.thresholdLabels?.[0] ??
+                                            "Over",
+                                          event.target.value || "Under",
+                                        ],
+                                      },
+                                    )
+                                  }
+                                />
+                              </div>
+                            </div>
+                          ) : null}
+
                           <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                             <div className="flex flex-wrap items-center gap-2">
                               <label className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-foreground">
@@ -1659,16 +1837,24 @@ export function BonusQuestionAdminScreen() {
                           <Select
                             value={newTemplate.answerType}
                             onValueChange={(
-                              value: "write-in" | "multiple-choice",
-                            ) =>
-                              updateNewTemplateState(pool.id, {
+                              value: BonusQuestionAnswerType,
+                            ) => {
+                              const updates: Partial<NewTemplateState> = {
                                 answerType: value,
                                 optionsText:
-                                  value === "write-in"
-                                    ? ""
-                                    : newTemplate.optionsText,
-                              })
-                            }
+                                  value === "multiple-choice"
+                                    ? newTemplate.optionsText
+                                    : "",
+                              };
+                              if (
+                                value === "threshold" &&
+                                newTemplate.valueType !== "numerical" &&
+                                newTemplate.valueType !== "time"
+                              ) {
+                                updates.valueType = "numerical";
+                              }
+                              updateNewTemplateState(pool.id, updates);
+                            }}
                           >
                             <SelectTrigger className="w-full">
                               <SelectValue />
@@ -1677,6 +1863,9 @@ export function BonusQuestionAdminScreen() {
                               <SelectItem value="write-in">Write-in</SelectItem>
                               <SelectItem value="multiple-choice">
                                 Multiple Choice
+                              </SelectItem>
+                              <SelectItem value="threshold">
+                                Threshold (Over/Under)
                               </SelectItem>
                             </SelectContent>
                           </Select>
@@ -1781,6 +1970,56 @@ export function BonusQuestionAdminScreen() {
                             }
                             rows={3}
                           />
+                        </div>
+                      ) : null}
+
+                      {newTemplate.answerType === "threshold" ? (
+                        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                          <div className="space-y-1.5">
+                            <Label>
+                              Threshold Value
+                              {newTemplate.valueType === "time"
+                                ? " (MM:SS or seconds)"
+                                : null}
+                            </Label>
+                            <Input
+                              placeholder={
+                                newTemplate.valueType === "time"
+                                  ? "e.g. 15:00"
+                                  : "e.g. 3"
+                              }
+                              value={newTemplate.thresholdValue}
+                              onChange={(event) =>
+                                updateNewTemplateState(pool.id, {
+                                  thresholdValue: event.target.value,
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Over Label</Label>
+                            <Input
+                              placeholder="Over"
+                              value={newTemplate.thresholdOverLabel}
+                              onChange={(event) =>
+                                updateNewTemplateState(pool.id, {
+                                  thresholdOverLabel: event.target.value,
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Under Label</Label>
+                            <Input
+                              placeholder="Under"
+                              value={newTemplate.thresholdUnderLabel}
+                              onChange={(event) =>
+                                updateNewTemplateState(pool.id, {
+                                  thresholdUnderLabel: event.target.value,
+                                })
+                              }
+                            />
+                          </div>
                         </div>
                       ) : null}
 

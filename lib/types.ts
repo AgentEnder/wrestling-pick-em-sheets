@@ -49,6 +49,8 @@ export interface BonusQuestionTemplate {
   options: string[];
   valueType: BonusQuestionValueType;
   gradingRule?: BonusGradingRule;
+  thresholdValue?: number;
+  thresholdLabels?: [string, string];
   defaultSection: "match" | "event";
   sortOrder: number;
   isActive: boolean;
