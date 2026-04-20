@@ -3379,25 +3379,29 @@ export async function getLiveGameState(
       .filter((entry): entry is LiveGameLeaderboardEntry => entry !== null)
       .sort((a, b) => a.rank - b.rank);
 
-    // A null breakdown_json means the snapshot was written before this
-    // migration, potentially by an older scoring engine. Its aggregate
-    // totals (score / winnerPoints / bonusPoints / surprisePoints) may
-    // disagree with the current engine, so we can't just patch perQuestion
-    // onto stale totals — that would produce rows that don't sum to the
-    // displayed total. Replace the whole entry (including rank) with the
-    // recomputed version for any such rows.
-    if (snapshotRows.some((snap) => !snap.breakdown_json)) {
-      const recomputed = computeLeaderboard(
+    // Detect drift between the snapshot set and the current submitted-player
+    // set. Snapshots are only written when the host updates the scoring key,
+    // so a player who submits (or un-submits) between key updates won't be
+    // reflected. A null breakdown_json also means the snapshot predates the
+    // current scoring engine and its aggregate totals may be stale. In either
+    // case, recompute the leaderboard from live data so ranks stay correct.
+    const snapshotPlayerIds = new Set(snapshotRows.map((s) => s.player_id));
+    const submittedPlayerIds = new Set(
+      approvedPlayers.filter((p) => p.isSubmitted).map((p) => p.id),
+    );
+    const snapshotsDrifted =
+      snapshotPlayerIds.size !== submittedPlayerIds.size ||
+      [...submittedPlayerIds].some((id) => !snapshotPlayerIds.has(id));
+
+    if (
+      snapshotsDrifted ||
+      snapshotRows.some((snap) => !snap.breakdown_json)
+    ) {
+      leaderboard = computeLeaderboard(
         access.card,
         access.game.keyPayload,
         approvedPlayers,
       );
-      const recomputedByNickname = new Map(
-        recomputed.map((entry) => [entry.nickname, entry]),
-      );
-      leaderboard = leaderboard
-        .map((entry) => recomputedByNickname.get(entry.nickname) ?? entry)
-        .sort((a, b) => a.rank - b.rank);
     }
   } else {
     // Fallback: compute on the fly (no key updates yet)
