@@ -23,7 +23,10 @@ import type {
   LiveGameStateResponse,
 } from "@/lib/client/live-games-api";
 import type { UseRosterSuggestionsReturn } from "@/hooks/use-roster-suggestions";
-import { filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import {
+  filterRosterMemberSuggestions,
+  NO_CONTEST_WINNER_NAME,
+} from "@/lib/pick-em/text-utils";
 import { ThresholdButtons } from "@/components/pick-em/shared/threshold-buttons";
 import { MultipleChoiceSelect } from "@/components/pick-em/shared/multiple-choice-select";
 
@@ -86,14 +89,18 @@ function PlayerMatchPicksInner({
   const isMatchLocked =
     locks.matchLocks[match.id] === true || locks.globalLocked;
   const battleRoyalEntrants = matchPick?.battleRoyalEntrants ?? [];
-  const allWinnerOptions = match.isBattleRoyal
-    ? Array.from(new Set([...match.participants, ...battleRoyalEntrants]))
-    : match.participants;
-  const winnerSelectValue = matchPick?.winnerName
-    ? allWinnerOptions.includes(matchPick.winnerName)
+  const allWinnerOptions = Array.from(
+    new Set([
+      ...(match.isBattleRoyal
+        ? [...match.participants, ...battleRoyalEntrants]
+        : match.participants),
+      NO_CONTEST_WINNER_NAME,
+    ]),
+  );
+  const winnerSelectValue =
+    matchPick?.winnerName && allWinnerOptions.includes(matchPick.winnerName)
       ? matchPick.winnerName
-      : "__none__"
-    : "__none__";
+      : "__none__";
   const battleRoyalInputRef = React.useRef<HTMLInputElement>(null);
   const battleRoyalFieldKey = `battleRoyal:${match.id}`;
   const isSurpriseEntrantsFull =

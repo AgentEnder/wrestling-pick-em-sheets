@@ -61,7 +61,10 @@ import {
   findAnswer,
   toLockKey,
 } from "@/lib/pick-em/payload-utils";
-import { filterRosterMemberSuggestions } from "@/lib/pick-em/text-utils";
+import {
+  filterRosterMemberSuggestions,
+  NO_CONTEST_WINNER_NAME,
+} from "@/lib/pick-em/text-utils";
 import { ThresholdButtons } from "@/components/pick-em/shared/threshold-buttons";
 import { CounterInput } from "@/components/pick-em/shared/counter-input";
 import { BonusTimerCapture } from "@/components/pick-em/shared/bonus-timer-capture";
@@ -163,7 +166,7 @@ function KeyMatchSectionInner({
   const winnerName = matchResult?.winnerName ?? "";
   const [winnerComboboxOpen, setWinnerComboboxOpen] = React.useState(false);
 
-  /* Build deduped winner candidates: participants + keyed entrants + player guesses */
+  /* Build deduped winner candidates: participants + keyed entrants + player guesses + No Contest */
   const winnerCandidates = useMemo(() => {
     const entryOrder = matchResult?.battleRoyalEntryOrder ?? [];
     const playerGuesses = (gameState?.playerAnswerSummaries ?? [])
@@ -172,7 +175,12 @@ function KeyMatchSectionInner({
       )
       .filter((name): name is string => !!name && name.trim().length > 0);
     return Array.from(
-      new Set([...participants, ...entryOrder, ...playerGuesses]),
+      new Set([
+        ...participants,
+        ...entryOrder,
+        ...playerGuesses,
+        NO_CONTEST_WINNER_NAME,
+      ]),
     );
   }, [
     participants,

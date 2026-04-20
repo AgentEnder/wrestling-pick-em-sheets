@@ -1,3 +1,5 @@
+export const NO_CONTEST_WINNER_NAME = "No Contest";
+
 export function filterRosterMemberSuggestions(
   input: string,
   candidates: string[],
