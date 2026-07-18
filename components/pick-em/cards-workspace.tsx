@@ -66,6 +66,7 @@ const INITIAL_LOCAL_SHEET: PickEmSheet = {
   defaultPoints: 1,
   tiebreakerLabel: "Main event total match time (mins)",
   tiebreakerIsTimeBased: true,
+  sections: [],
   matches: [],
   eventBonusQuestions: [],
 };
@@ -176,6 +177,22 @@ export function CardsWorkspace() {
     [cards],
   );
   const ownedCards = ownedActiveCards;
+
+  const sharedCards = useMemo(
+    () =>
+      [...cards]
+        .filter(
+          (card) =>
+            card.viewerRole === "collaborator" &&
+            !card.isTemplate &&
+            !card.archivedAt,
+        )
+        .sort(
+          (left, right) =>
+            toTimestamp(right.updatedAt) - toTimestamp(left.updatedAt),
+        ),
+    [cards],
+  );
 
   const publicTemplates = useMemo(
     () => cards.filter((card) => card.isTemplate && card.isPublic),
@@ -494,6 +511,47 @@ export function CardsWorkspace() {
               )}
             </CardContent>
           </Card>
+
+          {sharedCards.length > 0 ? (
+            <Card className="mt-6 border-border/70 bg-card/40 shadow-[0_20px_40px_rgba(0,0,0,0.25)] backdrop-blur">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  Shared with you
+                </CardTitle>
+                <CardDescription>
+                  {sharedCards.length} card
+                  {sharedCards.length === 1 ? "" : "s"} you can edit as a
+                  collaborator
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {sharedCards.map((card) => (
+                  <div
+                    key={card.id}
+                    className="rounded-md border border-border/80 bg-background/45 px-3 py-2"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">
+                          {card.name}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Updated {formatDate(card.updatedAt)}
+                        </p>
+                      </div>
+                      <Button asChild size="sm" variant="secondary">
+                        <Link href={`/cards/${card.id}`}>
+                          Edit
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
 
           {showArchived && recentArchivedCards.length > 0 ? (
             <Card className="mt-6 border-border/70 bg-card/40 shadow-[0_20px_40px_rgba(0,0,0,0.25)] backdrop-blur">

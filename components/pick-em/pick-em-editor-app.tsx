@@ -40,11 +40,13 @@ function isEditableField(element: Element | null): boolean {
 interface PickEmEditorAppProps {
   cardId: string;
   archivedAt?: string | null;
+  viewerRole?: "owner" | "collaborator" | null;
 }
 
 export function PickEmEditorApp({
   cardId,
   archivedAt = null,
+  viewerRole = null,
 }: PickEmEditorAppProps) {
   const { userId, isLoaded: isAuthLoaded } = useAuth();
 
@@ -341,6 +343,7 @@ export function PickEmEditorApp({
       <PageHeader
         cardId={cardId}
         canSave={isAuthLoaded && Boolean(userId)}
+        viewerRole={viewerRole}
         onImportClick={handleImportClick}
         onPrint={handlePrint}
       />

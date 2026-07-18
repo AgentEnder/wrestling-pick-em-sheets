@@ -19,13 +19,18 @@ import {
   useMatchActions,
   useEventBonusQuestions,
   useEventBonusQuestionsAction,
+  useSections,
+  useSectionActions,
   useSuggestions,
   useEditorActions,
   useHasMatches,
 } from "@/stores/selectors";
 import type { BonusQuestion } from "@/lib/types";
 import {
+  ArrowDown,
+  ArrowUp,
   HelpCircle,
+  Layers,
   ListChecks,
   PenLine,
   Plus,
@@ -33,6 +38,92 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
+
+function SectionManager() {
+  const sections = useSections();
+  const { addSection, renameSection, removeSection, moveSection } =
+    useSectionActions();
+
+  return (
+    <section className="rounded-lg border border-border bg-card p-4">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-primary" />
+          <h2 className="font-heading text-xl font-bold uppercase tracking-wide text-primary">
+            Card Sections
+          </h2>
+        </div>
+        <span className="text-sm text-muted-foreground">
+          {sections.length} section{sections.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Optional groups for multi-day or multi-part events (e.g. Night 1 /
+        Night 2). Assign each match to a section from its match editor;
+        sections print as headed groups on the sheet.
+      </p>
+
+      <div className="flex flex-col gap-2">
+        {sections.map((section, index) => (
+          <div
+            key={section.id}
+            className="flex items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-2"
+          >
+            <div className="flex flex-col">
+              <button
+                type="button"
+                disabled={index === 0}
+                onClick={() => moveSection(section.id, "up")}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-25 transition-colors"
+                aria-label="Move section up"
+              >
+                <ArrowUp className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                disabled={index === sections.length - 1}
+                onClick={() => moveSection(section.id, "down")}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-25 transition-colors"
+                aria-label="Move section down"
+              >
+                <ArrowDown className="h-3 w-3" />
+              </button>
+            </div>
+            <Input
+              placeholder={`e.g. Night ${index + 1}`}
+              value={section.name}
+              onChange={(event) =>
+                renameSection(section.id, event.target.value)
+              }
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => removeSection(section.id)}
+              className="shrink-0 text-muted-foreground hover:text-destructive"
+              aria-label={`Remove section ${section.name || index + 1}`}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => addSection()}
+          className="self-start border-dashed"
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Add Section
+        </Button>
+      </div>
+    </section>
+  );
+}
 
 function createEmptyBonusQuestion(): BonusQuestion {
   return {
@@ -224,6 +315,8 @@ export function EditorView() {
       <section className="rounded-lg border border-border bg-card p-4">
         <EventSettings />
       </section>
+
+      <SectionManager />
 
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">

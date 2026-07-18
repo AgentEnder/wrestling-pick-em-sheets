@@ -1,4 +1,4 @@
-import type { BonusQuestion, Match } from "@/lib/types";
+import type { BonusQuestion, CardSection, Match } from "@/lib/types";
 
 interface ApiErrorBody {
   error?: string;
@@ -8,6 +8,8 @@ interface ApiDataEnvelope<T> {
   data: T;
 }
 
+export type CardViewerRole = "owner" | "collaborator" | null;
+
 export interface CardSummary {
   id: string;
   ownerId: string | null;
@@ -15,6 +17,7 @@ export interface CardSummary {
   name: string;
   isPublic: boolean;
   isTemplate: boolean;
+  viewerRole: CardViewerRole;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -34,8 +37,10 @@ export interface ResolvedCard {
   defaultPoints: number;
   tiebreakerLabel: string;
   tiebreakerIsTimeBased: boolean;
+  sections: CardSection[];
   matches: Match[];
   eventBonusQuestions: BonusQuestion[];
+  viewerRole: CardViewerRole;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -49,6 +54,7 @@ export interface SaveCardInput {
   defaultPoints: number;
   tiebreakerLabel: string;
   tiebreakerIsTimeBased: boolean;
+  sections: CardSection[];
   matches: Match[];
   eventBonusQuestions: BonusQuestion[];
 }

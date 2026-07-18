@@ -26,15 +26,18 @@ import {
   Printer,
   RotateCcw,
   Save,
+  Share2,
   Swords,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback } from "react";
+import { ShareCardDialog } from "@/components/pick-em/share-card-dialog";
 
 interface PageHeaderProps {
   cardId: string;
   canSave: boolean;
+  viewerRole?: "owner" | "collaborator" | null;
   onImportClick: () => void;
   onPrint: () => void;
 }
@@ -42,6 +45,7 @@ interface PageHeaderProps {
 export function PageHeader({
   cardId,
   canSave,
+  viewerRole = null,
   onImportClick,
   onPrint,
 }: PageHeaderProps) {
@@ -132,6 +136,18 @@ export function PageHeader({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {viewerRole === "owner" ? (
+            <ShareCardDialog
+              cardId={cardId}
+              trigger={
+                <Button size="sm" variant="outline">
+                  <Share2 className="h-4 w-4 mr-1" />
+                  <span className="hidden sm:inline">Share</span>
+                </Button>
+              }
+            />
+          ) : null}
 
           <Button
             size="sm"

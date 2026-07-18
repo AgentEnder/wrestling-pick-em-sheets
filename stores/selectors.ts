@@ -1,6 +1,6 @@
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/stores/app-store";
-import type { Match, BonusQuestion } from "@/lib/types";
+import type { CardSection, Match, BonusQuestion } from "@/lib/types";
 
 /* ── Event settings ──────────────────────────────────────── */
 
@@ -28,6 +28,23 @@ export function useEventSettingsActions() {
       setDefaultPoints: s.setDefaultPoints,
       setTiebreakerLabel: s.setTiebreakerLabel,
       setTiebreakerIsTimeBased: s.setTiebreakerIsTimeBased,
+    })),
+  );
+}
+
+/* ── Sections ────────────────────────────────────────────── */
+
+export function useSections(): CardSection[] {
+  return useAppStore((s) => s.sections);
+}
+
+export function useSectionActions() {
+  return useAppStore(
+    useShallow((s) => ({
+      addSection: s.addSection,
+      renameSection: s.renameSection,
+      removeSection: s.removeSection,
+      moveSection: s.moveSection,
     })),
   );
 }

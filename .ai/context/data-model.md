@@ -23,7 +23,8 @@ cards (
   promotion_name           text,
   tiebreaker_is_time_based integer,
   event_bonus_questions_json text,  -- json blob
-  archived_at              text    -- NULL = active; ISO timestamp = archived (0025)
+  archived_at              text,   -- NULL = active; ISO timestamp = archived (0025)
+  sections_json            text    -- json blob of CardSection[] (0028)
 )
 ```
 
@@ -31,12 +32,21 @@ Related tables (later migrations add overrides, match rows, bonus questions, etc
 
 **Archive** (migration 0025): `archived_at` is filtered out by `listReadableCards` by default; a partial index `idx_cards_active_owner_updated ON cards (owner_id, updated_at) WHERE archived_at IS NULL` accelerates the common "active cards for this owner" path. `findResolvedReadableCardById` deliberately does not filter on `archived_at`, so deep links still resolve.
 
+### Sections & collaboration (migration 0028)
+
+- `cards.sections_json` / `card_overrides.sections_json` — ordered `CardSection[]` (`{id, name}`) for multi-day/multi-part events.
+- `card_matches.section_id` — nullable FK-by-convention into the card's sections; dangling ids are nulled on save.
+- `card_invites (id, card_id → cards ON DELETE CASCADE, token UNIQUE, created_by, created_at, expires_at, revoked_at)` — shareable collaboration links, owner-managed, revocable.
+- `card_collaborators (id, card_id → cards ON DELETE CASCADE, user_id, user_email, invite_id, added_at, UNIQUE(card_id, user_id))` — users who accepted an invite; they can read + edit the sheet but not archive/share.
+
 ### Permissions
 
 `lib/server/db/permissions.ts`:
 
-- `canReadCard(eb, userId)` — owner or `public = 1` (or `public = 1` for guests)
+- `canReadCard(eb, userId)` — owner, collaborator, or `public = 1` (or `public = 1` for guests)
 - `isCardOwner(eb, userId)` — `owner_id = userId`
+- `isCardCollaborator(eb, userId)` — EXISTS row in `card_collaborators`
+- `canEditCard(eb, userId)` — owner OR collaborator (used by `persistOwnedCardSheet`, `updateCardOverrides`)
 
 ## Live games
 

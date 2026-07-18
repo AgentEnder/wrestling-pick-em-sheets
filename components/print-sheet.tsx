@@ -1,6 +1,11 @@
 "use client";
 
-import type { BonusQuestion, Match, PickEmSheet } from "@/lib/types";
+import type {
+  BonusQuestion,
+  CardSection,
+  Match,
+  PickEmSheet,
+} from "@/lib/types";
 import type { CSSProperties } from "react";
 
 interface PrintSheetProps {
@@ -317,6 +322,42 @@ function MatchBlock({
   );
 }
 
+interface MatchGroup {
+  section: CardSection | null;
+  matches: Match[];
+}
+
+// Groups matches under their sections while preserving sheet order inside
+// each group. Matches without a (known) section render first, headerless;
+// sections with no matches are skipped on the printed sheet.
+function buildMatchGroups(sheet: PickEmSheet): MatchGroup[] {
+  const sectionIds = new Set(sheet.sections.map((section) => section.id));
+  const groups: MatchGroup[] = [];
+
+  const unsectioned = sheet.matches.filter(
+    (match) => !match.sectionId || !sectionIds.has(match.sectionId),
+  );
+  if (unsectioned.length > 0) {
+    groups.push({ section: null, matches: unsectioned });
+  }
+
+  for (const section of sheet.sections) {
+    const matches = sheet.matches.filter(
+      (match) => match.sectionId === section.id,
+    );
+    if (matches.length > 0) {
+      groups.push({ section, matches });
+    }
+  }
+
+  return groups;
+}
+
+function countRenderedSectionHeaders(sheet: PickEmSheet): number {
+  return buildMatchGroups(sheet).filter((group) => group.section !== null)
+    .length;
+}
+
 type PrintDensity = "sparse" | "normal" | "dense";
 
 function getQuestionComplexity(question: BonusQuestion): number {
@@ -371,7 +412,9 @@ function getPrintDensity(sheet: PickEmSheet): PrintDensity {
   );
   const footerCost = (sheet.tiebreakerLabel ?? "").trim() ? 1.5 : 0;
   const taglineCost = (sheet.eventTagline ?? "").trim() ? 0.4 : 0;
-  const totalScore = score + eventBonusScore + footerCost + taglineCost;
+  const sectionCost = countRenderedSectionHeaders(sheet) * 1.5;
+  const totalScore =
+    score + eventBonusScore + footerCost + taglineCost + sectionCost;
 
   if (totalScore <= 48) return "sparse";
   if (totalScore >= 68) return "dense";
@@ -448,10 +491,12 @@ function getPageFillExpansionVars(sheet: PickEmSheet): CSSProperties {
     0,
   );
   const eventBonusUnits = getEventBonusLineUnits(sheet);
+  const sectionHeaderUnits = countRenderedSectionHeaders(sheet) * 1.6;
   const headerUnits = (sheet.eventTagline ?? "").trim() ? 6.8 : 5.7;
   const footerUnits = (sheet.tiebreakerLabel ?? "").trim() ? 2.7 : 0.8;
   const estimatedUsedPx =
-    (lineUnits + eventBonusUnits + headerUnits + footerUnits) * 11.8 +
+    (lineUnits + eventBonusUnits + sectionHeaderUnits + headerUnits + footerUnits) *
+      11.8 +
     matchCount * 8;
 
   // Target expansion to fill the number of pages this card naturally occupies
@@ -570,16 +615,34 @@ export function PrintSheet({ sheet }: PrintSheetProps) {
         </div>
       </header>
 
-      {/* Matches */}
+      {/* Matches, grouped by card section */}
       <div className="print-matches">
-        {sheet.matches.map((match, i) => (
-          <MatchBlock
-            key={match.id}
-            match={match}
-            matchNumber={i + 1}
-            defaultPoints={sheet.defaultPoints}
-          />
-        ))}
+        {(() => {
+          let matchNumber = 0;
+          return buildMatchGroups(sheet).map((group, groupIndex) => (
+            <div
+              key={group.section?.id ?? `unsectioned-${groupIndex}`}
+              className="print-section-group"
+            >
+              {group.section ? (
+                <h2 className="print-section-header">
+                  {group.section.name.trim() || `Part ${groupIndex + 1}`}
+                </h2>
+              ) : null}
+              {group.matches.map((match) => {
+                matchNumber += 1;
+                return (
+                  <MatchBlock
+                    key={match.id}
+                    match={match}
+                    matchNumber={matchNumber}
+                    defaultPoints={sheet.defaultPoints}
+                  />
+                );
+              })}
+            </div>
+          ));
+        })()}
         <EventBonusSection
           questions={sheet.eventBonusQuestions}
           defaultPoints={sheet.defaultPoints}

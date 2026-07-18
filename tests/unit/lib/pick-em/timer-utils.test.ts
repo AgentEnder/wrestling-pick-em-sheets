@@ -210,6 +210,7 @@ describe("ensureSystemTimers", () => {
   ): Match {
     return {
       id,
+      sectionId: null,
       type: "singles",
       typeLabelOverride: "",
       isBattleRoyal: false,

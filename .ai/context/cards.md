@@ -41,8 +41,18 @@ Cards are the durable artifact: an event's matches, bonus questions, tiebreaker.
 | GET/PUT | `/api/cards/:cardId/live-key` | Host's solo-mode live key |
 | GET | `/api/cards/:cardId/live-games` | List live games for this card (unaffected by archive — archived cards still show their live-game history) |
 | POST | `/api/cards/from-template` | Clone template into a new owned card. Refuses archived templates. |
+| GET/POST | `/api/cards/:cardId/invites` | Owner-only. List / create collaboration invite links. |
+| DELETE | `/api/cards/:cardId/invites/:inviteId` | Owner-only. Revoke an invite link. |
+| GET | `/api/cards/:cardId/collaborators` | Owner-only. List collaborators. |
+| DELETE | `/api/cards/:cardId/collaborators/:userId` | Owner removes anyone; collaborator can remove self. |
+| GET | `/api/card-invites/:token` | Invite preview (card name, viewer flags). |
+| POST | `/api/card-invites/:token/accept` | Signed-in accept → adds `card_collaborators` row. |
 
 **No DELETE on `/api/cards/:cardId` exists** — archive is the non-destructive path.
+
+Sharing repository: `lib/server/repositories/card-collaborators.ts` (invite create/list/revoke, preview/accept, collaborator list/remove). Share dialog UI: `components/pick-em/share-card-dialog.tsx` (owner-only button in the editor `PageHeader`); accept page: `app/cards/invite/[token]/`.
+
+**Sections**: cards carry ordered `CardSection[]` (`sheet.sections`), each match an optional `sectionId`. Managed in the editor (`SectionManager` in `editor-view.tsx`, per-match select in `match-editor.tsx`); the print sheet groups matches under `.print-section-header` blocks (unsectioned matches print first, numbering is continuous).
 
 Repository file: `lib/server/repositories/cards.ts`. Key functions:
 
@@ -51,7 +61,7 @@ Repository file: `lib/server/repositories/cards.ts`. Key functions:
 - `createOwnedCard(ownerId, input)`
 - `createCardFromTemplate(ownerId, templateCardId)` — refuses archived templates
 - `archiveCard(cardId, ownerId)` / `unarchiveCard(cardId, ownerId)`
-- `persistOwnedCardSheet(cardId, ownerId, input)`
+- `persistOwnedCardSheet(cardId, userId, input)` — owner or collaborator; persists `sections` + per-match `section_id`
 - `updateCardOverrides(...)`
 
 Client wrappers: `lib/client/cards-api.ts:82-154` (`listCards`, `CardSummary`, etc.).

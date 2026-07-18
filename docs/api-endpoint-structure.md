@@ -13,10 +13,11 @@ Auth is Clerk-based on server routes.
 
 - Read access rule:
   - signed-out user: `public === true` cards only
-  - signed-in user: cards where `owner_id === userId` OR `public === true`
+  - signed-in user: cards where `owner_id === userId` OR `public === true` OR the user is a collaborator (`card_collaborators`)
 - Write access rule:
   - create requires signed-in user
-  - update/save requires signed-in owner
+  - update/save requires signed-in owner or collaborator
+  - archive/unarchive and sharing management (invites/collaborators) require the owner
 
 Status conventions:
 
@@ -35,6 +36,21 @@ Error JSON endpoints use:
 - `{ "error": "..." }`
 - For validation failures, also:
   - `{ "issues": [...] }`
+
+## Card Sharing API
+
+Collaboration is invite-link based. All sharing management endpoints are owner-only.
+
+- `GET /api/cards/:cardId/invites` — list active (non-revoked) invite links.
+- `POST /api/cards/:cardId/invites` — create an invite link; returns `{ id, cardId, token, createdBy, createdAt, revokedAt }`. The shareable URL is `/cards/invite/<token>`.
+- `DELETE /api/cards/:cardId/invites/:inviteId` — revoke an invite link (`204`).
+- `GET /api/cards/:cardId/collaborators` — list collaborators (`{ id, cardId, userId, userEmail, addedAt }`).
+- `DELETE /api/cards/:cardId/collaborators/:collaboratorUserId` — remove a collaborator. The owner can remove anyone; a collaborator can remove themselves (leave).
+
+Invite acceptance (signed-in caller; not owner-scoped):
+
+- `GET /api/card-invites/:token` — preview `{ cardId, cardName, eventName, viewerIsOwner, viewerIsCollaborator }`; `404` if revoked/expired/unknown.
+- `POST /api/card-invites/:token/accept` — accept; returns `{ status: "joined" | "already-collaborator" | "owner", cardId }`; `404` if the link is no longer valid.
 
 ## Cards API
 

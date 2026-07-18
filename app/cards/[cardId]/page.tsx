@@ -15,6 +15,10 @@ export default async function CardEditorPage({ params }: CardEditorPageProps) {
   const card = await findResolvedReadableCardById(cardId, userId);
 
   return (
-    <PickEmEditorApp cardId={cardId} archivedAt={card?.archivedAt ?? null} />
+    <PickEmEditorApp
+      cardId={cardId}
+      archivedAt={card?.archivedAt ?? null}
+      viewerRole={card?.viewerRole ?? null}
+    />
   );
 }

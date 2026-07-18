@@ -19,6 +19,7 @@ import type {
   BonusQuestionAnswerType,
   BonusQuestionPool,
   BonusQuestionValueType,
+  CardSection,
   Match,
   MatchType,
   PickEmSheet,
@@ -36,6 +37,7 @@ const INITIAL_SHEET: PickEmSheet = {
   defaultPoints: 1,
   tiebreakerLabel: "Main event total match time (mins)",
   tiebreakerIsTimeBased: true,
+  sections: [],
   matches: [],
   eventBonusQuestions: [],
 };
@@ -120,6 +122,7 @@ function normalizeMatch(match: Match): Match {
 
   return {
     ...raw,
+    sectionId: typeof raw.sectionId === "string" ? raw.sectionId : null,
     type: normalizedType,
     typeLabelOverride:
       typeof raw.typeLabelOverride === "string" ? raw.typeLabelOverride : "",
@@ -149,12 +152,21 @@ function normalizeSheet(
         normalizeBonusQuestion(question),
       )
     : [];
+  const sections = Array.isArray(input?.sections)
+    ? (input.sections as CardSection[]).filter(
+        (section) =>
+          section &&
+          typeof section.id === "string" &&
+          typeof section.name === "string",
+      )
+    : [];
 
   return {
     ...INITIAL_SHEET,
     ...input,
     promotionName:
       typeof input?.promotionName === "string" ? input.promotionName : "",
+    sections,
     matches,
     eventBonusQuestions,
     tiebreakerIsTimeBased:
@@ -185,6 +197,7 @@ export function createMatch(input?: {
 
   return {
     id: crypto.randomUUID(),
+    sectionId: null,
     type: normalizedType,
     typeLabelOverride: "",
     isBattleRoyal,
@@ -207,6 +220,7 @@ function toSheet(card: {
   defaultPoints: number;
   tiebreakerLabel: string;
   tiebreakerIsTimeBased: boolean;
+  sections: CardSection[];
   matches: Match[];
   eventBonusQuestions: BonusQuestion[];
 }): PickEmSheet {
@@ -218,6 +232,7 @@ function toSheet(card: {
     defaultPoints: card.defaultPoints,
     tiebreakerLabel: card.tiebreakerLabel,
     tiebreakerIsTimeBased: card.tiebreakerIsTimeBased,
+    sections: card.sections,
     matches: card.matches,
     eventBonusQuestions: card.eventBonusQuestions,
   };
@@ -279,6 +294,7 @@ export interface EditorSlice {
   defaultPoints: number;
   tiebreakerLabel: string;
   tiebreakerIsTimeBased: boolean;
+  sections: CardSection[];
   matches: Match[];
   eventBonusQuestions: BonusQuestion[];
 
@@ -307,6 +323,12 @@ export interface EditorSlice {
   setDefaultPoints: (value: number) => void;
   setTiebreakerLabel: (value: string) => void;
   setTiebreakerIsTimeBased: (value: boolean) => void;
+
+  // Actions — sections
+  addSection: (name?: string) => void;
+  renameSection: (id: string, name: string) => void;
+  removeSection: (id: string) => void;
+  moveSection: (id: string, direction: "up" | "down") => void;
 
   // Actions — matches
   addMatch: (input?: {
@@ -365,6 +387,7 @@ export const createEditorSlice: StateCreator<EditorSlice, [], [], EditorSlice> =
     defaultPoints: INITIAL_SHEET.defaultPoints,
     tiebreakerLabel: INITIAL_SHEET.tiebreakerLabel,
     tiebreakerIsTimeBased: INITIAL_SHEET.tiebreakerIsTimeBased,
+    sections: [],
     matches: [],
     eventBonusQuestions: [],
 
@@ -404,6 +427,54 @@ export const createEditorSlice: StateCreator<EditorSlice, [], [], EditorSlice> =
       set({ tiebreakerLabel: value, isDraftDirty: true }),
     setTiebreakerIsTimeBased: (value) =>
       set({ tiebreakerIsTimeBased: value, isDraftDirty: true }),
+
+    // ── Section actions ─────────────────────────────────────
+    addSection: (name) => {
+      const section: CardSection = {
+        id: crypto.randomUUID(),
+        name: name ?? "",
+      };
+      set((state) => ({
+        sections: [...state.sections, section],
+        isDraftDirty: true,
+      }));
+    },
+
+    renameSection: (id, name) => {
+      set((state) => ({
+        sections: state.sections.map((section) =>
+          section.id === id ? { ...section, name } : section,
+        ),
+        isDraftDirty: true,
+      }));
+    },
+
+    removeSection: (id) => {
+      set((state) => ({
+        sections: state.sections.filter((section) => section.id !== id),
+        matches: state.matches.map((match) =>
+          match.sectionId === id ? { ...match, sectionId: null } : match,
+        ),
+        isDraftDirty: true,
+      }));
+    },
+
+    moveSection: (id, direction) => {
+      set((state) => {
+        const index = state.sections.findIndex((section) => section.id === id);
+        if (index === -1) return state;
+
+        const swapIndex = direction === "up" ? index - 1 : index + 1;
+        if (swapIndex < 0 || swapIndex >= state.sections.length) return state;
+
+        const newSections = [...state.sections];
+        [newSections[index], newSections[swapIndex]] = [
+          newSections[swapIndex],
+          newSections[index],
+        ];
+        return { sections: newSections, isDraftDirty: true };
+      });
+    },
 
     // ── Match actions ───────────────────────────────────────
     addMatch: (input) => {
@@ -489,6 +560,7 @@ export const createEditorSlice: StateCreator<EditorSlice, [], [], EditorSlice> =
         defaultPoints: sheet.defaultPoints,
         tiebreakerLabel: sheet.tiebreakerLabel,
         tiebreakerIsTimeBased: sheet.tiebreakerIsTimeBased,
+        sections: sheet.sections,
         matches: sheet.matches,
         eventBonusQuestions: sheet.eventBonusQuestions,
         isDraftDirty: true,
@@ -504,6 +576,7 @@ export const createEditorSlice: StateCreator<EditorSlice, [], [], EditorSlice> =
         defaultPoints: s.defaultPoints,
         tiebreakerLabel: s.tiebreakerLabel,
         tiebreakerIsTimeBased: s.tiebreakerIsTimeBased,
+        sections: s.sections,
         matches: s.matches,
         eventBonusQuestions: s.eventBonusQuestions,
       };

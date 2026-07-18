@@ -75,8 +75,14 @@ export interface MatchType {
   defaultRuleSetIds: BonusPoolRuleSet[];
 }
 
+export interface CardSection {
+  id: string;
+  name: string;
+}
+
 export interface Match {
   id: string;
+  sectionId: string | null; // null means the match is not in any section
   type: string;
   typeLabelOverride: string;
   isBattleRoyal: boolean;
@@ -98,6 +104,7 @@ export interface PickEmSheet {
   defaultPoints: number;
   tiebreakerLabel: string;
   tiebreakerIsTimeBased: boolean;
+  sections: CardSection[];
   matches: Match[];
   eventBonusQuestions: BonusQuestion[];
 }
