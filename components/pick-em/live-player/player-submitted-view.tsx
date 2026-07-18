@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { withSectionScores } from "@/lib/pick-em/section-utils";
 import { LeaderboardPanel } from "@/components/pick-em/shared/leaderboard-panel";
 import { ScoreBreakdown } from "@/components/pick-em/shared/score-breakdown";
 import { UpdatesFeed } from "@/components/pick-em/shared/updates-feed";
@@ -55,7 +56,7 @@ function PlayerSubmittedViewInner({
       <div className="rounded-xl border border-border/70 bg-card/90 p-4">
         <h3 className="mb-2 font-semibold">Leaderboard</h3>
         <LeaderboardPanel
-          leaderboard={state.leaderboard}
+          leaderboard={withSectionScores(state.card, state.leaderboard)}
           variant="compact"
           onRowToggle={toggle}
           selectedNicknames={selected}

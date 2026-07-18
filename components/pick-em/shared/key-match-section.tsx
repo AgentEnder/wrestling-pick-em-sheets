@@ -98,6 +98,8 @@ function formatTimestamp(value: string | null): string {
 
 interface KeyMatchSectionProps {
   matchIndex: number;
+  /** 1-based number shown in the header; defaults to matchIndex + 1. Differs when matches render grouped by card section. */
+  displayNumber?: number;
   roster: UseRosterSuggestionsReturn;
   // Host-only (all optional)
   lockState?: LiveGameLockState | null;
@@ -132,6 +134,7 @@ interface KeyMatchSectionProps {
 
 function KeyMatchSectionInner({
   matchIndex,
+  displayNumber,
   roster,
   lockState,
   gameState,
@@ -465,7 +468,7 @@ function KeyMatchSectionInner({
     <section className="rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold text-foreground">
-          Match {matchIndex + 1}: {match.title || "Untitled Match"}
+          Match {displayNumber ?? matchIndex + 1}: {match.title || "Untitled Match"}
         </h2>
         {onToggleMatchLock && lockState ? (
           <Button

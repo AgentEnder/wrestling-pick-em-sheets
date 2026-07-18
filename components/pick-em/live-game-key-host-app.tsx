@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,10 @@ import { HostHeader } from "./live-host/host-header";
 import { JoinRequestsPanel } from "./live-host/join-requests-panel";
 import { GameLifecycleControls } from "./live-host/game-lifecycle-controls";
 import { LockControls } from "./live-host/lock-controls";
+import {
+  buildMatchGroups,
+  sectionDisplayName,
+} from "@/lib/pick-em/section-utils";
 import { KeyMatchSection } from "./shared/key-match-section";
 import { KeyEventBonusSection } from "./shared/key-event-bonus-section";
 import { HostDashboardPanels } from "./live-host/host-dashboard-panels";
@@ -655,21 +659,43 @@ export function LiveGameKeyHostApp({
 
       <LockControls gameId={gameId} />
 
-      {card.matches.map((_, index) => (
-        <KeyMatchSection
-          key={card.matches[index].id}
-          matchIndex={index}
-          roster={roster}
-          lockState={lockState}
-          gameState={gameState}
-          onToggleMatchLock={handleToggleMatchLock}
-          onToggleMatchBonusLock={handleToggleMatchBonusLock}
-          onAcceptWinnerOverride={handleAcceptWinnerOverride}
-          onRejectWinnerOverride={handleRejectWinnerOverride}
-          onAcceptBonusOverride={handleAcceptBonusOverride}
-          onRejectBonusOverride={handleRejectBonusOverride}
-        />
-      ))}
+      {(() => {
+        const matchIndexById = new Map(
+          card.matches.map((match, index) => [match.id, index]),
+        );
+        let displayNumber = 0;
+        return buildMatchGroups(card).map((group) => (
+          <React.Fragment key={group.section?.id ?? "unsectioned"}>
+            {group.section ? (
+              <h2 className="mt-2 border-b border-primary/40 pb-1 font-heading text-lg font-bold uppercase tracking-wider text-primary">
+                {sectionDisplayName(
+                  group.section,
+                  card.sections.findIndex((s) => s.id === group.section?.id),
+                )}
+              </h2>
+            ) : null}
+            {group.matches.map((match) => {
+              displayNumber += 1;
+              return (
+                <KeyMatchSection
+                  key={match.id}
+                  matchIndex={matchIndexById.get(match.id) ?? 0}
+                  displayNumber={displayNumber}
+                  roster={roster}
+                  lockState={lockState}
+                  gameState={gameState}
+                  onToggleMatchLock={handleToggleMatchLock}
+                  onToggleMatchBonusLock={handleToggleMatchBonusLock}
+                  onAcceptWinnerOverride={handleAcceptWinnerOverride}
+                  onRejectWinnerOverride={handleRejectWinnerOverride}
+                  onAcceptBonusOverride={handleAcceptBonusOverride}
+                  onRejectBonusOverride={handleRejectBonusOverride}
+                />
+              );
+            })}
+          </React.Fragment>
+        ));
+      })()}
 
       <KeyEventBonusSection
         roster={roster}

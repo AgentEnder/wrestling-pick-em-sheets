@@ -3,6 +3,7 @@
 import React from "react";
 
 import type { LiveGameStateResponse } from "@/lib/client/live-games-api";
+import { withSectionScores } from "@/lib/pick-em/section-utils";
 import { LeaderboardPanel } from "@/components/pick-em/shared/leaderboard-panel";
 import { UpdatesFeed } from "@/components/pick-em/shared/updates-feed";
 
@@ -15,7 +16,7 @@ function ActiveGameViewInner({ state }: ActiveGameViewProps) {
     <div className="grid h-full gap-5 lg:grid-cols-[2fr_1fr]">
       <section className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-xl shadow-black/25 backdrop-blur">
         <LeaderboardPanel
-          leaderboard={state.leaderboard}
+          leaderboard={withSectionScores(state.card, state.leaderboard)}
           variant="display"
         />
       </section>

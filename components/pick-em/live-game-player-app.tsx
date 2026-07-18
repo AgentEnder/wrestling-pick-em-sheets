@@ -1,9 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCcw } from "lucide-react";
 
+import {
+  buildMatchGroups,
+  sectionDisplayName,
+  withSectionScores,
+} from "@/lib/pick-em/section-utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -793,10 +804,30 @@ export function LiveGamePlayerApp({
         />
       ) : (
         <>
-          {state.card.matches.map((match, index) => (
+          {(() => {
+            const matchIndexById = new Map(
+              state.card.matches.map((m, i) => [m.id, i]),
+            );
+            let displayNumber = 0;
+            return buildMatchGroups(state.card).map((group) => (
+              <React.Fragment key={group.section?.id ?? "unsectioned"}>
+                {group.section ? (
+                  <h2 className="mt-2 border-b border-primary/40 pb-1 font-heading text-lg font-bold uppercase tracking-wider text-primary">
+                    {sectionDisplayName(
+                      group.section,
+                      state.card.sections.findIndex(
+                        (s) => s.id === group.section?.id,
+                      ),
+                    )}
+                  </h2>
+                ) : null}
+                {group.matches.map((match) => {
+                  displayNumber += 1;
+                  return (
             <PlayerMatchPicks
               key={match.id}
-              matchIndex={index}
+              matchIndex={matchIndexById.get(match.id) ?? 0}
+              displayNumber={displayNumber}
               match={match}
               picks={picks}
               locks={lockSnapshot}
@@ -815,7 +846,11 @@ export function LiveGamePlayerApp({
               }
               onSetMatchBonusAnswer={setMatchBonusAnswer}
             />
-          ))}
+                  );
+                })}
+              </React.Fragment>
+            ));
+          })()}
 
           <PlayerEventBonusPicks
             card={state.card}
@@ -852,7 +887,7 @@ export function LiveGamePlayerApp({
               <h3 className="font-semibold">Leaderboard</h3>
               <div className="mt-2">
                 <LeaderboardPanel
-                  leaderboard={state.leaderboard}
+                  leaderboard={withSectionScores(state.card, state.leaderboard)}
                   maxItems={12}
                   variant="compact"
                 />

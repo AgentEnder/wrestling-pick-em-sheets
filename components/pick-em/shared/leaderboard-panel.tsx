@@ -10,6 +10,38 @@ interface LeaderboardEntry {
   nickname: string;
   score: number;
   lastSeenAt: string;
+  /**
+   * Optional per-section totals (see withSectionScores). Rendered as a
+   * small "Night 1 12 · Night 2 8" line once anything section-scored has
+   * been keyed.
+   */
+  sectionScores?: { key: string; name: string; score: number; maxPoints: number }[];
+}
+
+function SectionScoreLine({
+  sectionScores,
+  className,
+}: {
+  sectionScores: LeaderboardEntry["sectionScores"];
+  className: string;
+}) {
+  if (!sectionScores?.some((section) => section.maxPoints > 0)) {
+    return null;
+  }
+
+  return (
+    <p className={className}>
+      {sectionScores.map((section, index) => (
+        <React.Fragment key={section.key}>
+          {index > 0 ? <span className="opacity-60"> · </span> : null}
+          <span>
+            {section.name}{" "}
+            <span className="font-mono font-semibold">{section.score}</span>
+          </span>
+        </React.Fragment>
+      ))}
+    </p>
+  );
 }
 
 interface LeaderboardPanelProps {
@@ -66,7 +98,15 @@ function LeaderboardPanelInner({
                   <span className="font-mono text-3xl font-semibold">
                     #{entry.rank}
                   </span>
-                  <span className="truncate text-2xl">{entry.nickname}</span>
+                  <div className="min-w-0">
+                    <span className="block truncate text-2xl">
+                      {entry.nickname}
+                    </span>
+                    <SectionScoreLine
+                      sectionScores={entry.sectionScores}
+                      className="truncate text-sm text-muted-foreground"
+                    />
+                  </div>
                   <div className="flex items-center gap-2 text-lg text-muted-foreground">
                     <span
                       className={`h-2.5 w-2.5 rounded-full ${dotClass}`}
@@ -124,6 +164,10 @@ function LeaderboardPanelInner({
                 <span className="capitalize">{presence.state}</span>
                 <span>{presence.ageLabel}</span>
               </div>
+              <SectionScoreLine
+                sectionScores={entry.sectionScores}
+                className="truncate text-[11px] text-muted-foreground"
+              />
             </div>
             <div className="shrink-0">
               <span className="font-mono">{entry.score}</span>

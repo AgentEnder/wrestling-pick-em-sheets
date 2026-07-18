@@ -4,6 +4,7 @@ import React from "react";
 import { Trophy } from "lucide-react";
 
 import type { LiveGameStateResponse } from "@/lib/client/live-games-api";
+import { withSectionScores } from "@/lib/pick-em/section-utils";
 import { LeaderboardPanel } from "@/components/pick-em/shared/leaderboard-panel";
 
 interface EndedViewProps {
@@ -24,7 +25,7 @@ function EndedViewInner({ state }: EndedViewProps) {
       </div>
       <div className="w-full max-w-3xl rounded-2xl border border-border/70 bg-card/90 p-6 shadow-xl shadow-black/25 backdrop-blur">
         <LeaderboardPanel
-          leaderboard={state.leaderboard}
+          leaderboard={withSectionScores(state.card, state.leaderboard)}
           variant="display"
         />
       </div>

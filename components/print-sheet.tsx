@@ -1,11 +1,10 @@
 "use client";
 
-import type {
-  BonusQuestion,
-  CardSection,
-  Match,
-  PickEmSheet,
-} from "@/lib/types";
+import {
+  buildMatchGroups,
+  sectionDisplayName,
+} from "@/lib/pick-em/section-utils";
+import type { BonusQuestion, Match, PickEmSheet } from "@/lib/types";
 import type { CSSProperties } from "react";
 
 interface PrintSheetProps {
@@ -322,37 +321,6 @@ function MatchBlock({
   );
 }
 
-interface MatchGroup {
-  section: CardSection | null;
-  matches: Match[];
-}
-
-// Groups matches under their sections while preserving sheet order inside
-// each group. Matches without a (known) section render first, headerless;
-// sections with no matches are skipped on the printed sheet.
-function buildMatchGroups(sheet: PickEmSheet): MatchGroup[] {
-  const sectionIds = new Set(sheet.sections.map((section) => section.id));
-  const groups: MatchGroup[] = [];
-
-  const unsectioned = sheet.matches.filter(
-    (match) => !match.sectionId || !sectionIds.has(match.sectionId),
-  );
-  if (unsectioned.length > 0) {
-    groups.push({ section: null, matches: unsectioned });
-  }
-
-  for (const section of sheet.sections) {
-    const matches = sheet.matches.filter(
-      (match) => match.sectionId === section.id,
-    );
-    if (matches.length > 0) {
-      groups.push({ section, matches });
-    }
-  }
-
-  return groups;
-}
-
 function countRenderedSectionHeaders(sheet: PickEmSheet): number {
   return buildMatchGroups(sheet).filter((group) => group.section !== null)
     .length;
@@ -626,7 +594,12 @@ export function PrintSheet({ sheet }: PrintSheetProps) {
             >
               {group.section ? (
                 <h2 className="print-section-header">
-                  {group.section.name.trim() || `Part ${groupIndex + 1}`}
+                  {sectionDisplayName(
+                    group.section,
+                    sheet.sections.findIndex(
+                      (section) => section.id === group.section?.id,
+                    ),
+                  )}
                 </h2>
               ) : null}
               {group.matches.map((match) => {
