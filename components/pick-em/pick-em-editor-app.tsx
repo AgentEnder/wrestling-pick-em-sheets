@@ -9,6 +9,7 @@ import { PrintSheet } from "@/components/print-sheet";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { PickEmSheet } from "@/lib/types";
+import { getCard } from "@/lib/client/cards-api";
 import { useAuth } from "@/lib/client/clerk-test-mode";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -77,6 +78,38 @@ export function PickEmEditorApp({
   const hasMatches = useHasMatches();
 
   const [isEditableFieldFocused, setIsEditableFieldFocused] = useState(false);
+
+  // The server-rendered viewerRole misses sessions the SSR pass can't see
+  // (test-auth mode, modal sign-in without a reload), so re-resolve it from
+  // the client once auth is available. The client fetch uses the same auth
+  // path as saving, so Share appears whenever the signed-in user owns the
+  // card.
+  const [resolvedViewerRole, setResolvedViewerRole] = useState(viewerRole);
+
+  useEffect(() => {
+    setResolvedViewerRole(viewerRole);
+  }, [viewerRole]);
+
+  useEffect(() => {
+    if (!isAuthLoaded || !userId) {
+      return;
+    }
+
+    let cancelled = false;
+    getCard(cardId)
+      .then((card) => {
+        if (!cancelled) {
+          setResolvedViewerRole(card.viewerRole);
+        }
+      })
+      .catch(() => {
+        // Keep the server-provided role on fetch failure.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cardId, isAuthLoaded, userId]);
 
   const printRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -343,7 +376,7 @@ export function PickEmEditorApp({
       <PageHeader
         cardId={cardId}
         canSave={isAuthLoaded && Boolean(userId)}
-        viewerRole={viewerRole}
+        viewerRole={resolvedViewerRole}
         onImportClick={handleImportClick}
         onPrint={handlePrint}
       />
