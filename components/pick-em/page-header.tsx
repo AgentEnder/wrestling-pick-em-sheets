@@ -28,13 +28,16 @@ import {
   Save,
   Swords,
   Upload,
+  UserPlus,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback } from "react";
+import { ShareCardDialog } from "@/components/pick-em/share-card-dialog";
 
 interface PageHeaderProps {
   cardId: string;
   canSave: boolean;
+  viewerRole?: "owner" | "collaborator" | null;
   onImportClick: () => void;
   onPrint: () => void;
 }
@@ -42,6 +45,7 @@ interface PageHeaderProps {
 export function PageHeader({
   cardId,
   canSave,
+  viewerRole = null,
   onImportClick,
   onPrint,
 }: PageHeaderProps) {
@@ -132,6 +136,22 @@ export function PageHeader({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {viewerRole === "owner" ? (
+            <ShareCardDialog
+              cardId={cardId}
+              trigger={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  title="Invite someone to build this card with you"
+                >
+                  <UserPlus className="h-4 w-4 mr-1" />
+                  <span className="hidden sm:inline">Invite</span>
+                </Button>
+              }
+            />
+          ) : null}
 
           <Button
             size="sm"

@@ -19,6 +19,16 @@ Components are grouped under `components/pick-em/`:
 - `live-player/` — player views (`player-ended-view.tsx`)
 - `live-display/` — display views (`lobby-view`, `active-game-view`, `ended-view`, `display-header`, `join-overlay`)
 - `shared/` — cross-surface (`leaderboard-panel.tsx`)
+
+## Card sections on live surfaces
+
+Cards may define ordered sections (`card.sections`, `match.sectionId` — see cards.md). Live surfaces derive everything section-related from `lib/pick-em/section-utils.ts`; nothing extra is stored per game or snapshot:
+
+- `buildMatchGroups(card)` — shared grouping (unsectioned matches first, then sections in order). Used by the player picks list (`live-game-player-app.tsx`), the host keying view (`live-game-key-host-app.tsx`), and the print sheet, so match numbering (`displayNumber` prop on `PlayerMatchPicks` / `KeyMatchSection`) stays consistent everywhere.
+- `computeSectionScores(card, entry.breakdown.perQuestion)` — per-player section totals derived from the leaderboard breakdown rows (buckets: "Other Matches" for unsectioned, each section, "Event Bonuses"). Works retroactively on score snapshots since those store `perQuestion` rows.
+- `withSectionScores(card, leaderboard)` — enriches entries for `LeaderboardPanel`, which renders a per-player "Night 1 12 · Night 2 8" line once anything section-scored is keyed.
+- `score-breakdown.tsx` groups its rows under section headers with per-section subtotal rows.
+
 - `solo-key/` + `solo-key-app.tsx`
 
 The "app" wrappers (`live-game-player-app.tsx`, `live-game-key-host-app.tsx`, `live-game-display-app.tsx`) own polling, state, and event wiring.

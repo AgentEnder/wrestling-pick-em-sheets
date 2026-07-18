@@ -41,6 +41,25 @@ export interface BonusQuestionTemplates {
   value_type: Generated<string>;
 }
 
+export interface CardCollaborators {
+  added_at: Generated<string>;
+  card_id: string;
+  id: string | null;
+  invite_id: string | null;
+  user_email: string | null;
+  user_id: string;
+}
+
+export interface CardInvites {
+  card_id: string;
+  created_at: Generated<string>;
+  created_by: string;
+  expires_at: string | null;
+  id: string | null;
+  revoked_at: string | null;
+  token: string;
+}
+
 export interface CardLiveKeys {
   card_id: string;
   created_at: Generated<string>;
@@ -65,6 +84,7 @@ export interface CardMatches {
   match_type_name_override: string | null;
   participants_json: Generated<string>;
   points: number | null;
+  section_id: string | null;
   sort_order: number;
   surprise_points: number | null;
   surprise_slots: number | null;
@@ -99,6 +119,7 @@ export interface CardOverrides {
   event_tagline: string | null;
   name: string | null;
   promotion_name: string | null;
+  sections_json: string | null;
   tiebreaker_is_time_based: number | null;
   tiebreaker_label: string | null;
   updated_at: Generated<string>;
@@ -118,6 +139,7 @@ export interface Cards {
   owner_id: string | null;
   promotion_name: string | null;
   public: Generated<number>;
+  sections_json: Generated<string>;
   template_card_id: string | null;
   tiebreaker_is_time_based: Generated<number>;
   tiebreaker_label: string | null;
@@ -273,6 +295,8 @@ export interface SportsdbCacheEntries {
 export interface DB {
   bonus_question_pools: BonusQuestionPools;
   bonus_question_templates: BonusQuestionTemplates;
+  card_collaborators: CardCollaborators;
+  card_invites: CardInvites;
   card_live_keys: CardLiveKeys;
   card_match_overrides: CardMatchOverrides;
   card_matches: CardMatches;

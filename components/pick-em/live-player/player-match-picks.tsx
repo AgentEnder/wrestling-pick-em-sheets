@@ -54,6 +54,8 @@ function toLockKey(matchId: string, questionId: string): string {
 
 interface PlayerMatchPicksProps {
   matchIndex: number;
+  /** 1-based number shown in the header; defaults to matchIndex + 1. Differs when matches render grouped by card section. */
+  displayNumber?: number;
   match: LiveGameStateResponse["card"]["matches"][number];
   picks: LivePlayerPicksPayload;
   locks: LiveGameMeResponse["locks"];
@@ -74,6 +76,7 @@ interface PlayerMatchPicksProps {
 
 function PlayerMatchPicksInner({
   matchIndex,
+  displayNumber,
   match,
   picks,
   locks,
@@ -131,7 +134,7 @@ function PlayerMatchPicksInner({
     <section className="rounded-lg border border-border bg-card p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="font-semibold">
-          Match {matchIndex + 1}: {match.title || "Untitled Match"}
+          Match {displayNumber ?? matchIndex + 1}: {match.title || "Untitled Match"}
         </h2>
         {isMatchLocked ? (
           <span className="text-xs text-amber-500">Locked</span>

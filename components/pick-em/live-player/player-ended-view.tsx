@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { Trophy } from "lucide-react";
 
 import type { LiveGameStateResponse } from "@/lib/client/live-games-api";
+import { withSectionScores } from "@/lib/pick-em/section-utils";
 import { LeaderboardPanel } from "@/components/pick-em/shared/leaderboard-panel";
 import { ScoreBreakdown } from "@/components/pick-em/shared/score-breakdown";
 
@@ -55,7 +56,7 @@ function PlayerEndedViewInner({
       <div className="w-full rounded-xl border border-border/70 bg-card/90 p-4 shadow-lg shadow-black/20 backdrop-blur">
         <h3 className="mb-2 font-semibold">Final Leaderboard</h3>
         <LeaderboardPanel
-          leaderboard={state.leaderboard}
+          leaderboard={withSectionScores(state.card, state.leaderboard)}
           variant="compact"
           onRowToggle={toggle}
           selectedNicknames={selected}

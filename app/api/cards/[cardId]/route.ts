@@ -17,6 +17,7 @@ const MAX_MATCHES = 100;
 const MAX_BONUS_QUESTIONS = 25;
 const MAX_OPTIONS = 20;
 const MAX_PARTICIPANTS = 100;
+const MAX_SECTIONS = 30;
 
 const boundedText = (max: number) => z.string().trim().max(max);
 const shortName = boundedText(120);
@@ -41,9 +42,15 @@ const bonusQuestionSchema = z.object({
     .optional(),
 });
 
+const cardSectionSchema = z.object({
+  id: z.string().uuid(),
+  name: boundedText(120),
+});
+
 const normalizedMatchSchema = z
   .object({
     id: z.string().uuid(),
+    sectionId: z.string().uuid().nullable().optional().default(null),
     type: z.string().trim().min(1).max(120),
     typeLabelOverride: z.string().trim().max(120).optional().default(""),
     isBattleRoyal: z.boolean().optional().default(false),
@@ -95,6 +102,7 @@ const legacyStandardMatchSchema = z
     ...value,
     type: DEFAULT_MATCH_TYPE_ID,
     typeLabelOverride: value.typeLabelOverride,
+    sectionId: null,
     isBattleRoyal: false,
     isEliminationStyle: false,
     surpriseSlots: 0,
@@ -124,6 +132,7 @@ const legacyBattleRoyalMatchSchema = z
   .strict()
   .transform((value) => ({
     id: value.id,
+    sectionId: null,
     type: DEFAULT_BATTLE_ROYAL_MATCH_TYPE_ID,
     typeLabelOverride: value.typeLabelOverride,
     isBattleRoyal: true,
@@ -145,6 +154,7 @@ const saveCardSchema = z.object({
   defaultPoints: z.number().int().min(1).max(100),
   tiebreakerLabel: z.string().trim().max(200),
   tiebreakerIsTimeBased: z.boolean().optional().default(false),
+  sections: z.array(cardSectionSchema).max(MAX_SECTIONS).optional().default([]),
   matches: z
     .array(
       z.union([

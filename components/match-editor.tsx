@@ -21,6 +21,7 @@ import {
   useMatchById,
   useMatchActions,
   useMatchCount,
+  useSections,
   useSuggestions,
 } from "@/stores/selectors";
 import { getRosterSuggestions } from "@/lib/client/roster-api";
@@ -121,6 +122,7 @@ export const MatchEditor = memo(function MatchEditor({
 }: MatchEditorProps) {
   const match = useMatchById(matchId);
   const totalMatches = useMatchCount();
+  const sections = useSections();
   const defaultPoints = useAppStore((s) => s.defaultPoints);
   const promotionName = useAppStore((s) => s.promotionName);
   const {
@@ -580,6 +582,38 @@ export const MatchEditor = memo(function MatchEditor({
                   </SelectContent>
                 </Select>
               </div>
+              {sections.length > 0 ? (
+                <div className="flex flex-col gap-1.5">
+                  <Label>
+                    Card Section
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      (e.g. Night 1 / Night 2)
+                    </span>
+                  </Label>
+                  <Select
+                    value={match.sectionId ?? "none"}
+                    onValueChange={(value) => {
+                      replaceMatch(index, {
+                        ...match,
+                        sectionId: value === "none" ? null : value,
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="No section" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No section</SelectItem>
+                      {sections.map((section, sectionIndex) => (
+                        <SelectItem key={section.id} value={section.id}>
+                          {section.name.trim() ||
+                            `Section ${sectionIndex + 1}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
               <div className="flex flex-col gap-1.5">
                 <Label>
                   Match Type Label Override

@@ -237,6 +237,7 @@ function normalizeDraftMatch(value: unknown): Match | null {
 
   return {
     id: raw.id,
+    sectionId: typeof raw.sectionId === "string" ? raw.sectionId : null,
     type: normalizedType,
     typeLabelOverride:
       typeof raw.typeLabelOverride === "string" ? raw.typeLabelOverride : "",
@@ -277,6 +278,7 @@ function normalizeDraftSheet(value: unknown): PickEmSheet | null {
     tiebreakerLabel:
       typeof raw.tiebreakerLabel === "string" ? raw.tiebreakerLabel : "",
     tiebreakerIsTimeBased: raw.tiebreakerIsTimeBased === true,
+    sections: Array.isArray(raw.sections) ? raw.sections : [],
     matches: Array.isArray(raw.matches)
       ? raw.matches
           .map((match) => normalizeDraftMatch(match))

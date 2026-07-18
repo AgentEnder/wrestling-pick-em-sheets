@@ -13,6 +13,7 @@ import type {
   Cards,
 } from "@/lib/server/db/generated";
 import {
+  canEditCard,
   canReadCard,
   isActiveCard,
   isCardOwner,
@@ -28,6 +29,7 @@ import type {
   BonusQuestion,
   BonusQuestionAnswerType,
   BonusQuestionValueType,
+  CardSection,
   Match,
 } from "@/lib/types";
 import type { Insertable, Selectable, Updateable } from "kysely";
@@ -49,6 +51,7 @@ interface CardRow {
   tiebreaker_label: string | null;
   tiebreaker_is_time_based: number;
   event_bonus_questions_json: string;
+  sections_json: string;
   public: number;
   is_template: number;
   archived_at: string | null;
@@ -59,6 +62,7 @@ interface CardRow {
 interface CardMatchRow {
   id: string;
   card_id: string;
+  section_id: string | null;
   sort_order: number;
   match_type: DbMatchType;
   match_type_id: string;
@@ -106,8 +110,11 @@ interface CardOverrideRow {
   tiebreaker_label: string | null;
   tiebreaker_is_time_based: number | null;
   event_bonus_questions_json: string | null;
+  sections_json: string | null;
   updated_at: string;
 }
+
+export type CardViewerRole = "owner" | "collaborator" | null;
 
 export interface CardSummary {
   id: string;
@@ -116,6 +123,7 @@ export interface CardSummary {
   name: string;
   isPublic: boolean;
   isTemplate: boolean;
+  viewerRole: CardViewerRole;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -135,8 +143,10 @@ export interface ResolvedCard {
   defaultPoints: number;
   tiebreakerLabel: string;
   tiebreakerIsTimeBased: boolean;
+  sections: CardSection[];
   matches: Match[];
   eventBonusQuestions: BonusQuestion[];
+  viewerRole: CardViewerRole;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -156,6 +166,7 @@ function asCardRow(row: CardSelectable): CardRow {
     tiebreaker_label: row.tiebreaker_label,
     tiebreaker_is_time_based: Number(row.tiebreaker_is_time_based),
     event_bonus_questions_json: row.event_bonus_questions_json,
+    sections_json: row.sections_json,
     public: Number(row.public),
     is_template: Number(row.is_template),
     archived_at: row.archived_at ?? null,
@@ -168,6 +179,7 @@ function asCardMatchRow(row: CardMatchSelectable): CardMatchRow {
   return {
     id: requireDbId(row.id, "card_matches.id"),
     card_id: row.card_id,
+    section_id: row.section_id,
     sort_order: row.sort_order,
     match_type: toDbMatchType(row.match_type),
     match_type_id:
@@ -289,6 +301,20 @@ function normalizeBonusQuestion(value: unknown): BonusQuestion | null {
   };
 }
 
+function parseCardSections(json: string | null | undefined): CardSection[] {
+  return parseJsonArray<unknown>(json)
+    .map((value) => {
+      if (!value || typeof value !== "object") return null;
+      const raw = value as Partial<CardSection>;
+      if (typeof raw.id !== "string" || !raw.id) return null;
+      return {
+        id: raw.id,
+        name: typeof raw.name === "string" ? raw.name : "",
+      };
+    })
+    .filter((value): value is CardSection => value !== null);
+}
+
 function parseBonusQuestions(json: string | null | undefined): BonusQuestion[] {
   return parseJsonArray<unknown>(json)
     .map((value) => normalizeBonusQuestion(value))
@@ -312,6 +338,7 @@ function mapMatch(match: CardMatchRow): Match {
 
   return {
     id: match.id,
+    sectionId: match.section_id,
     type: normalizeMatchTypeId(match.match_type_id, isBattleRoyal),
     typeLabelOverride: match.match_type_name_override ?? "",
     isBattleRoyal,
@@ -334,6 +361,7 @@ function mapSummary(card: CardRow): CardSummary {
     name: card.name ?? "Untitled card",
     isPublic: card.public === 1,
     isTemplate: card.is_template === 1,
+    viewerRole: null,
     archivedAt: card.archived_at,
     createdAt: card.created_at,
     updatedAt: card.updated_at,
@@ -366,18 +394,37 @@ export async function listReadableCards(
       if (!includeArchived || !userId) {
         return isActiveCard(eb);
       }
-      // includeArchived widening is owner-scoped: show archived rows only
-      // when the viewer is the owner. Other users' archived cards stay hidden.
-      return eb.or([isActiveCard(eb), eb("owner_id", "=", userId)]);
+      // includeArchived widening is scoped to cards the viewer can edit:
+      // their own archived cards and archived cards shared with them.
+      // Other users' archived cards stay hidden.
+      return eb.or([isActiveCard(eb), canEditCard(eb, userId)]);
     })
     .orderBy("updated_at", "desc")
     .execute();
 
+  const collaboratorCardIds = new Set<string>();
+  if (userId) {
+    const collaboratorRows = await db
+      .selectFrom("card_collaborators")
+      .select(["card_id"])
+      .where("user_id", "=", userId)
+      .execute();
+    for (const row of collaboratorRows) {
+      collaboratorCardIds.add(row.card_id);
+    }
+  }
+
   return rows.map((row) => {
     const card = asCardRow(row);
+    const isOwner = userId !== null && card.owner_id === userId;
     return {
       ...mapSummary(card),
-      ownerId: card.owner_id === userId ? card.owner_id : null,
+      ownerId: isOwner ? card.owner_id : null,
+      viewerRole: isOwner
+        ? ("owner" as const)
+        : collaboratorCardIds.has(card.id)
+          ? ("collaborator" as const)
+          : null,
     };
   });
 }
@@ -432,6 +479,7 @@ export async function createCardFromTemplate(
   return {
     ...mapSummary(asCardRow(created)),
     ownerId,
+    viewerRole: "owner" as const,
   };
 }
 
@@ -477,12 +525,13 @@ export async function createOwnedCard(
   return {
     ...mapSummary(asCardRow(created)),
     ownerId,
+    viewerRole: "owner" as const,
   };
 }
 
 export async function updateCardOverrides(
   cardId: string,
-  ownerId: string,
+  userId: string,
   input: {
     name?: string | null;
     eventName?: string | null;
@@ -498,7 +547,7 @@ export async function updateCardOverrides(
     .selectFrom("cards")
     .select(["id"])
     .where("id", "=", cardId)
-    .where((eb) => isCardOwner(eb, ownerId))
+    .where((eb) => canEditCard(eb, userId))
     .executeTakeFirst();
 
   if (!card) return false;
@@ -568,6 +617,18 @@ export async function findResolvedReadableCardById(
 
   const card = asCardRow(cardRaw);
 
+  const isOwner = userId !== null && card.owner_id === userId;
+  let viewerRole: CardViewerRole = isOwner ? "owner" : null;
+  if (!isOwner && userId) {
+    const collaborator = await db
+      .selectFrom("card_collaborators")
+      .select(["id"])
+      .where("card_id", "=", card.id)
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
+    if (collaborator) viewerRole = "collaborator";
+  }
+
   if (!card.template_card_id) {
     const ownMatchesRaw = await db
       .selectFrom("card_matches")
@@ -595,8 +656,10 @@ export async function findResolvedReadableCardById(
       tiebreakerLabel:
         card.tiebreaker_label ?? "Main event total match time (mins)",
       tiebreakerIsTimeBased: card.tiebreaker_is_time_based === 1,
+      sections: parseCardSections(card.sections_json),
       matches: ownMatches,
       eventBonusQuestions: parseBonusQuestions(card.event_bonus_questions_json),
+      viewerRole,
       archivedAt: card.archived_at,
       createdAt: card.created_at,
       updatedAt: card.updated_at,
@@ -631,8 +694,10 @@ export async function findResolvedReadableCardById(
       defaultPoints: 1,
       tiebreakerLabel: "Main event total match time (mins)",
       tiebreakerIsTimeBased: false,
+      sections: [],
       matches: [],
       eventBonusQuestions: [],
+      viewerRole,
       archivedAt: card.archived_at,
       createdAt: card.created_at,
       updatedAt: card.updated_at,
@@ -753,6 +818,13 @@ export async function findResolvedReadableCardById(
         template.tiebreaker_is_time_based,
         0,
       ) === 1,
+    sections: parseCardSections(
+      resolveCardValue(
+        override?.sections_json,
+        template.sections_json,
+        "[]",
+      ),
+    ),
     matches: mergedRows.map((row) => mapMatch(row)),
     eventBonusQuestions: parseBonusQuestions(
       resolveCardValue(
@@ -761,6 +833,7 @@ export async function findResolvedReadableCardById(
         "[]",
       ),
     ),
+    viewerRole,
     archivedAt: card.archived_at,
     createdAt: card.created_at,
     updatedAt: card.updated_at,
@@ -780,6 +853,7 @@ function toCardMatchInsert(
     return {
       id: match.id || randomUUID(),
       card_id: cardId,
+      section_id: match.sectionId,
       sort_order: sortOrder,
       match_type: "battleRoyal",
       match_type_id: matchTypeId,
@@ -804,6 +878,7 @@ function toCardMatchInsert(
   return {
     id: match.id || randomUUID(),
     card_id: cardId,
+    section_id: match.sectionId,
     sort_order: sortOrder,
     match_type: "standard",
     match_type_id: matchTypeId,
@@ -827,7 +902,7 @@ function toCardMatchInsert(
 
 export async function persistOwnedCardSheet(
   cardId: string,
-  ownerId: string,
+  userId: string,
   input: {
     eventName: string;
     promotionName: string;
@@ -836,6 +911,7 @@ export async function persistOwnedCardSheet(
     defaultPoints: number;
     tiebreakerLabel: string;
     tiebreakerIsTimeBased: boolean;
+    sections: CardSection[];
     matches: Match[];
     eventBonusQuestions: BonusQuestion[];
   },
@@ -844,16 +920,31 @@ export async function persistOwnedCardSheet(
     .selectFrom("cards")
     .select(["id", "template_card_id"])
     .where("id", "=", cardId)
-    .where((eb) => isCardOwner(eb, ownerId))
+    .where((eb) => canEditCard(eb, userId))
     .executeTakeFirst();
 
   if (!card) return null;
+
+  const normalizedSections = input.sections
+    .map((section) => ({
+      id: section.id,
+      name: section.name.trim(),
+    }))
+    .filter((section) => section.id.length > 0);
+  const sectionIds = new Set(normalizedSections.map((section) => section.id));
+  const sectionsJson = JSON.stringify(normalizedSections);
 
   const normalizedEventBonuses = input.eventBonusQuestions.map(
     normalizeBonusQuestionForWrite,
   );
   const normalizedMatches = input.matches.map((match) => ({
     ...match,
+    // Drop dangling section assignments so matches never point at a
+    // section that is not part of the saved sheet.
+    sectionId:
+      match.sectionId && sectionIds.has(match.sectionId)
+        ? match.sectionId
+        : null,
     bonusQuestions: match.bonusQuestions.map(normalizeBonusQuestionForWrite),
   }));
 
@@ -879,6 +970,7 @@ export async function persistOwnedCardSheet(
         event_bonus_questions_json: card.template_card_id
           ? "[]"
           : JSON.stringify(normalizedEventBonuses),
+        sections_json: card.template_card_id ? "[]" : sectionsJson,
         updated_at: now,
       })
       .where("id", "=", cardId)
@@ -898,6 +990,7 @@ export async function persistOwnedCardSheet(
           tiebreaker_label: input.tiebreakerLabel,
           tiebreaker_is_time_based: input.tiebreakerIsTimeBased ? 1 : 0,
           event_bonus_questions_json: JSON.stringify(normalizedEventBonuses),
+          sections_json: sectionsJson,
           updated_at: now,
         })
         .onConflict((oc) =>
@@ -911,6 +1004,7 @@ export async function persistOwnedCardSheet(
             tiebreaker_label: input.tiebreakerLabel,
             tiebreaker_is_time_based: input.tiebreakerIsTimeBased ? 1 : 0,
             event_bonus_questions_json: JSON.stringify(normalizedEventBonuses),
+            sections_json: sectionsJson,
             updated_at: now,
           }),
         )
@@ -962,7 +1056,7 @@ export async function persistOwnedCardSheet(
         .where("is_custom", "=", 1)
         .execute();
 
-      if (input.matches.length > 0) {
+      if (normalizedMatches.length > 0) {
         await trx
           .insertInto("card_matches")
           .values(
@@ -991,7 +1085,7 @@ export async function persistOwnedCardSheet(
       .where("card_id", "=", cardId)
       .execute();
 
-    if (input.matches.length > 0) {
+    if (normalizedMatches.length > 0) {
       await trx
         .insertInto("card_matches")
         .values(
@@ -1003,7 +1097,7 @@ export async function persistOwnedCardSheet(
     }
   });
 
-  return findResolvedReadableCardById(cardId, ownerId);
+  return findResolvedReadableCardById(cardId, userId);
 }
 
 export async function archiveCard(
@@ -1030,7 +1124,7 @@ export async function archiveCard(
       .executeTakeFirst();
     if (!row) return null;
     const card = asCardRow(row);
-    return { ...mapSummary(card), ownerId };
+    return { ...mapSummary(card), ownerId, viewerRole: "owner" as const };
   }
 
   const row = await db
@@ -1039,7 +1133,7 @@ export async function archiveCard(
     .where("id", "=", cardId)
     .executeTakeFirstOrThrow();
   const card = asCardRow(row);
-  return { ...mapSummary(card), ownerId };
+  return { ...mapSummary(card), ownerId, viewerRole: "owner" as const };
 }
 
 export async function unarchiveCard(
@@ -1065,7 +1159,7 @@ export async function unarchiveCard(
     .where("id", "=", cardId)
     .executeTakeFirstOrThrow();
   const card = asCardRow(row);
-  return { ...mapSummary(card), ownerId };
+  return { ...mapSummary(card), ownerId, viewerRole: "owner" as const };
 }
 
 export async function listTemplateCardsForAdmin(): Promise<CardSummary[]> {
