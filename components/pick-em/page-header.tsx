@@ -26,9 +26,9 @@ import {
   Printer,
   RotateCcw,
   Save,
-  Share2,
   Swords,
   Upload,
+  UserPlus,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback } from "react";
@@ -141,9 +141,13 @@ export function PageHeader({
             <ShareCardDialog
               cardId={cardId}
               trigger={
-                <Button size="sm" variant="outline">
-                  <Share2 className="h-4 w-4 mr-1" />
-                  <span className="hidden sm:inline">Share</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  title="Invite someone to build this card with you"
+                >
+                  <UserPlus className="h-4 w-4 mr-1" />
+                  <span className="hidden sm:inline">Invite</span>
                 </Button>
               }
             />
